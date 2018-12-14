@@ -1,13 +1,15 @@
 # Contains both command line and gui interfaces for movie creation
 
 import os
+import sys
 import argparse
 from colorama import Fore, Style
 import pyani.media.image.seq
 import pyani.media.movie.create.core
+import pyani.core.util
 from pyani.core.ui import QtMsgWindow
 from pyani.core.ui import FileDialog
-from pyani.core.appmanager import AppManager
+from pyani.core.appmanager import AniAppMngr
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -21,19 +23,19 @@ from qtpy import QtGui, QtWidgets, QtCore
 class AniShootGui(QtWidgets.QDialog):
     """
     Gui class for movie shoot creation
-    :param version : the app version
     :param movie_generation : the app called to create the actual movie, for example ffmpeg
     :param movie_playback : the app called to play the movie, for example Shotgun RV
     :param strict_pad : enforce the same padding for whole image sequence
     """
-    def __init__(self, version, movie_generation, movie_playback, strict_pad):
+    def __init__(self, movie_generation, movie_playback, strict_pad):
         super(AniShootGui, self).__init__()
 
-        self.__version = version
         self.win_utils = pyani.core.ui.QtWindowUtil(self)
         self.setWindowTitle('PyShoot Movie Creator')
         self.win_utils.set_win_icon("Resources\\pyshoot.png")
         self.file_dialog_selection = None
+        app_manager = AniAppMngr("PyShoot")
+        self.version = app_manager.user_version
 
         # setup data
         self.ani_vars = pyani.core.util.AniVars()
@@ -51,20 +53,11 @@ class AniShootGui(QtWidgets.QDialog):
         self.resize(1000, 400)
 
         # version management
-        app_manager = AppManager.version_manager(
-            "PyShoot",
-            "C:\\PyAniTools\\PyShoot\\",
-            "Z:\\LongGong\\PyAniTools\\app_data\\"
-        )
-        msg = app_manager.version_check()
-        if msg:
-            self.msg_win.show_info_msg("Version Update", msg)
-
-    @property
-    def version(self):
-        """Return the app version
-        """
-        return self.__version
+        if not app_manager.is_latest():
+            update = self.msg_win.show_question_msg("Version Update", app_manager.latest_version_info())
+            if update:
+                pyani.core.util.launch_app(app_manager.updater_app)
+                sys.exit(0)
 
     def build_ui(self):
         """Builds the UI widgets, slots and layout
@@ -548,14 +541,14 @@ class AniShootCLI:
     """
     Command line version of the shoot movie creation app. Does not support multiple movie creation like
     GUI app. All other features supported.
-    :param version : the app version
     :param movie_generation : the app called to create the actual movie, for example ffmpeg
     :param movie_playback : the app called to play the movie, for example Shotgun RV
     :param strict_pad : enforce the same padding for whole image sequence
     """
 
-    def __init__(self, version, movie_generation, movie_playback, strict_pad):
-        self.version = version
+    def __init__(self,  movie_generation, movie_playback, strict_pad):
+        app_manager = AniAppMngr("PyShoot")
+        self.version = app_manager.user_version
 
         # setup data
         self.ani_vars = pyani.core.util.AniVars()

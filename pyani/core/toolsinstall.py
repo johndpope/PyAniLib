@@ -1,53 +1,67 @@
 """
-script to install the PyAniTools
+script to install the PyAniTools - copies from Z drive (downloaded via cg teamworks) to c: drive
 
-v 1.0.0
+Dependencies
 
-pyinstaller --onefile --name PyAniToolsSetup pyani\\core\\toolsinstall.py
+    Python packages
+    ----------
+        pyanilib - custom library
+
+Making Executable - Pyinstaller
+
+    pyinstaller --onefile "C:\Users\Patrick\PycharmProjects\PyAniLib\pyani\core\toolsinstall.py" --icon "C:\Users\Patrick\PycharmProjects\PyAniTools\Resources\setup.ico" --name "C:\Users\Patrick\PycharmProjects\PyAniTools\Dist\PyAniToolsSetup"
 """
 
-from pyani.core.appmanager import AppManager
 import pyani.core.util
 import colorama
 import os
+import shutil
 
 
 def main():
 
-    # setup the tools directory
-    tools_dir = "C:\\PyAniTools\\"
-    if not os.path.exists(tools_dir):
-        pyani.core.util.make_dir(tools_dir)
+    tools_dir = "C:\\PyAniTools"
+    app_data_dir = tools_dir + "\\app_data"
+    packages_dir = tools_dir + "\\packages"
+    apps_dir = tools_dir + "\\installed"
 
     # init the colored output to terminal
     colorama.init()
 
-    # app properties
-    app_update_script = None
-    app_name = "PyAniInstall"
-    app_dl_path = "Z:\\LongGong\\PyAniTools\\PyAniTools.zip"
-    app_install_path = "C:\\PyAniTools\\"
-    app_dist_path = "Z:\\LongGong\\PyAniTools\\dist\\"
-    app_data_path = "Z:\\LongGong\\PyAniTools\\app_data\\"
-    app_manager = AppManager(app_update_script, app_name, app_dl_path, app_install_path, app_dist_path, app_data_path)
-
-    msg = "Starting install {0}.".format(app_manager.app_name)
+    msg = "Starting install"
     print ("{0}{1}".format(colorama.Fore.GREEN, msg))
     print(colorama.Style.RESET_ALL)
 
-    error = app_manager.verify_paths()
+    # setup the tools directory - run first install only
+    if not os.path.exists(tools_dir):
+        pyani.core.util.make_dir(tools_dir)
 
-    if error:
-        print error
+    # setup app_data - always update this
+    if os.path.exists(app_data_dir):
+        shutil.rmtree(app_data_dir)
+    # update app data
+    shutil.move("PyAniTools\\app_data", app_data_dir)
 
-    error = app_manager.install()
-    if error:
-        print ("{0}{1}".format(colorama.Fore.RED, error))
-        print(colorama.Style.RESET_ALL)
+    # setup packages dir - always update this
+    if os.path.exists(packages_dir):
+        shutil.rmtree(packages_dir)
+    # update packages
+    shutil.move("PyAniTools\\packages", packages_dir)
+
+    # setup apps directory
+    if not os.path.exists(apps_dir):
+        shutil.move("PyAniTools\\installed", apps_dir)
+        # copy folder shortcut
+        user_desktop = os.path.join(os.environ["HOMEPATH"], "Desktop")
+        if not os.path.exists(os.path.join(user_desktop, "PyAniTools.lnk")):
+            shutil.move(apps_dir + "\\PyAniTools.lnk", user_desktop)
     else:
-        msg = "Successfully installed {0}.".format(app_manager.app_name)
-        print ("{0}{1}".format(colorama.Fore.GREEN, msg))
-        print(colorama.Style.RESET_ALL)
+        # just update app mngr
+        os.remove(os.path.join(apps_dir, "PyAppMngr.exe"))
+        shutil.move("PyAniTools\\installed\\PyAppMngr.exe", apps_dir)
+
+    print ("{0}{1}".format(colorama.Fore.GREEN, "Successfully installed"))
+    print(colorama.Style.RESET_ALL)
 
 
 if __name__ == '__main__':

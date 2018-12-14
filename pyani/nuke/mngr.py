@@ -1,7 +1,8 @@
 import os
+import sys
 import pyani.core.util
 import pyani.core.ui
-from pyani.core.appmanager import AppManager
+from pyani.core.appmanager import AniAppMngr
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -11,7 +12,7 @@ os.environ['QT_API'] = 'pyqt'
 # note that QtPy always uses PyQt5 API
 from qtpy import QtGui, QtWidgets, QtCore
 
-# TODO: ready to check for install, and populate with real data, and provide functionality, gui done!
+# TODO: add any installation into AniAppMngr, populate with real data, and provide functionality, gui done!
 class AniNukeMngr(object):
     def __init__(self):
         self.ani_vars = pyani.core.util.AniVars()
@@ -89,14 +90,16 @@ class AniNukeMngrGui(QtWidgets.QMainWindow):
         self.resize(600, 400)
 
         # version management
-        app_manager = AppManager.version_manager(
+        app_manager = AniAppMngr.version_manager(
             "PyNukeMngr",
             "C:\\PyAniTools\\PyNukeMngr\\",
             "Z:\\LongGong\\PyAniTools\\app_data\\"
         )
-        msg = app_manager.version_check()
-        if msg:
-            self.msg_win.show_info_msg("Version Update", msg)
+        if not app_manager.is_latest():
+            update = self.msg_win.show_question_msg("Version Update", app_manager.latest_version_info())
+            if update:
+                pyani.core.util.launch_app(app_manager.updater_app)
+                sys.exit(0)
 
     @property
     def version(self):

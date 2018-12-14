@@ -13,6 +13,8 @@ from PyQt4.QtGui import QFileDialog
 GOLD = "#be9117"
 GREEN = "#397d42"
 CYAN = "#429db6"
+YELLOW = QtGui.QColor(234, 192, 25)
+RED = QtGui.QColor(216, 81, 81)
 
 
 # try to set to unicode - based off what QDesigner does
@@ -201,87 +203,124 @@ def build_checkbox(label, state, directions):
     return label, cbox
 
 
-def build_checkbox_tree(categories, category_items, colors=None, expand=True):
+class CheckboxTree(QtWidgets.QTreeWidget):
     """
-    Builds a tree of checkboxes with control over text color
-    :param categories: parent text, these are the top level items. Expects a list - ["item1", "item2", ...]
-    ex: ["Plugins", "Templates"]
-    :param category_items: children text, these go beneath each parent. Expects a list, where each element is
-        a list - [["item1"], ["item1", "item2", ...],...]
-        ex: [["pGrad, "AOV_CC"],["shot", "asset", "mpaint", "fx", "optical", "output"]]
-    :param colors: the text color for each parent and child item, defaults to white. Dict format:
-        {
-            "category1" : {
-                    "parent" : QtCore.Qt.QColor,
-                    "children" : [QtCore.Qt.QColor, QtCore.Qt.QColor]
-                    ...
-                }
-                ...
-        }
-        ex: {
-                "Plugins" : {
-                    "parent" : QtCore.Qt.red,
-                    "children" : [QtCore.Qt.White, QtCore.Qt.Red]
-                }
-                "Templates" : {
-                    "parent" : QtCore.Qt.white,
-                    "children" : [QtCore.Qt.White, QtCore.Qt.White]
-                }
-            }
-        You can leave a color empty (use None), and it will default to white, so in the example above:
-            {
-                "Plugins" : {
-                    "parent" : QtCore.Qt.red,
-                    "children" : [None, QtCore.Qt.Red]
-                }
-                "Templates" : {
-                    "parent" : QtCore.Qt.white,
-                    "children" : [None, None]
-                }
-            }
-    :param expand: show the tree in expanded view, default true
-    :return: the QTreeWidget
+    Qt tree custom class with check boxes
     """
-    tree = QtWidgets.QTreeWidget()
-    print categories
-    # root doesn't have any info, hide it
-    tree.header().hide()
-    tree.header().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
-    for index, cat in enumerate(categories):
-        parent = QtWidgets.QTreeWidgetItem(tree)
-        if colors:
-            child.setTextColor(0, colors[cat])
-            # reset
-            child.setTextColor(0, QtCore.Qt.white)
-        parent.setText(0, "{0}".format(cat))
-        parent.setFlags(parent.flags() | QtCore.Qt.ItemIsTristate | QtCore.Qt.ItemIsUserCheckable)
-        for item in category_items[index]:
-            child = QtWidgets.QTreeWidgetItem(parent)
-            child.setFlags(child.flags() | QtCore.Qt.ItemIsUserCheckable)
+    def __init__(self, categories, formatted_categories=None, category_items=None, colors=None, expand=True):
+        """
+               Builds a self.tree of checkboxes with control over text color
+               :param categories: parent text, these are the top level items. Expects a list - ["item1", "item2", ...]
+               ex: ["Plugins", "Templates"]
+               :param formatted_categories: the parent self.tree text - allows styling and additional information like version number
+               expects a string. ex: "Pyshoot\t\tv1.01"
+               :param category_items: children text, these go beneath each parent. Expects a list, where each element is
+                   a list - [["item1"], ["item1", "item2", ...],...]
+                   ex: [["pGrad, "AOV_CC"],["shot", "asset", "mpaint", "fx", "optical", "output"]]
+               :param colors: the text color for each parent and child item, defaults to white. Dict format:
+                   {
+                       "category1" : {
+                               "parent" : QtCore.Qt.QColor,
+                               "children" : [QtCore.Qt.QColor, QtCore.Qt.QColor]
+                               ...
+                           }
+                           ...
+                   }
+                   ex: {
+                           "Plugins" : {
+                               "parent" : QtCore.Qt.red,
+                               "children" : [QtCore.Qt.White, QtCore.Qt.Red]
+                           }
+                           "Templates" : {
+                               "parent" : QtCore.Qt.white,
+                               "children" : [QtCore.Qt.White, QtCore.Qt.White]
+                           }
+                       }
+                   You can leave a color empty (use None), and it will default to white, so in the example above:
+                       {
+                           "Plugins" : {
+                               "parent" : QtCore.Qt.red,
+                               "children" : [None, QtCore.Qt.Red]
+                           }
+                           "Templates" : {
+                               "parent" : QtCore.Qt.white,
+                               "children" : [None, None]
+                           }
+                       }
+               :param expand: show the tree in expanded view, default true
+               """
+        super(CheckboxTree, self).__init__()
+        self.build_checkbox_tree(categories,
+                                 formatted_categories=formatted_categories,
+                                 category_items=category_items,
+                                 colors=colors,
+                                 expand=expand
+                                 )
+
+    def build_checkbox_tree(self, categories, formatted_categories=None, category_items=None, colors=None, expand=True):
+        """
+        See init function, just a wrapper
+        """
+        # root doesn't have any info, hide it
+        self.header().hide()
+        self.header().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        for index, cat in enumerate(categories):
+            parent = QtWidgets.QTreeWidgetItem(self)
             if colors:
-                child.setTextColor(0, colors[index])
-                # reset
-                child.setTextColor(0, QtCore.Qt.white)
-            child.setText(0, "{0}".format(item))
-            child.setCheckState(0, QtCore.Qt.Unchecked)
-    if expand:
-        tree.expandAll()
-    return tree
+                parent.setTextColor(0, colors[cat]['parent'])
+            else:
+                parent.setTextColor(0, QtCore.Qt.white)
+            parent.setText(0, "{0}".format(formatted_categories[index]))
+            parent.setFlags(parent.flags() | QtCore.Qt.ItemIsTristate | QtCore.Qt.ItemIsUserCheckable)
+            # if there are sub categories add to parent
+            if category_items:
+                for item in category_items[index]:
+                    child = QtWidgets.QTreeWidgetItem(parent)
+                    child.setFlags(child.flags() | QtCore.Qt.ItemIsUserCheckable)
+                    if colors:
+                        child.setTextColor(0, colors[index])
+                    else:
+                        child.setTextColor(0, QtCore.Qt.white)
+                    child.setText(0, "{0}".format(item))
+                    child.setCheckState(0, QtCore.Qt.Unchecked)
+            else:
+                parent.setCheckState(0, QtCore.Qt.Unchecked)
+        if expand:
+            self.expandAll()
+
+    def get_tree_checked(self):
+        """
+        Finds the selected tree members
+        :return: a list of the checked items
+        """
+        checked = []
+        iterator = QtWidgets.QTreeWidgetItemIterator(self, QtWidgets.QTreeWidgetItemIterator.Checked)
+        while iterator.value():
+            item = iterator.value()
+            checked.append(item.text(0))
+            iterator += 1
+        return checked
+
+    def update_item(self, existing_text, new_text, color=None):
+        """
+        Updates a tree item
+        :param existing_text: the existing item text
+        :param new_text: the new text
+        :param color: optional color - QColor
+        """
+        iterator = QtWidgets.QTreeWidgetItemIterator(self)
+
+        while iterator.value():
+            item = iterator.value()
+            if item.text(0) == existing_text:
+                if color:
+                    item.setTextColor(0, color)
+                else:
+                    item.setTextColor(0, QtCore.Qt.white)
+                item.setText(0, new_text)
+            iterator += 1
 
 
-def get_tree_checked(tree):
-    """
-    Finds the selected tree members
-    :param tree: a QTreeWidget object
-    :return: a list of the checked items
-    """
-    checked = []
-    iterator = QtWidgets.QTreeWidgetItemIterator(tree, QtWidgets.QTreeWidgetItemIterator.Checked)
-    while iterator.value():
-        item = iterator.value()
-        checked.append(item.text(0))
-        iterator += 1
-    return checked
 
 
 def center(win):

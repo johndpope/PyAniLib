@@ -7,7 +7,7 @@ import OpenEXR
 import Imath
 import json
 from scandir import scandir
-from subprocess import Popen, PIPE
+from subprocess import Popen, call
 from PIL import Image
 
 # regex for matching numerical characters
@@ -182,8 +182,10 @@ def launch_app(app, *args):
     cmd = [app]
     for arg in args:
         cmd.append(arg)
-    p = Popen(cmd, stdin= PIPE, stdout=PIPE, stderr=PIPE)
-    if p.returncode != 0:
+
+    p = Popen([cmd], shell=True)
+
+    if p.returncode is not None:
         LOG.debug("App Open Failed for {0}. Error: {1}".format(cmd, p.returncode))
 
 
