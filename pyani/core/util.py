@@ -2,13 +2,9 @@ import re
 import shutil
 import os
 import logging
-import OpenEXR
-# include Imath (which OpenEXR uses) and ffmpeg so that standalone exe works.
-import Imath
 import json
 from scandir import scandir
-from subprocess import Popen, call
-from PIL import Image
+from subprocess import Popen
 
 # regex for matching numerical characters
 DIGITS_RE = re.compile(r'\d+')
@@ -24,55 +20,83 @@ class AniVars(object):
     '''
     object that holds variables for shot, sequence and scenes. Parses based off a shot path since there is no access
     to a show environment vars. Option to not provide a shot path, in which case a dummy path is created
+
+    List of Ani Vars:
+
+    print AniVar_instance
+
     '''
 
     def __init__(self, shot_path=None):
         self.desktop = os.path.expanduser("~/Desktop")
-        self.seq_shot_list = self._get_sequences_and_shots("Z:\\LongGong\\PyANiTools\\app_data\\Shared\\sequences.json")
-
-        if not shot_path:
-            shot_path = os.path.normpath("Z:\LongGong\sequences\Seq180\Shot280")
-        self.seq_name = self._get_active_sequence_name(shot_path)
-        self.shot_name = self._get_active_shot_name(shot_path)
-
-        # shot directories
-        self.shot_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}".format(self.seq_name, self.shot_name))
-        self.shot_light_dir = os.path.normpath("{0}\lighting".format(self.shot_dir))
-        self.shot_light_work_dir = os.path.normpath("{0}\work".format(self.shot_light_dir))
-        self.shot_maya_dir = os.path.normpath("{0}\scenes".format(self.shot_light_work_dir))
-        self.shot_comp_dir = os.path.normpath("{0}\composite".format(self.shot_dir))
-        self.shot_comp_work_dir = os.path.normpath("{0}\work".format(self.shot_comp_dir))
-        self.shot_comp_plugin_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}\Composite\plugins".format(
-            self.seq_name, self.shot_name))
+        self.seq_shot_list = self._get_sequences_and_shots("C:\\PyAniTools\\app_data\\Shared\\sequences.json")
+        self.nuke_user_dir = os.path.join(os.path.expanduser("~"), ".nuke")
+        self.nuke_custom_dir = os.path.join(self.nuke_user_dir, "\pyanitools")
 
         # movie directories
         self.movie_dir = os.path.normpath("Z:\LongGong\movie")
         self.seq_movie_dir = os.path.normpath("{0}\sequences".format(self.movie_dir))
-        self.shot_movie_dir = os.path.normpath("{0}\sequences\{1}".format(self.movie_dir, self.seq_name))
 
         # comp plugin, script, template lib directories
         self.plugin_show = os.path.normpath("Z:\LongGong\lib\comp\plugins")
-        self.plugin_seq = os.path.normpath("Z:\LongGong\lib\sequences\{0}\comp\plugins".format(self.seq_name))
         self.script_show = os.path.normpath("Z:\LongGong\lib\comp\scripts")
-        self.script_seq = os.path.normpath("Z:\LongGong\lib\sequences\{0}\comp\scripts".format(self.seq_name))
         self.templates_show = os.path.normpath("Z:\LongGong\lib\comp\\templates")
-        self.templates_seq = os.path.normpath("Z:\LongGong\lib\sequences\{0}\comp\\templates".format(self.seq_name))
 
         # image directories
         self.image_dir = os.path.normpath("Z:\LongGong\images")
-        self.seq_image_dir = os.path.normpath("{0}\{1}".format(self.image_dir, self.seq_name))
-        self.shot_image_dir = os.path.normpath("{0}\{1}".format(self.seq_image_dir, self.shot_name))
 
-        # shot data
         if shot_path:
-            seq = self.seq_shot_list[self.seq_name]
-            for shot in seq:
-                if shot == self.shot_name:
-                    self.first_frame = self.seq_shot_list[self.seq_name]["first_frame"]
-                    self.last_frame = self.seq_shot_list[self.seq_name]["last_frame"]
+            self.seq_name = self._get_active_sequence_name(shot_path)
+            self.shot_name = self._get_active_shot_name(shot_path)
+
+            # shot directories
+            self.shot_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}".format(self.seq_name, self.shot_name))
+            self.shot_light_dir = os.path.normpath("{0}\lighting".format(self.shot_dir))
+            self.shot_light_work_dir = os.path.normpath("{0}\work".format(self.shot_light_dir))
+            self.shot_maya_dir = os.path.normpath("{0}\scenes".format(self.shot_light_work_dir))
+            self.shot_comp_dir = os.path.normpath("{0}\composite".format(self.shot_dir))
+            self.shot_comp_work_dir = os.path.normpath("{0}\work".format(self.shot_comp_dir))
+            self.shot_comp_plugin_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}\Composite\plugins".format(
+                self.seq_name, self.shot_name)
+            )
+            # sequence directories
+            self.shot_movie_dir = os.path.normpath("{0}\sequences\{1}".format(self.movie_dir, self.seq_name))
+            self.seq_lib = os.path.normpath("Z:\LongGong\lib\sequences\{0}".format(self.seq_name))
+
+            # comp plugin, script, template lib directories
+            self.seq_comp_lib = os.path.normpath("{0}\comp".format(self.seq_lib))
+            self.plugin_seq = os.path.normpath("{0}\plugins".format(self.seq_comp_lib))
+            self.script_seq = os.path.normpath("{0}\scripts".format(self.seq_comp_lib))
+            self.templates_seq = os.path.normpath("{0}\\templates".format(self.seq_comp_lib))
+
+            # image directories
+            self.seq_image_dir = os.path.normpath("{0}\{1}".format(self.image_dir, self.seq_name))
+            self.shot_image_dir = os.path.normpath("{0}\{1}".format(self.seq_image_dir, self.shot_name))
+
+            for shot in self.seq_shot_list[self.seq_name]:
+                if shot["Shot"] == self.shot_name:
+                    self.first_frame = shot["first_frame"]
+                    self.last_frame = shot["last_frame"]
                     self.frame_range = "{0}-{1}".format(str(self.first_frame), str(self.last_frame))
                     break
         else:
+            self.seq_name = None
+            self.shot_name = None
+            self.shot_dir = None
+            self.shot_light_dir = None
+            self.shot_light_work_dir = None
+            self.shot_maya_dir = None
+            self.shot_comp_dir = None
+            self.shot_comp_work_dir = None
+            self.shot_comp_plugin_dir = None
+            self.shot_movie_dir = None
+            self.seq_lib = None
+            self.seq_comp_lib = None
+            self.plugin_seq = None
+            self.script_seq = None
+            self.templates_seq = None
+            self.seq_image_dir = None
+            self.shot_image_dir = None
             self.first_frame = None
             self.last_frame = None
             self.frame_range = None
@@ -87,12 +111,52 @@ class AniVars(object):
             self.desktop
         ]
 
+    # produce better output
+    def __str__(self):
+        return json.dumps(vars(self),indent=4 )
+
+    def __repr__(self):
+        return '<pyani.core.util.AniVars "Seq{0}, Shot{1}">'.format(self.seq_name, self.shot_name)
+
     def get_sequence_list(self):
         return self.seq_shot_list.keys()
 
-    def get_shot_list(self, seq_name):
+    def get_shot_list(self):
         shot_list = self.seq_shot_list[self.seq_name]
         return [shot["Shot"] for shot in shot_list]
+
+    def update(self, seq_name, shot_name=None):
+        self.seq_name = seq_name
+        self.seq_lib = os.path.normpath("Z:\LongGong\lib\sequences\{0}".format(self.seq_name))
+        # comp plugin, script, template lib directories
+        self.seq_comp_lib = os.path.normpath("{0}\comp".format(self.seq_lib))
+        self.plugin_seq = os.path.normpath("{0}\plugins".format(self.seq_comp_lib))
+        self.script_seq = os.path.normpath("{0}\scripts".format(self.seq_comp_lib))
+        self.templates_seq = os.path.normpath("{0}\\templates".format(self.seq_comp_lib))
+        # image directories
+        self.seq_image_dir = os.path.normpath("{0}\{1}".format(self.image_dir, self.seq_name))
+
+        if shot_name:
+            self.shot_name = shot_name
+            # shot directories
+            self.shot_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}".format(self.seq_name, self.shot_name))
+            self.shot_light_dir = os.path.normpath("{0}\lighting".format(self.shot_dir))
+            self.shot_light_work_dir = os.path.normpath("{0}\work".format(self.shot_light_dir))
+            self.shot_maya_dir = os.path.normpath("{0}\scenes".format(self.shot_light_work_dir))
+            self.shot_comp_dir = os.path.normpath("{0}\composite".format(self.shot_dir))
+            self.shot_comp_work_dir = os.path.normpath("{0}\work".format(self.shot_comp_dir))
+            self.shot_comp_plugin_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}\Composite\plugins".format(
+                self.seq_name, self.shot_name)
+            )
+            self.shot_movie_dir = os.path.normpath("{0}\sequences\{1}".format(self.movie_dir, self.seq_name))
+            self.shot_image_dir = os.path.normpath("{0}\{1}".format(self.seq_image_dir, self.shot_name))
+
+            for shot in self.seq_shot_list[self.seq_name]:
+                if shot["Shot"] == self.shot_name:
+                    self.first_frame = shot["first_frame"]
+                    self.last_frame = shot["last_frame"]
+                    self.frame_range = "{0}-{1}".format(str(self.first_frame), str(self.last_frame))
+                    break
 
     @staticmethod
     def _get_sequences_and_shots(file_path):
@@ -189,6 +253,81 @@ def launch_app(app, *args):
         LOG.debug("App Open Failed for {0}. Error: {1}".format(cmd, p.returncode))
 
 
+def move_file(src, dest):
+    """
+    moves file from src to dest (ie copies to new path and deletes from old path).
+    :param src: source file
+    :param dest: destination directory or file
+    :except IOError, OSError: returns the file src and dest and error
+    :return: None if no errors, otherwise return error as string
+    """
+    try:
+        shutil.move(src, dest)
+        return None
+    except (IOError, OSError) as e:
+        return "Could not move {0} to {1}. Received error {2}".format(src, dest, e)
+
+
+def delete_file(file_path):
+    """
+    Deletes file
+    :param file_path: the file to delete - absolute path
+    :except IOError, OSError: returns the file  and error
+    """
+    try:
+        os.remove(file_path)
+        return None
+    except (IOError, OSError) as e:
+        return "Could not delete {0}. Received error {1}".format(file_path, e)
+
+
+def copy_file(src, dest):
+    """
+    Copies file from src to dest.
+    :param src: source file
+    :param dest: destination directory or file - overwrites if exists
+    :except IOError, OSError: returns the file src and dest and error
+    :return: None if no errors, otherwise return error as string
+    """
+    try:
+        shutil.copy(src, dest)
+        return None
+    except (IOError, OSError) as e:
+        return "Could not copy {0} to {1}. Received error {2}".format(src, dest, e)
+
+
+def copy_files(src, dest, ext=None):
+    """
+    Copies all files from src to dest. Optional extension can be provided to filter
+    what files are copied
+    :param src: source directory
+    :param dest: destination directory
+    :param ext: extension to filter for
+    :except IOError, OSError: returns the file src and dest and error
+    :return: None if no errors, otherwise return error as string
+    """
+    s = None
+    d = None
+    try:
+        for item in os.listdir(src):
+            s = os.path.join(src, item)
+            d = os.path.join(dest, item)
+            # filter out files when extension provided
+            if ext is not None and s.endswith(ext):
+                if os.path.isdir(s):
+                    shutil.copytree(s, d)
+                else:
+                    shutil.copy2(s, d)
+            else:
+                if os.path.isdir(s):
+                    shutil.copytree(s, d)
+                else:
+                    shutil.copy2(s, d)
+        return None
+    except (IOError, OSError) as e:
+        return "Could not copy {0} to {1}. Received error {2}".format(s, d, e)
+
+
 def copy_image(source, dest):
     '''
     Copies a frame from the source file to the destination file or folder. If the file exists will
@@ -210,31 +349,33 @@ def copy_image(source, dest):
 def make_dir(dir_path):
     '''
     Build the directory
-    :return: True if successful and False if unsuccessful
+    :except IOError, OSError: returns the directory and error
+    :return: None if no errors, otherwise return error as string
     '''
     try:
         if os.path.exists(dir_path):
             # this will remove regardless of whether its empty or read only
             shutil.rmtree(dir_path, ignore_errors=True)
         os.mkdir(dir_path, 0777)
-    except IOError:
-        return False
-    return True
+    except (IOError, OSError) as e:
+        return "Could not make directory {0}. Received error {1}".format(dir_path, e)
+    return None
 
 
 def rm_dir(dir_path):
     """
     removes a directory if it exists
     :param dir_path: a path to a directory
-    :return: True if successful and False if unsuccessful
+    :except IOError, OSError: returns the directory and error
+    :return: None if no errors, otherwise return error as string
     """
     try:
         if os.path.exists(dir_path):
             # this will remove regardless of whether its empty or read only
             shutil.rmtree(dir_path, ignore_errors=True)
-    except IOError:
-        return False
-    return True
+    except (IOError, OSError) as e:
+        return "Could not make directory {0}. Received error {1}".format(dir_path, e)
+    return None
 
 
 def get_images_from_dir(dir_path):
@@ -245,35 +386,6 @@ def get_images_from_dir(dir_path):
     :return: a list of the images in the directory
     """
     return [f.path for f in scandir(dir_path) if f.path.endswith(SUPPORTED_IMAGE_FORMATS)]
-
-
-def convert_image(image_path, convert_format):
-    """
-    change to a different image format - all supported except exrs
-    :param image_path: the image to convert
-    :param convert_format: the format to convert to
-    :return: the converted image
-    """
-    im = Image.open(image_path)
-    image_ext_removed = image_path.split(".")[:-1]
-    new_image = '{0}.{1}'.format(image_ext_removed, convert_format)
-    im.save(new_image)
-    return new_image
-
-
-def get_exr_size(exr):
-    """
-    gets the exr image size which is the display and data windows
-    :param exr: a valid exr image
-    :return: the display and data windows in a dict, None if it isn't an exr file
-    """
-    if OpenEXR.isOpenExrFile(exr):
-        infile = OpenEXR.InputFile(exr)
-        h = infile.header()
-        h['displayWindow'] = Imath.Box2i(Imath.point(-1, -1), Imath.point(1998, 1080))
-        h['dataWindow'] = Imath.Box2i(Imath.point(-1, -1), Imath.point(1998, 1080))
-        return {"display": h['displayWindow'], "data": h['dataWindow']}
-    return None
 
 
 def convert_to_sRGB(red, green, blue):

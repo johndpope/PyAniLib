@@ -34,6 +34,7 @@ class AniAppMngr(object):
         self.__app_data = pyani.core.util.load_json(self.app_config)
         self.__user_version = self.user_version
         self.__latest_version = self.latest_version
+        self.__features = ", ".join(self.__app_data["versions"][0]["features"])
 
     @property
     def user_version(self):
@@ -98,6 +99,12 @@ class AniAppMngr(object):
         """The app config file
         """
         return self.__app_config
+
+    @property
+    def features(self):
+        """The feature release list
+        """
+        return self.__features
 
     def verify_paths(self):
         """Verify app exists and install path exists
@@ -183,9 +190,8 @@ class AniAppMngr(object):
         :return the feature list as a string
         """
         latest_version = self.__app_data["versions"][0]["version"]
-        features = ", ".join(self.__app_data["versions"][0]["features"])
         return "There is a newer version ({0}) of this app. The latest version offers: {1}. " \
-               "Do you want to update now?".format(latest_version, features)
+               "Do you want to update now?".format(latest_version, self.features)
 
     def is_latest(self):
         """Checks if user has the latest version
@@ -243,21 +249,16 @@ class AniAppMngrGui(QtWidgets.QMainWindow):
         self.btn_update = QtWidgets.QPushButton("Update App")
         self.btn_install = QtWidgets.QPushButton("Install / Update App(s)")
         self.btn_launch = QtWidgets.QPushButton("Launch App(s)")
-        # format for ui display
-        app_ui_text, app_ui_colors = self._format_app_info()
-        # build tree
-        self.app_tree = pyani.core.ui.CheckboxTree(self.app_names,
-                                                   formatted_categories=app_ui_text,
-                                                   colors=app_ui_colors)
+        # tree app version information
+        self.app_tree = pyani.core.ui.CheckboxTreeWidget(self._format_app_info(), 3)
 
         self.build_ui()
         # set default window size
-        self.resize(600, 400)
+        self.resize(800, 400)
 
     def build_ui(self):
         """Builds the UI widgets, slots and layout
         """
-
         self.create_ui()
         self.set_slots()
         # set main window
@@ -317,17 +318,18 @@ class AniAppMngrGui(QtWidgets.QMainWindow):
     def install(self):
         """Installs the app(s) and updates ui info
         """
-        apps, tree_items = self._get_selection()
+        apps = self._get_selection()
         for index, app in enumerate(apps):
             app.install()
-            current_text = tree_items[index]
-            new_text = ("{0}\t\t{1}".format(app.app_name, app.user_version))
-            self.app_tree.update_item(current_text, new_text)
+            item = [app.app_name, app.user_version]
+            item_color = [None, None]
+            updated_item = pyani.core.ui.CheckboxTreeWidgetItem(item, item_color)
+            self.app_tree.update_item(app.app_name, updated_item)
 
     def launch(self):
         """Launches the app(s)
         """
-        apps, null = self._get_selection()
+        apps = self._get_selection()
         for app in apps:
             exe_path = os.path.join(app.app_install_path, app.app_name)
             pyani.core.util.launch_app("{0}.exe".format(exe_path))
@@ -335,38 +337,42 @@ class AniAppMngrGui(QtWidgets.QMainWindow):
     def _get_selection(self):
         """
         Gets and parses the selected apps in the tree
-        :return: a list of the selected tree items as AniAppMngr objects, and a list of the tree text items
+        :return: a list of the selected tree items as AniAppMngr objects
         """
         selection = self.app_tree.get_tree_checked()
-        # remove formatting '\t\tVersion'
-        app_names = [item.split("\t")[0] for item in selection]
         apps = []
-        for app_name in app_names:
+        # using selection, finds the app in app_mngr and adds to list
+        for app_name in selection:
             for app_mngr in self.app_mngrs:
                 if app_name == app_mngr.app_name:
                     apps.append(app_mngr)
-        return apps, selection
+        return apps
 
     def _format_app_info(self):
         """
         formats app information for the ui
-        :return: a list of formatted app info, a list of corresponding colors for the info
+        :return: a list of the tree information as a list of CheckboxTreeWidgetItems
         """
-        formatted_info = []
-        colors = {}
-
+        tree_info = []
         for app in self.app_mngrs:
             # app not installed
             if app.user_version is None:
-                formatted_info.append("{0}\t\tNot Installed".format(app.app_name))
-                colors[app.app_name] = {"parent": pyani.core.ui.RED}
+                text = [app.app_name, "Not Installed"]
+                color = [pyani.core.ui.RED, pyani.core.ui.RED]
+                row = pyani.core.ui.CheckboxTreeWidgetItem(text, color)
+                tree_info.append({"root": row})
             # if users version is out of date color orange
             elif not app.user_version == app.latest_version:
-                formatted_info.append("{0}\t\t{1}".format(app.app_name, app.user_version))
-                colors[app.app_name] = {"parent": pyani.core.ui.YELLOW}
+                version_text = "{0}     ({1})".format(app.user_version, app.latest_version)
+                text = [app.app_name, version_text, app.features]
+                color = [pyani.core.ui.YELLOW, pyani.core.ui.YELLOW, QtCore.Qt.gray]
+                row = pyani.core.ui.CheckboxTreeWidgetItem(text, color)
+                tree_info.append({"root": row})
             # app up to date
             else:
-                formatted_info.append("{0}\t\t{1}".format(app.app_name, app.user_version))
-                colors[app.app_name] = {"parent": QtCore.Qt.white}
+                text = [app.app_name, app.user_version]
+                color = None
+                row = pyani.core.ui.CheckboxTreeWidgetItem(text, color)
+                tree_info.append({"root": row})
 
-        return formatted_info, colors
+        return tree_info

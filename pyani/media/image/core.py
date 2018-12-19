@@ -4,6 +4,20 @@ from PIL import Image
 from pyani.core import util
 
 
+def convert_image(image_path, convert_format):
+    """
+    change to a different image format - all supported except exrs
+    :param image_path: the image to convert
+    :param convert_format: the format to convert to
+    :return: the converted image
+    """
+    im = Image.open(image_path)
+    image_ext_removed = image_path.split(".")[:-1]
+    new_image = '{0}.{1}'.format(image_ext_removed, convert_format)
+    im.save(new_image)
+    return new_image
+
+
 class AniImageError(Exception):
     """Special exception for Image errors
     """

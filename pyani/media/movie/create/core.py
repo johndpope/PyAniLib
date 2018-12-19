@@ -6,7 +6,7 @@ import re
 import pyani.core
 import traceback
 from pyani.media.image.seq import AniImageSeq
-from pyani.media.image.core import AniImage, AniFrame
+from pyani.media.image.core import AniImage, AniFrame, convert_image
 
 
 class AniShoot:
@@ -223,7 +223,6 @@ class AniShoot:
         pyani.core.util.LOG.debug("FFMPEG ({0}):".format(self.movie_create_app))
         pyani.core.util.LOG.debug("\tin_path, start frame: {0} , {1}".format(in_path, user_frame_start))
         pyani.core.util.LOG.debug("\tout_path: {0}".format(out_path))
-        pyani.core.util.LOG.debug("\texr size info: {0}".format(pyani.core.util.get_exr_size(seq[0].path)))
 
         if movie_quality:
             quality = 0
@@ -289,7 +288,7 @@ class AniShoot:
         try:
             missing_frame_image = self.missing_frame_image[seq[0].ext]
         except KeyError:
-            missing_frame_image = pyani.core.util.convert_image(self.missing_frame_image['png'], seq[0].ext)
+            missing_frame_image = convert_image(self.missing_frame_image['png'], seq[0].ext)
 
         # name of files (up to frame) in temp dir
         image_head_temp = os.path.join(self.tempDir, seq.name + "_" + seq[0].base_name)
@@ -420,7 +419,7 @@ class AniShoot:
         try:
             missing_frame_image = self.missing_frame_image[seq[0].ext]
         except KeyError:
-            missing_frame_image = pyani.core.util.convert_image(self.missing_frame_image['png'], seq[0].ext)
+            missing_frame_image = convert_image(self.missing_frame_image['png'], seq[0].ext)
 
         # if multiple sequence have images with the same name
         image_head_temp = os.path.join(self.tempDir, seq.name + "_" + seq[0].base_name)
