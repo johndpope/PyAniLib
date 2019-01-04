@@ -5,6 +5,7 @@ import tempfile
 import re
 import pyani.core
 import traceback
+from subprocess import Popen
 from pyani.media.image.seq import AniImageSeq
 from pyani.media.image.core import AniImage, AniFrame, convert_image
 
@@ -253,10 +254,7 @@ class AniShoot:
         Plays the created movie in the playback app
         :param movie_list: a list of movie paths
         """
-        formatted_movie_list_for_rv = ' '.join(movie_list)
-        pyani.core.util.LOG.debug("Playback Command: {0} args: {1}"
-                                  .format(self.movie_playback_app, [formatted_movie_list_for_rv]))
-        pyani.core.util.launch_app(self.movie_playback_app, [formatted_movie_list_for_rv])
+        pyani.core.util.launch_app(self.movie_playback_app, movie_list)
 
     def _copy_and_fill_seq2(self, seq, user_frame_start, user_frame_end):
         # TODO : check where need to convert to AniFrames

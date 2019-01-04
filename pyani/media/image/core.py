@@ -162,7 +162,7 @@ class AniImage(str):
         # allow user to pass a AnImage object, or a string path
         self.__path = getattr(image, 'path', None)
         if self.__path is None:
-            self.__path = os.path.abspath(str(image))
+            self.__path = str(image)
 
         # image parts
         self.__dirname, self.__filename = os.path.split(self.__path)
@@ -172,19 +172,22 @@ class AniImage(str):
         self.__parts = util.DIGITS_RE.split(self.name)
         self.__size = (0, 0)
 
-        try:
-            # get image size using OpenExr for exrs and PIL for other image formats. Lighter weight than using cv2 which
-            # causes standalone executable to be 30 megs bigger
-            if OpenEXR.isOpenExrFile(self.path):
+        # get image size using OpenExr for exrs and PIL for other image formats. Lighter weight than using cv2 which
+        # causes standalone executable to be 30 megs bigger
+        if OpenEXR.isOpenExrFile(self.path):
+            try:
                 exr_image = OpenEXR.InputFile(self.path)
                 dw = exr_image.header()['dataWindow']
                 self.__size = (dw.max.x - dw.min.x + 1, dw.max.y - dw.min.y + 1)
                 exr_image.close()
-            else:
+            except (IOError, OSError, ValueError) as e:
+                raise AniImageError('Image: {0} is not a valid exr.'.format(self.path))
+        else:
+            try:
                 with Image.open(self.path) as img:
                     self.__size = img.size
-        except IOError:
-            raise AniImageError('Image: {0} does not exist on disk.'.format(self.path))
+            except (IOError, OSError, ValueError) as e:
+                raise AniImageError('Image: {0} does not exist on disk or is invalid.'.format(self.path))
 
         try:
             # get the frame as a pyani.core. AniFrame object

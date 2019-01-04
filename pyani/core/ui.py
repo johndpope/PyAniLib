@@ -1,4 +1,5 @@
 import os
+import sys
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -9,6 +10,7 @@ os.environ['QT_API'] = 'pyqt'
 from qtpy import QtGui, QtWidgets, QtCore
 # qtpy doesn't have fileDialog, so grab from PyQT4
 from PyQt4.QtGui import QFileDialog
+
 
 GOLD = "#be9117"
 GREEN = "#397d42"
@@ -23,6 +25,164 @@ try:
 except AttributeError:
     def _fromUtf8(s):
         return s
+
+
+class AniQMainWindow(QtWidgets.QMainWindow):
+    """
+    Builds a QMain Window with the given title, icon and optional width and height
+    """
+    def __init__(self, win_title, win_icon, app_mngr, width=600, height=600):
+        super(AniQMainWindow, self).__init__()
+
+        # setup version management
+        self.app_manager = app_mngr
+        self.version = self.app_manager.user_version
+        self.vers_label = QtWidgets.QLabel()
+        self.vers_update = QtWidgets.QLabel()
+
+        # setup title and icon
+        self.win_utils = QtWindowUtil(self)
+        self.setWindowTitle(win_title)
+        self.win_utils.set_win_icon(win_icon)
+
+        # main widget for window
+        self.main_win = QtWidgets.QWidget()
+
+        # pop-up windows
+        self.msg_win = QtMsgWindow(self)
+        self.progress_win = QtMsgWindow(self)
+
+        # version management
+        if not self.app_manager.is_latest():
+            self.vers_update.setText(
+                "<a href=\"#update\"><span style=\" text-decoration: none; color:{0}\">There is a newer version, "
+                "click here to update.</span></a>".format(RED.name())
+            )
+            self.vers_label.setText("Version {0}".format(self.version))
+            self.vers_label.setStyleSheet("color:{0};".format(RED.name()))
+            #
+
+        else:
+            self.vers_update.setText("")
+            self.vers_label.setText("Version {0}".format(self.version))
+
+        # common ui elements
+
+        # set font size and style for title labels
+        self.titles = QtGui.QFont()
+        self.titles.setPointSize(14)
+        self.titles.setBold(True)
+        self.bold_font = QtGui.QFont()
+        self.bold_font.setBold(True)
+        # spacer to use between sections
+        self.v_spacer = QtWidgets.QSpacerItem(0, 35)
+        self.empty_space = QtWidgets.QSpacerItem(1, 1)
+        self.horizontal_spacer = QtWidgets.QSpacerItem(50, 0)
+        self.title_vert_spacer = QtWidgets.QSpacerItem(0, 15)
+
+        # main layout
+        self.main_layout = QtWidgets.QVBoxLayout()
+        # create the layout and add version, plus create signals/slots
+        self._build_ui()
+        # set default window size
+        self.resize(width, height)
+        # center the window
+        center(self)
+
+    def add_layout_to_win(self):
+        """Adds the main layout to the window, called by inheriting classes
+        """
+        # add the layout to the main app widget
+        self.main_win.setLayout(self.main_layout)
+
+    def create_layout(self):
+        """Virtual function, require implementation, call add_layout_to_win at end to add main layout
+        to the main window
+        """
+        raise NotImplementedError()
+
+    def set_slots(self):
+        """Virtual function, require implementation
+        """
+        raise NotImplementedError()
+
+    def dragEnterEvent(self, e):
+        """
+        provides an event which is sent to the target widget as dragging action enters it.
+        :param e: mime data of the event
+        """
+        if e.mimeData().hasUrls:
+            e.accept()
+        else:
+            e.ignore()
+
+    def dragMoveEvent(self, e):
+        """
+        called used when the drag and drop action is in progress.
+        :param e: mime data of the event
+        """
+        if e.mimeData().hasUrls:
+            e.accept()
+        else:
+            e.ignore()
+
+    @staticmethod
+    def drop_event_wrapper(e, func):
+        """
+        wraps functionality of dropEvent(e), generic use lets other windows use drag and drop with
+        whatever function they need. passes list of files to the function func
+        To use implement dropEvent(self, e) in deriving class, and call this function passing the mime data e and
+        function func which takes a list of string filenames. also set call self.setAcceptsDrops(True)
+        :param e: mime data of the event
+        :param func : function to call to process mime data, should accept a list of strings representing filenames
+        """
+        if e.mimeData().hasUrls:
+            e.setDropAction(QtCore.Qt.CopyAction)
+            e.accept()
+            # Workaround for OSx dragging and dropping
+            file_names = []
+            for url in e.mimeData().urls():
+                file_names.append(str(url.toLocalFile()))
+            func(file_names)
+        else:
+            e.ignore()
+
+    def _update_app(self):
+        """Launches external app updater and closes this app
+        """
+        pyani.core.util.launch_app(self.app_manager.updater_app)
+        sys.exit(0)
+
+    def _build_ui(self):
+        """Builds the UI widgets, slots and layout
+        """
+        self._create_layout()
+        self._set_slots()
+        self.setCentralWidget(self.main_win)
+
+    def _create_layout(self):
+        """Adds version widget to main layout
+        """
+        # add version to right side of screen
+        # set font size and style for title labels
+        version_font = QtGui.QFont()
+        version_font.setPointSize(10)
+        version_font.setBold(True)
+
+        self.vers_label.setFont(version_font)
+        h_layout_vers = QtWidgets.QHBoxLayout()
+        h_layout_vers.addStretch(1)
+        h_layout_vers.addWidget(self.vers_label)
+        self.main_layout.addLayout(h_layout_vers)
+        h_layout_vers_update = QtWidgets.QHBoxLayout()
+        h_layout_vers_update.addStretch(1)
+        h_layout_vers_update.addWidget(self.vers_update)
+        self.main_layout.addLayout(h_layout_vers_update)
+
+    def _set_slots(self):
+        """Set the link clicked signal for version update text
+        """
+        self.vers_update.linkActivated.connect(self._update_app)
 
 
 class FileDialog(QFileDialog):
@@ -263,7 +423,7 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
         """
         super(CheckboxTreeWidget, self).__init__()
         # spacing between columns
-        self.__col_space = 150
+        self.__col_space = 50
         self.build_checkbox_tree(tree_items, columns, expand)
 
     def build_checkbox_tree(self, tree_items, columns, expand=True):
@@ -285,12 +445,6 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
                 root_item = tree_item["root"]
                 # build main column rows
                 for col_index in range(0, root_item.col_count()):
-                    # resize to the text, then pad to get a good width
-                    self.resizeColumnToContents(col_index)
-                    if col_index < root_item.col_count()-1:
-                        self.setColumnWidth(col_index, self.columnWidth(col_index) + self.__col_space)
-                    else:
-                        self.setColumnWidth(col_index, self.columnWidth(col_index))
                     parent.setTextColor(col_index, root_item.color(col_index))
                     parent.setText(col_index, root_item.text(col_index))
                 parent.setFlags(parent.flags() | QtCore.Qt.ItemIsTristate | QtCore.Qt.ItemIsUserCheckable)
@@ -301,13 +455,6 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
                         child = QtWidgets.QTreeWidgetItem(parent)
                         child.setFlags(child.flags() | QtCore.Qt.ItemIsUserCheckable)
                         for col_index in range(0, child_item.col_count()):
-                            # resize to the text, then pad to get a good width
-                            self.resizeColumnToContents(col_index)
-                            # don't add padding on last column, not needed and just adds horizontal scroll bar
-                            if col_index < child_item.col_count()-1:
-                                self.setColumnWidth(col_index, self.columnWidth(col_index) + self.__col_space)
-                            else:
-                                self.setColumnWidth(col_index, self.columnWidth(col_index))
                             child.setTextColor(col_index, child_item.color(col_index))
                             child.setText(col_index, child_item.text(col_index))
                         child.setCheckState(0, QtCore.Qt.Unchecked)
@@ -315,6 +462,10 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
                     parent.setCheckState(0, QtCore.Qt.Unchecked)
             if expand:
                 self.expandAll()
+            # resize columns to fit contents better, but skip last column
+            for col in range(0, columns-1):
+                self.resizeColumnToContents(col)
+                self.setColumnWidth(col, self.columnWidth(col) + self.__col_space)
 
     def get_tree_checked(self):
         """
@@ -325,7 +476,7 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
         iterator = QtWidgets.QTreeWidgetItemIterator(self, QtWidgets.QTreeWidgetItemIterator.Checked)
         while iterator.value():
             item = iterator.value()
-            checked.append(item.text(0))
+            checked.append(str(item.text(0)))
             iterator += 1
         return checked
 

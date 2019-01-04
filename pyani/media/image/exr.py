@@ -1,5 +1,4 @@
 import os
-import sys
 import OpenEXR
 import Imath
 import array
@@ -7,9 +6,10 @@ from PIL import Image
 import pyani.core.util
 import pyani.core.ui
 import pyani.media.image.core
+import pyani.core.appmanager
 from pyani.core.ui import FileDialog
 import multiprocessing
-from pyani.core.appmanager import AniAppMngr
+
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -203,32 +203,21 @@ def load_exr_layer_mp(image_path, layer_name, channel_names, size, color_transfo
     return_dict[layer_name] = Image.merge("RGB", rgb8)
 
 
-class AniExrViewerGui(QtWidgets.QMainWindow):
+class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
     """
     Class for a gui that displays exrs. Provides: layer/channel viewing, drag and drop for file load.
     """
     def __init__(self):
-        super(AniExrViewerGui, self).__init__()
+        self.app_name = "PyExrViewer"
+        self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
+        # pass win title, icon path, app manager, width and height
+        super(AniExrViewerGui, self).__init__("Py Exr Manager", "Resources\\pyexrviewer.png", self.app_mngr, 1920, 1000)
 
         # class variables
         self.exr_image = None
-        self.win_utils = pyani.core.ui.QtWindowUtil(self)
         self.default_img_width = 1860
         self.default_img_height = 1020
-        self.msg_win = pyani.core.ui.QtMsgWindow(self)
-        app_manager = AniAppMngr("PyExrViewer")
-        self.version = app_manager.user_version
 
-        # setup window
-        self.setWindowTitle('Py Exr Viewer')
-        self.win_utils.set_win_icon("Resources\\pyexrviewer.png")
-        # main widget for window
-        self.main_win = QtWidgets.QWidget()
-        # main layout
-        self.stacked_layout_for_windows = QtWidgets.QStackedLayout()
-        # sub layouts
-        self.main_app_widget = QtWidgets.QWidget()
-        self.install_app_widget = QtWidgets.QWidget()
         # main ui elements - styling set in the create ui functions
         self.btn_next = QtWidgets.QPushButton("Next Layer")
         self.btn_prev = QtWidgets.QPushButton("Prev Layer")
@@ -237,63 +226,19 @@ class AniExrViewerGui(QtWidgets.QMainWindow):
         self.btn_image_select = QtWidgets.QPushButton("Select Image")
         self.image_file_path = QtWidgets.QLineEdit("")
         self.scroll = QtWidgets.QScrollArea()
+
         # set to allow drag and drop
         self.setAcceptDrops(True)
 
-        # build the layout and set signal/slots
-        self.build_ui()
         # keyboard shortcuts
         self.set_keyboard_shortcuts()
 
-        # finalize window
-        self.resize(1920, 1200)
-        # center the window
-        pyani.core.ui.center(self)
-
-        # version management
-        if not app_manager.is_latest():
-            update = self.msg_win.show_question_msg("Version Update", app_manager.latest_version_info())
-            if update:
-                pyani.core.util.launch_app(app_manager.updater_app)
-                sys.exit(0)
-
-    def build_ui(self):
-        """Builds the UI widgets, slots and layout
-        """
-        self.create_ui_main()
-
+        self.create_layout()
         self.set_slots()
 
-        # add sub windows / layouts to stack layout
-        self.stacked_layout_for_windows.addWidget(self.main_app_widget)
-        # set main windows layout as the stacked layout
-        self.main_win.setLayout(self.stacked_layout_for_windows)
-        # set main window
-        self.setCentralWidget(self.main_win)
-
-    def create_ui_main(self):
+    def create_layout(self):
         """Creates all the widgets used by the UI and build layout
         """
-        # set font size and style for title labels
-        titles = QtGui.QFont()
-        titles.setPointSize(14)
-        titles.setBold(True)
-
-        # spacer to use between sections
-        v_spacer = QtWidgets.QSpacerItem(0, 15)
-        empty_space = QtWidgets.QSpacerItem(1, 1)
-
-        # begin layout
-        main_layout = QtWidgets.QVBoxLayout()
-
-        # add version to right side of screen
-        h_layout_vers = QtWidgets.QHBoxLayout()
-        h_layout_vers.addStretch(1)
-        vers_label = QtWidgets.QLabel("Version {0}".format(self.version))
-        h_layout_vers.addWidget(vers_label)
-        main_layout.addLayout(h_layout_vers)
-        main_layout.addItem(v_spacer)
-
         # HEADER
         # |    label    | file path --|-->       |     btn     |      space       |
         g_layout_header = QtWidgets.QGridLayout()
@@ -304,11 +249,11 @@ class AniExrViewerGui(QtWidgets.QMainWindow):
         self.btn_image_select.setStyleSheet("background-color:{0};".format(pyani.core.ui.GREEN))
         self.btn_image_select.setMinimumSize(150, 30)
         g_layout_header.addWidget(self.btn_image_select, 0, 2)
-        g_layout_header.addItem(empty_space, 0, 3)
+        g_layout_header.addItem(self.empty_space, 0, 3)
         g_layout_header.setColumnStretch(1, 2)
         g_layout_header.setColumnStretch(3, 2)
-        main_layout.addLayout(g_layout_header)
-        main_layout.addItem(v_spacer)
+        self.main_layout.addLayout(g_layout_header)
+        self.main_layout.addItem(self.v_spacer)
 
         # OPTIONS
         # |  channel list  |   space   |   prev      |   next     |   space    |
@@ -317,26 +262,26 @@ class AniExrViewerGui(QtWidgets.QMainWindow):
         layer_list_label = QtWidgets.QLabel("Exr Layers:")
         g_layout_options.addWidget(layer_list_label, 0, 0)
         g_layout_options.addWidget(self.layer_list_menu, 0, 1)
-        g_layout_header.addItem(empty_space, 0, 2)
+        g_layout_header.addItem(self.empty_space, 0, 2)
         self.btn_prev.setMinimumSize(150, 30)
         g_layout_options.addWidget(self.btn_prev, 0, 3)
         self.btn_next.setMinimumSize(150, 30)
         g_layout_options.addWidget(self.btn_next, 0, 4)
-        g_layout_header.addItem(empty_space, 0, 5)
+        g_layout_header.addItem(self.empty_space, 0, 5)
         g_layout_options.setColumnStretch(1, 2)
         g_layout_options.setColumnStretch(2, 2)
         g_layout_options.setColumnStretch(5, 4)
-        main_layout.addLayout(g_layout_options)
-        main_layout.addItem(v_spacer)
+        self.main_layout.addLayout(g_layout_options)
+        self.main_layout.addItem(self.v_spacer)
 
         # IMAGE
         self.label_image_display.setFixedSize(self.default_img_width, self.default_img_height)
         self.scroll.setWidget(self.label_image_display)
         self.label_image_display.setAlignment(QtCore.Qt.AlignCenter)
-        main_layout.addWidget(self.scroll)
+        self.main_layout.addWidget(self.scroll)
 
         # add the layout to the main app widget
-        self.main_app_widget.setLayout(main_layout)
+        self.add_layout_to_win()
 
     def set_slots(self):
         """Create the slots/actions that UI buttons / etc... do
@@ -356,35 +301,14 @@ class AniExrViewerGui(QtWidgets.QMainWindow):
         prev_img_shortcut.setKey(QtCore.Qt.Key_Left)
         self.main_win.connect(prev_img_shortcut, QtCore.SIGNAL("activated()"), self.prev_layer_in_menu)
 
-    def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls:
-            e.accept()
-        else:
-            e.ignore()
-
-    def dragMoveEvent(self, e):
-        if e.mimeData().hasUrls:
-            e.accept()
-        else:
-            e.ignore()
-
     def dropEvent(self, e):
         """
-        Drop files directly onto the widget
-        File locations are stored in fname
-        :param e:
-        :return:
+        called when the drop is completed when dragging and dropping,
+        calls wrapper which gets mime data and calls self._load_image passing mime data to it
+        generic use lets other windows use drag and drop with whatever function they need
+        :param e: event mime data
         """
-        if e.mimeData().hasUrls:
-            e.setDropAction(QtCore.Qt.CopyAction)
-            e.accept()
-            # Workaround for OSx dragging and dropping
-            for url in e.mimeData().urls():
-                fname = str(url.toLocalFile())
-
-            self._load_image(fname)
-        else:
-            e.ignore()
+        self.drop_event_wrapper(e, self._load_image)
 
     def reset_ui(self):
         """Resets the ui elements when a new image is loaded
@@ -442,12 +366,13 @@ class AniExrViewerGui(QtWidgets.QMainWindow):
         for layer in self.exr_image.layer_names:
             self.layer_list_menu.addItem(layer)
 
-    def _load_image(self, exr_img_path):
+    def _load_image(self, file_names):
         """
         Load the exr image and its layers
-        :param exr_img_path: the exr image path
-        :return: 
+        :param file_names: the exr image path(s)
         """
+        exr_img_path = file_names[-1]
+
         # reset any ui elements
         self.reset_ui()
         # load image

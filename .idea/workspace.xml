@@ -12,10 +12,12 @@
     <session id="1986163116">
       <usages-collector id="statistics.lifecycle.project">
         <counts>
-          <entry key="project.closed" value="6" />
-          <entry key="project.open.time.0" value="4" />
-          <entry key="project.open.time.3" value="3" />
-          <entry key="project.opened" value="7" />
+          <entry key="project.closed" value="14" />
+          <entry key="project.open.time.0" value="10" />
+          <entry key="project.open.time.15" value="1" />
+          <entry key="project.open.time.22" value="1" />
+          <entry key="project.open.time.3" value="4" />
+          <entry key="project.opened" value="16" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.extensions.open">
@@ -24,31 +26,37 @@
           <entry key="METADATA" value="1" />
           <entry key="RECORD" value="1" />
           <entry key="WHEEL" value="1" />
-          <entry key="json" value="19" />
-          <entry key="py" value="105" />
+          <entry key="json" value="27" />
+          <entry key="md" value="4" />
+          <entry key="nk" value="3" />
+          <entry key="py" value="156" />
           <entry key="txt" value="1" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.types.open">
         <counts>
-          <entry key="JSON" value="19" />
-          <entry key="PLAIN_TEXT" value="5" />
-          <entry key="Python" value="103" />
+          <entry key="JSON" value="27" />
+          <entry key="Markdown" value="4" />
+          <entry key="PLAIN_TEXT" value="8" />
+          <entry key="Python" value="154" />
           <entry key="Scratch" value="2" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.extensions.edit">
         <counts>
-          <entry key="dummy" value="41" />
-          <entry key="json" value="556" />
-          <entry key="py" value="61394" />
+          <entry key="dummy" value="47" />
+          <entry key="json" value="737" />
+          <entry key="md" value="2517" />
+          <entry key="nk" value="2" />
+          <entry key="py" value="72761" />
         </counts>
       </usages-collector>
       <usages-collector id="statistics.file.types.edit">
         <counts>
-          <entry key="JSON" value="556" />
-          <entry key="PLAIN_TEXT" value="41" />
-          <entry key="Python" value="61393" />
+          <entry key="JSON" value="737" />
+          <entry key="Markdown" value="2517" />
+          <entry key="PLAIN_TEXT" value="49" />
+          <entry key="Python" value="72760" />
           <entry key="Scratch" value="1" />
         </counts>
       </usages-collector>
@@ -57,60 +65,25 @@
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
       <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/pyani/nuke/temp.py">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="510">
-              <caret line="135" selection-start-line="135" selection-end-line="139" />
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/pyani/nuke/mngr.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="289">
-              <caret line="17" selection-start-line="17" selection-end-line="17" />
+            <state relative-caret-position="584">
+              <caret line="395" column="19" selection-start-line="395" selection-start-column="19" selection-end-line="395" selection-end-column="19" />
               <folding>
                 <element signature="e#0#9#0" expanded="true" />
-                <marker date="1545246636070" expanded="true" signature="1167:1884" ph="..." />
-                <marker date="1545246636070" expanded="true" signature="1167:1888" ph="..." />
-                <marker date="1545246636070" expanded="true" signature="11943:11949" ph="..." />
-                <marker date="1545246636070" expanded="true" signature="12448:12454" ph="..." />
-                <marker date="1545246636070" expanded="true" signature="17242:17320" ph="..." />
-                <marker date="1545246636070" expanded="true" signature="17320:17325" ph="..." />
-                <marker date="1545246636070" expanded="true" signature="17770:21492" ph="..." />
-                <marker date="1545246636070" expanded="true" signature="23679:24268" ph="..." />
-                <marker date="1545246636070" expanded="true" signature="27756:27761" ph="..." />
-                <marker date="1545246636070" expanded="true" signature="28436:28442" ph="..." />
-              </folding>
-            </state>
-          </provider>
-        </entry>
-      </file>
-      <file pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/pyani/core/toolsinstall.py">
-          <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="332">
-              <caret line="98" column="55" selection-start-line="98" selection-start-column="42" selection-end-line="98" selection-end-column="55" />
-              <folding>
-                <element signature="e#468#490#0" expanded="true" />
+                <marker date="1546562175451" expanded="true" signature="17303:18602" ph="..." />
+                <marker date="1546562175451" expanded="true" signature="21339:21348" ph="..." />
+                <marker date="1546562175451" expanded="true" signature="21740:21749" ph="..." />
               </folding>
             </state>
           </provider>
         </entry>
       </file>
       <file pinned="false" current-in-tab="true">
-        <entry file="file://$PROJECT_DIR$/pyani/core/util.py">
+        <entry file="file://$PROJECT_DIR$/pyani/core/ui.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="2431">
-              <caret line="176" column="37" lean-forward="true" selection-start-line="176" selection-start-column="37" selection-end-line="176" selection-end-column="37" />
-              <folding>
-                <element signature="e#0#9#0" expanded="true" />
-                <marker date="1545246060383" expanded="true" signature="5395:5401" ph="..." />
-                <marker date="1545246060383" expanded="true" signature="5444:7512" ph="..." />
-                <marker date="1545246060383" expanded="true" signature="10077:10079" ph="..." />
-                <marker date="1545246060383" expanded="true" signature="10972:11438" ph="..." />
-              </folding>
+            <state relative-caret-position="272">
+              <caret line="478" column="44" selection-start-line="478" selection-start-column="44" selection-end-line="478" selection-end-column="44" />
             </state>
           </provider>
         </entry>
@@ -134,9 +107,17 @@
       <find>make_dir</find>
       <find>get_exr_size</find>
       <find>convert_image</find>
+      <find>play_mo</find>
+      <find>scripts</find>
+      <find>create_sequences</find>
+      <find>RED</find>
+      <find>getAll</find>
+      <find>getAllNodesOfType</find>
+      <find>seq_select_menu</find>
     </findStrings>
     <replaceStrings>
       <replace>seq</replace>
+      <replace>report.append(&quot;&lt;font color={0}&gt;{1}&lt;/font&gt;&quot;.format(pyani.core.ui.RED.name(), error))</replace>
     </replaceStrings>
   </component>
   <component name="Git.Settings">
@@ -148,7 +129,6 @@
         <option value="$PROJECT_DIR$/pyani/__init__.py" />
         <option value="$PROJECT_DIR$/pyani/nuke/setup.py" />
         <option value="$PROJECT_DIR$/setup.py" />
-        <option value="$PROJECT_DIR$/pyani/nuke/temp.py" />
         <option value="$PROJECT_DIR$/pyani/media/movie/create/cli.py" />
         <option value="$PROJECT_DIR$/pyani/media/movie/create/gui.py" />
         <option value="Z:/LongGong/PyAniTools/app_data/PyImageViewer/app_data.json" />
@@ -160,28 +140,34 @@
         <option value="$PROJECT_DIR$/pyani/nuke/temp3.py" />
         <option value="$PROJECT_DIR$/pyani/media/image/exr_viewer.py" />
         <option value="$PROJECT_DIR$/pyani/media/image/exr.py" />
-        <option value="$PROJECT_DIR$/pyani/media/movie/create/ui.py" />
-        <option value="Z:/LongGong/lib/comp/plugins/plugins.json" />
-        <option value="Z:/LongGong/lib/comp/templates/templates.json" />
         <option value="Z:/LongGong/lib/comp/scripts/scripts.json" />
-        <option value="$PROJECT_DIR$/pyani/core/ui.py" />
         <option value="C:/PyAniTools/installed/PyExrViewer/app_pref.json" />
-        <option value="$PROJECT_DIR$/pyani/core/appmanager.py" />
-        <option value="$PROJECT_DIR$/pyani/nuke/session.py" />
+        <option value="$PROJECT_DIR$/pyani/nuke/temp.py" />
+        <option value="$PROJECT_DIR$/../PyAniTools/Doc/PyAniTools.md" />
+        <option value="$PROJECT_DIR$/../PyAniTools/Doc/PyExrViewer.md" />
+        <option value="$PROJECT_DIR$/../PyAniTools/Doc/PyShoot.md" />
+        <option value="$PROJECT_DIR$/pyani/media/movie/create/core.py" />
+        <option value="$PROJECT_DIR$/pyani/media/image/core.py" />
+        <option value="$PROJECT_DIR$/pyani/media/movie/create/ui.py" />
         <option value="$PROJECT_DIR$/pyani/core/toolsinstall.py" />
         <option value="$USER_HOME$/.nuke/init.py" />
-        <option value="$PROJECT_DIR$/pyani/media/image/core.py" />
+        <option value="$PROJECT_DIR$/pyani/core/appmanager.py" />
+        <option value="Z:/LongGong/lib/comp/plugins/cleanup.nk" />
+        <option value="Z:/LongGong/lib/comp/plugins/plugins.json" />
+        <option value="Z:/LongGong/lib/comp/templates/templates.json" />
+        <option value="$USER_HOME$/.nuke/pyanitools/pyani/nuke/session.py" />
+        <option value="$PROJECT_DIR$/pyani/nuke/session.py" />
         <option value="$PROJECT_DIR$/pyani/core/util.py" />
-        <option value="$PROJECT_DIR$/pyani/media/movie/create/core.py" />
         <option value="$PROJECT_DIR$/pyani/nuke/mngr.py" />
+        <option value="$PROJECT_DIR$/pyani/core/ui.py" />
       </list>
     </option>
   </component>
   <component name="ProjectFrameBounds" extendedState="6">
-    <option name="x" value="-8" />
+    <option name="x" value="2552" />
     <option name="y" value="-8" />
-    <option name="width" value="2576" />
-    <option name="height" value="1416" />
+    <option name="width" value="1936" />
+    <option name="height" value="1176" />
   </component>
   <component name="ProjectView">
     <navigator proportions="" version="1">
@@ -265,14 +251,14 @@
   <component name="PropertiesComponent">
     <property name="SearchEverywhereHistoryKey" value="&#9;FILE&#9;file://C:/Users/Patrick/PycharmProjects/PyAniLib/pyani/nuke/temp.py" />
     <property name="com.intellij.ide.scratch.LRUPopupBuilder$1/New Scratch File" value="Python" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$/../PyAniTools/PyAppManager" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$/../PyAniTools/PyNukeMngr" />
   </component>
   <component name="RecentsManager">
-    <key name="CopyFile.RECENT_KEYS">
-      <recent name="C:\Users\Patrick\PycharmProjects\PyAniLib\pyani\media\image" />
-    </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\Patrick\PycharmProjects\PyAniLib" />
+    </key>
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\Patrick\PycharmProjects\PyAniLib\pyani\media\image" />
     </key>
   </component>
   <component name="RunDashboard">
@@ -287,7 +273,7 @@
       </list>
     </option>
   </component>
-  <component name="RunManager" selected="Python.toolsinstall">
+  <component name="RunManager" selected="Python.util">
     <configuration name="appmanager" type="PythonConfigurationType" factoryName="Python" temporary="true">
       <module name="PyAniLib" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -301,27 +287,6 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/pyani/core/appmanager.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="scratch_4" type="PythonConfigurationType" factoryName="Python" temporary="true">
-      <module name="PyAniLib" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$APPLICATION_CONFIG_DIR$/scratches" />
-      <option name="IS_MODULE_SDK" value="false" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$APPLICATION_CONFIG_DIR$/scratches/scratch_4.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -393,20 +358,41 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <configuration name="util" type="PythonConfigurationType" factoryName="Python" temporary="true">
+      <module name="PyAniLib" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/pyani/core" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/pyani/core/util.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <list>
       <item itemvalue="Python.test" />
-      <item itemvalue="Python.scratch_4" />
       <item itemvalue="Python.temp3" />
       <item itemvalue="Python.toolsinstall" />
       <item itemvalue="Python.appmanager" />
+      <item itemvalue="Python.util" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.util" />
         <item itemvalue="Python.toolsinstall" />
         <item itemvalue="Python.appmanager" />
         <item itemvalue="Python.temp3" />
         <item itemvalue="Python.test" />
-        <item itemvalue="Python.scratch_4" />
       </list>
     </recent_temporary>
   </component>
@@ -424,15 +410,15 @@
     <servers />
   </component>
   <component name="ToolWindowManager">
-    <frame x="-8" y="-8" width="2576" height="1416" extended-state="6" />
+    <frame x="2552" y="-8" width="1936" height="1176" extended-state="6" />
     <editor active="true" />
     <layout>
       <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.184375" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="Favorites" order="2" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
-      <window_info anchor="bottom" id="Find" order="1" visible="true" weight="0.26687115" />
-      <window_info anchor="bottom" id="Run" order="2" weight="0.40471697" />
+      <window_info anchor="bottom" id="Find" order="1" visible="true" weight="0.21702453" />
+      <window_info anchor="bottom" id="Run" order="2" weight="0.40413535" />
       <window_info anchor="bottom" id="Debug" order="3" weight="0.4" />
       <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
       <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
@@ -445,6 +431,25 @@
       <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
       <window_info anchor="right" content_ui="combo" id="Hierarchy" order="2" weight="0.25" />
     </layout>
+    <layout-to-restore>
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.24583334" />
+      <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
+      <window_info id="Favorites" order="2" side_tool="true" />
+      <window_info anchor="bottom" id="Message" order="0" />
+      <window_info anchor="bottom" id="Find" order="1" weight="0.26687115" />
+      <window_info anchor="bottom" id="Run" order="2" weight="0.40471697" />
+      <window_info anchor="bottom" id="Debug" order="3" weight="0.4" />
+      <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
+      <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
+      <window_info anchor="bottom" id="TODO" order="6" />
+      <window_info anchor="bottom" id="Version Control" order="7" show_stripe_button="false" />
+      <window_info anchor="bottom" id="Terminal" order="8" />
+      <window_info anchor="bottom" id="Event Log" order="9" side_tool="true" />
+      <window_info anchor="bottom" id="Python Console" order="10" />
+      <window_info anchor="right" id="Commander" internal_type="SLIDING" order="0" type="SLIDING" weight="0.4" />
+      <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
+      <window_info anchor="right" content_ui="combo" id="Hierarchy" order="2" weight="0.25" />
+    </layout-to-restore>
   </component>
   <component name="VcsContentAnnotationSettings">
     <option name="myLimit" value="2678400000" />
@@ -487,110 +492,17 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/nuke/temp3.py">
-      <provider selected="true" editor-type-id="text-editor" />
-    </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/appmanagerupdate.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="408">
-          <caret line="24" column="20" lean-forward="true" selection-start-line="24" selection-start-column="20" selection-end-line="24" selection-end-column="58" />
-          <folding>
-            <element signature="e#169#213#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/media/movie/create/ui.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="134">
-          <caret line="494" column="46" selection-start-line="494" selection-start-column="36" selection-end-line="494" selection-end-column="46" />
-          <folding>
-            <element signature="e#68#77#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/media/image/exr.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="442">
-          <caret line="460" selection-start-line="460" selection-end-line="460" selection-end-column="35" />
-          <folding>
-            <element signature="e#0#9#0" expanded="true" />
-            <marker date="1544814636381" expanded="true" signature="9266:9267" ph="..." />
-            <marker date="1544814636381" expanded="true" signature="9267:9272" ph="..." />
-          </folding>
-        </state>
-      </provider>
-    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/nuke/temp3.py" />
+    <entry file="file://$PROJECT_DIR$/pyani/core/appmanagerupdate.py" />
     <entry file="file://Z:/LongGong/lib/sequences/Seq180/comp/plugins/plugins.json">
       <provider selected="true" editor-type-id="text-editor" />
     </entry>
-    <entry file="file://Z:/LongGong/lib/comp/plugins/plugins.json">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="34">
-          <caret line="2" column="19" selection-start-line="2" selection-start-column="19" selection-end-line="2" selection-end-column="19" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://Z:/LongGong/lib/comp/templates/templates.json">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="17">
-          <caret line="1" column="17" selection-start-line="1" selection-start-column="17" selection-end-line="1" selection-end-column="17" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://Z:/LongGong/lib/comp/scripts/scripts.json">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="17">
-          <caret line="1" column="11" selection-start-line="1" selection-start-column="11" selection-end-line="1" selection-end-column="11" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/../PyAniTools/Dist/PyAniTools/app_data/Shared/app_list.json">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="17">
-          <caret line="1" column="13" lean-forward="true" selection-start-line="1" selection-start-column="13" selection-end-line="1" selection-end-column="13" />
-        </state>
-      </provider>
-    </entry>
+    <entry file="file://Z:/LongGong/lib/comp/scripts/scripts.json" />
+    <entry file="file://$PROJECT_DIR$/../PyAniTools/Dist/PyAniTools/app_data/Shared/app_list.json" />
     <entry file="file://C:/PyAniTools/installed/PyExrViewer/app_pref.json">
       <provider selected="true" editor-type-id="text-editor">
         <state>
           <caret column="18" selection-start-column="18" selection-end-column="18" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/appmanager.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="536">
-          <caret line="260" column="11" selection-start-line="260" selection-start-column="11" selection-end-line="260" selection-end-column="11" />
-          <folding>
-            <element signature="e#0#14#0" expanded="true" />
-            <marker date="1545175030969" expanded="true" signature="3148:3154" ph="..." />
-            <marker date="1545175030969" expanded="true" signature="6144:6150" ph="..." />
-            <marker date="1545175030969" expanded="true" signature="6688:6693" ph="..." />
-            <marker date="1545175030969" expanded="true" signature="10739:10745" ph="..." />
-            <marker date="1545175030969" expanded="true" signature="11952:11957" ph="..." />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/ui.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="372">
-          <caret line="276" column="45" lean-forward="true" selection-start-line="276" selection-start-column="45" selection-end-line="276" selection-end-column="45" />
-          <folding>
-            <marker date="1545174551014" expanded="true" signature="5027:5243" ph="..." />
-            <marker date="1545174551014" expanded="true" signature="5794:5830" ph="..." />
-            <marker date="1545174551014" expanded="true" signature="6120:6121" ph="..." />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$USER_HOME$/.nuke/init.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="153">
-          <caret line="9" column="34" lean-forward="true" selection-start-line="9" selection-start-column="34" selection-end-line="9" selection-end-column="34" />
         </state>
       </provider>
     </entry>
@@ -609,81 +521,149 @@
     <entry file="file://C:/Python27/Lib/site-packages/OpenEXR-1.3.2.dist-info/INSTALLER">
       <provider selected="true" editor-type-id="text-editor" />
     </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/nuke/session.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="51">
-          <caret line="3" lean-forward="true" selection-start-line="3" selection-end-line="3" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/toolsinstall.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="332">
-          <caret line="98" column="55" selection-start-line="98" selection-start-column="42" selection-end-line="98" selection-end-column="55" />
-          <folding>
-            <element signature="e#468#490#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/nuke/temp.py" />
+    <entry file="file://$PROJECT_DIR$/PyAniTools.md" />
+    <entry file="file://$PROJECT_DIR$/../PyAniTools/Doc/PyAniTools.md" />
+    <entry file="file://$PROJECT_DIR$/../PyAniTools/Doc/PyExrViewer.md" />
+    <entry file="file://$PROJECT_DIR$/../PyAniTools/Doc/PyShoot.md" />
     <entry file="file://$PROJECT_DIR$/pyani/media/movie/create/core.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="17">
-          <caret line="29" column="31" selection-start-line="29" selection-start-column="31" selection-end-line="29" selection-end-column="31" />
-          <folding>
-            <element signature="e#0#13#0" expanded="true" />
-          </folding>
+        <state relative-caret-position="430">
+          <caret line="90" lean-forward="true" selection-start-line="90" selection-end-line="90" />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/pyani/media/image/core.py">
       <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="510">
+          <caret line="177" column="16" lean-forward="true" selection-start-line="177" selection-start-column="16" selection-end-line="177" selection-end-column="16" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/../PyAniTools/Dist/source/PyAniTools/install_scripts/menu.py">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://$PROJECT_DIR$/../PyAniTools/Dist/source/PyAniTools/install_scripts/init.py">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/media/movie/create/ui.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="393">
+          <caret line="172" selection-start-line="172" selection-end-line="172" selection-end-column="57" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$USER_HOME$/.nuke/init.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="170">
+          <caret line="10" lean-forward="true" selection-start-line="10" selection-end-line="10" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://Z:/LongGong/lib/comp/plugins/cleanup.nk" />
+    <entry file="file://$PROJECT_DIR$/pyani/core/appmanager.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1713">
+          <caret line="295" column="30" lean-forward="true" selection-start-line="295" selection-start-column="30" selection-end-line="295" selection-end-column="30" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://Z:/LongGong/lib/sequences/Seq180/comp/templates/templates.json">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://Z:/LongGong/lib/sequences/Seq170/comp/templates/templates.json">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://Z:/LongGong/lib/comp/plugins/plugins.json">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="51">
+          <caret line="3" column="56" selection-start-line="3" selection-start-column="56" selection-end-line="3" selection-end-column="56" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://Z:/LongGong/lib/comp/templates/templates.json">
+      <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="102">
-          <caret line="6" column="17" selection-start-line="6" selection-start-column="4" selection-end-line="6" selection-end-column="17" />
+          <caret line="6" column="4" lean-forward="true" selection-end-line="6" selection-end-column="4" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$USER_HOME$/.nuke/pyanitools/menu.py">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://Z:/LongGong/lib/sequences/Seq180/comp/templates/shot_master.nk">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="124">
+          <caret line="9" column="19" selection-start-line="9" selection-start-column="19" selection-end-line="9" selection-end-column="19" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://Z:/LongGong/sequences/Seq180/Shot190/Composite/work/shot_master.nk">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="119">
+          <caret line="7" column="49" selection-start-line="7" selection-start-column="49" selection-end-line="7" selection-end-column="49" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$USER_HOME$/.nuke/pyanitools/init.py">
+      <provider selected="true" editor-type-id="text-editor" />
+    </entry>
+    <entry file="file://$USER_HOME$/.nuke/pyanitools/pyani/nuke/session.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="232">
+          <caret line="270" column="27" selection-end-line="368" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/nuke/session.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1657">
+          <caret line="368" lean-forward="true" selection-start-line="368" selection-end-line="368" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/media/image/exr.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="7055">
+          <caret line="415" selection-start-line="415" selection-end-line="415" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/core/toolsinstall.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="-2635">
+          <caret line="18" selection-start-line="18" selection-end-line="18" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/core/util.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1159">
+          <caret line="108" column="39" selection-start-line="108" selection-start-column="39" selection-end-line="108" selection-end-column="39" />
           <folding>
             <element signature="e#0#9#0" expanded="true" />
+            <marker date="1546561617826" expanded="true" signature="6672:6677" ph="..." />
           </folding>
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/pyani/nuke/mngr.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="289">
-          <caret line="17" selection-start-line="17" selection-end-line="17" />
+        <state relative-caret-position="584">
+          <caret line="395" column="19" selection-start-line="395" selection-start-column="19" selection-end-line="395" selection-end-column="19" />
           <folding>
             <element signature="e#0#9#0" expanded="true" />
-            <marker date="1545246636070" expanded="true" signature="1167:1884" ph="..." />
-            <marker date="1545246636070" expanded="true" signature="1167:1888" ph="..." />
-            <marker date="1545246636070" expanded="true" signature="11943:11949" ph="..." />
-            <marker date="1545246636070" expanded="true" signature="12448:12454" ph="..." />
-            <marker date="1545246636070" expanded="true" signature="17242:17320" ph="..." />
-            <marker date="1545246636070" expanded="true" signature="17320:17325" ph="..." />
-            <marker date="1545246636070" expanded="true" signature="17770:21492" ph="..." />
-            <marker date="1545246636070" expanded="true" signature="23679:24268" ph="..." />
-            <marker date="1545246636070" expanded="true" signature="27756:27761" ph="..." />
-            <marker date="1545246636070" expanded="true" signature="28436:28442" ph="..." />
+            <marker date="1546562175451" expanded="true" signature="17303:18602" ph="..." />
+            <marker date="1546562175451" expanded="true" signature="21339:21348" ph="..." />
+            <marker date="1546562175451" expanded="true" signature="21740:21749" ph="..." />
           </folding>
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/nuke/temp.py">
+    <entry file="file://$PROJECT_DIR$/pyani/core/ui.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="510">
-          <caret line="135" selection-start-line="135" selection-end-line="139" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/util.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="2431">
-          <caret line="176" column="37" lean-forward="true" selection-start-line="176" selection-start-column="37" selection-end-line="176" selection-end-column="37" />
-          <folding>
-            <element signature="e#0#9#0" expanded="true" />
-            <marker date="1545246060383" expanded="true" signature="5395:5401" ph="..." />
-            <marker date="1545246060383" expanded="true" signature="5444:7512" ph="..." />
-            <marker date="1545246060383" expanded="true" signature="10077:10079" ph="..." />
-            <marker date="1545246060383" expanded="true" signature="10972:11438" ph="..." />
-          </folding>
+        <state relative-caret-position="272">
+          <caret line="478" column="44" selection-start-line="478" selection-start-column="44" selection-end-line="478" selection-end-column="44" />
         </state>
       </provider>
     </entry>

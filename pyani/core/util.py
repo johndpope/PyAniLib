@@ -4,7 +4,7 @@ import os
 import logging
 import json
 from scandir import scandir
-from subprocess import Popen
+from subprocess import Popen, PIPE
 
 # regex for matching numerical characters
 DIGITS_RE = re.compile(r'\d+')
@@ -28,86 +28,58 @@ class AniVars(object):
     '''
 
     def __init__(self, shot_path=None):
+        # not dependent on seq or shot
         self.desktop = os.path.expanduser("~/Desktop")
         self.seq_shot_list = self._get_sequences_and_shots("C:\\PyAniTools\\app_data\\Shared\\sequences.json")
         self.nuke_user_dir = os.path.join(os.path.expanduser("~"), ".nuke")
-        self.nuke_custom_dir = os.path.join(self.nuke_user_dir, "\pyanitools")
-
+        self.shot_master_template = "shot_master.nk"
+        # os.path.join has issues, maybe due to .nuke? String concat works
+        self.nuke_custom_dir = self.nuke_user_dir + "\\pyanitools"
+        self.plugins_json_name = "plugins.json"
+        self.scripts_json_name = "scripts.json"
+        self.templates_json_name = "templates.json"
         # movie directories
         self.movie_dir = os.path.normpath("Z:\LongGong\movie")
         self.seq_movie_dir = os.path.normpath("{0}\sequences".format(self.movie_dir))
-
         # comp plugin, script, template lib directories
         self.plugin_show = os.path.normpath("Z:\LongGong\lib\comp\plugins")
         self.script_show = os.path.normpath("Z:\LongGong\lib\comp\scripts")
         self.templates_show = os.path.normpath("Z:\LongGong\lib\comp\\templates")
-
         # image directories
         self.image_dir = os.path.normpath("Z:\LongGong\images")
+        # begin vars dependent on seq and shot
+        self.seq_name = None
+        self.shot_name = None
+        self.shot_dir = None
+        self.shot_light_dir = None
+        self.shot_light_work_dir = None
+        self.shot_maya_dir = None
+        self.shot_comp_dir = None
+        self.shot_comp_work_dir = None
+        self.shot_comp_plugin_dir = None
+        self.shot_movie_dir = None
+        self.seq_lib = None
+        self.seq_comp_lib = None
+        self.plugin_seq = None
+        self.script_seq = None
+        self.templates_seq = None
+        self.seq_image_dir = None
+        self.shot_image_dir = None
+        self.shot_layer_dir = None
+        self.first_frame = None
+        self.last_frame = None
+        self.frame_range = None
 
         if shot_path:
-            self.seq_name = self._get_active_sequence_name(shot_path)
-            self.shot_name = self._get_active_shot_name(shot_path)
-
-            # shot directories
-            self.shot_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}".format(self.seq_name, self.shot_name))
-            self.shot_light_dir = os.path.normpath("{0}\lighting".format(self.shot_dir))
-            self.shot_light_work_dir = os.path.normpath("{0}\work".format(self.shot_light_dir))
-            self.shot_maya_dir = os.path.normpath("{0}\scenes".format(self.shot_light_work_dir))
-            self.shot_comp_dir = os.path.normpath("{0}\composite".format(self.shot_dir))
-            self.shot_comp_work_dir = os.path.normpath("{0}\work".format(self.shot_comp_dir))
-            self.shot_comp_plugin_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}\Composite\plugins".format(
-                self.seq_name, self.shot_name)
-            )
-            # sequence directories
-            self.shot_movie_dir = os.path.normpath("{0}\sequences\{1}".format(self.movie_dir, self.seq_name))
-            self.seq_lib = os.path.normpath("Z:\LongGong\lib\sequences\{0}".format(self.seq_name))
-
-            # comp plugin, script, template lib directories
-            self.seq_comp_lib = os.path.normpath("{0}\comp".format(self.seq_lib))
-            self.plugin_seq = os.path.normpath("{0}\plugins".format(self.seq_comp_lib))
-            self.script_seq = os.path.normpath("{0}\scripts".format(self.seq_comp_lib))
-            self.templates_seq = os.path.normpath("{0}\\templates".format(self.seq_comp_lib))
-
-            # image directories
-            self.seq_image_dir = os.path.normpath("{0}\{1}".format(self.image_dir, self.seq_name))
-            self.shot_image_dir = os.path.normpath("{0}\{1}".format(self.seq_image_dir, self.shot_name))
-
-            for shot in self.seq_shot_list[self.seq_name]:
-                if shot["Shot"] == self.shot_name:
-                    self.first_frame = shot["first_frame"]
-                    self.last_frame = shot["last_frame"]
-                    self.frame_range = "{0}-{1}".format(str(self.first_frame), str(self.last_frame))
-                    break
-        else:
-            self.seq_name = None
-            self.shot_name = None
-            self.shot_dir = None
-            self.shot_light_dir = None
-            self.shot_light_work_dir = None
-            self.shot_maya_dir = None
-            self.shot_comp_dir = None
-            self.shot_comp_work_dir = None
-            self.shot_comp_plugin_dir = None
-            self.shot_movie_dir = None
-            self.seq_lib = None
-            self.seq_comp_lib = None
-            self.plugin_seq = None
-            self.script_seq = None
-            self.templates_seq = None
-            self.seq_image_dir = None
-            self.shot_image_dir = None
-            self.first_frame = None
-            self.last_frame = None
-            self.frame_range = None
+            self.seq_name = self._get_sequence_name_from_string(shot_path)
+            self.shot_name = self._get_shot_name_from_string(shot_path)
+            self._make_seq_vars()
+            self._make_shot_vars()
 
         self.places = [
             self.movie_dir,
             self.seq_movie_dir,
-            self.shot_movie_dir,
             self.image_dir,
-            self.seq_image_dir,
-            self.shot_image_dir,
             self.desktop
         ]
 
@@ -118,6 +90,18 @@ class AniVars(object):
     def __repr__(self):
         return '<pyani.core.util.AniVars "Seq{0}, Shot{1}">'.format(self.seq_name, self.shot_name)
 
+    def is_valid_seq(self, seq):
+        if self._get_sequence_name_from_string(seq):
+            return True
+        else:
+            return False
+
+    def is_valid_shot(self, shot):
+        if self._get_shot_name_from_string(shot):
+            return True
+        else:
+            return False
+
     def get_sequence_list(self):
         return self.seq_shot_list.keys()
 
@@ -125,38 +109,56 @@ class AniVars(object):
         shot_list = self.seq_shot_list[self.seq_name]
         return [shot["Shot"] for shot in shot_list]
 
+    def update_using_shot_path(self, shot_path):
+        self.seq_name = self._get_sequence_name_from_string(shot_path)
+        self.shot_name = self._get_shot_name_from_string(shot_path)
+        self._make_seq_vars()
+        self._make_shot_vars()
+
     def update(self, seq_name, shot_name=None):
         self.seq_name = seq_name
+        self._make_seq_vars()
+        if shot_name:
+            self.shot_name = shot_name
+            self._make_shot_vars()
+
+    def _make_seq_vars(self):
         self.seq_lib = os.path.normpath("Z:\LongGong\lib\sequences\{0}".format(self.seq_name))
-        # comp plugin, script, template lib directories
+        # movie directories
+        self.seq_movie_dir = os.path.normpath("{0}\sequences".format(self.movie_dir))
+        # image directories
+        self.seq_image_dir = os.path.normpath("{0}\{1}".format(self.image_dir, self.seq_name))
+        # comp directories
         self.seq_comp_lib = os.path.normpath("{0}\comp".format(self.seq_lib))
         self.plugin_seq = os.path.normpath("{0}\plugins".format(self.seq_comp_lib))
         self.script_seq = os.path.normpath("{0}\scripts".format(self.seq_comp_lib))
         self.templates_seq = os.path.normpath("{0}\\templates".format(self.seq_comp_lib))
+
+    def _make_shot_vars(self):
+        # shot directories in shot
+        self.shot_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}".format(self.seq_name, self.shot_name))
+        self.shot_light_dir = os.path.normpath("{0}\lighting".format(self.shot_dir))
+        self.shot_light_work_dir = os.path.normpath("{0}\work".format(self.shot_light_dir))
+        self.shot_maya_dir = os.path.normpath("{0}\scenes".format(self.shot_light_work_dir))
+        self.shot_comp_dir = os.path.normpath("{0}\composite".format(self.shot_dir))
+        self.shot_comp_work_dir = os.path.normpath("{0}\work".format(self.shot_comp_dir))
+        self.shot_comp_plugin_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}\Composite\plugins".format(
+            self.seq_name, self.shot_name)
+        )
+        # directories for shot outside shot directory
+
         # image directories
-        self.seq_image_dir = os.path.normpath("{0}\{1}".format(self.image_dir, self.seq_name))
-
-        if shot_name:
-            self.shot_name = shot_name
-            # shot directories
-            self.shot_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}".format(self.seq_name, self.shot_name))
-            self.shot_light_dir = os.path.normpath("{0}\lighting".format(self.shot_dir))
-            self.shot_light_work_dir = os.path.normpath("{0}\work".format(self.shot_light_dir))
-            self.shot_maya_dir = os.path.normpath("{0}\scenes".format(self.shot_light_work_dir))
-            self.shot_comp_dir = os.path.normpath("{0}\composite".format(self.shot_dir))
-            self.shot_comp_work_dir = os.path.normpath("{0}\work".format(self.shot_comp_dir))
-            self.shot_comp_plugin_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}\Composite\plugins".format(
-                self.seq_name, self.shot_name)
-            )
-            self.shot_movie_dir = os.path.normpath("{0}\sequences\{1}".format(self.movie_dir, self.seq_name))
-            self.shot_image_dir = os.path.normpath("{0}\{1}".format(self.seq_image_dir, self.shot_name))
-
-            for shot in self.seq_shot_list[self.seq_name]:
-                if shot["Shot"] == self.shot_name:
-                    self.first_frame = shot["first_frame"]
-                    self.last_frame = shot["last_frame"]
-                    self.frame_range = "{0}-{1}".format(str(self.first_frame), str(self.last_frame))
-                    break
+        self.shot_image_dir = os.path.normpath("{0}\{1}".format(self.seq_image_dir, self.shot_name))
+        self.shot_layer_dir = os.path.normpath("{0}\{1}".format(self.shot_image_dir, "\light\layers"))
+        # movie directories
+        self.shot_movie_dir = os.path.normpath("{0}\sequences\{1}".format(self.movie_dir, self.seq_name))
+        # frames
+        for shot in self.seq_shot_list[self.seq_name]:
+            if shot["Shot"] == self.shot_name:
+                self.first_frame = shot["first_frame"]
+                self.last_frame = shot["last_frame"]
+                self.frame_range = "{0}-{1}".format(str(self.first_frame), str(self.last_frame))
+                break
 
     @staticmethod
     def _get_sequences_and_shots(file_path):
@@ -168,24 +170,40 @@ class AniVars(object):
         return load_json(file_path)
 
     @staticmethod
-    def _get_active_sequence_name(file_path):
+    def _get_sequence_name_from_string(string_containing_sequence):
         """
         Finds the sequence name from a file path. Looks for Seq### or seq###. Sequence number is 2 or more digits
-        :param file_path: the absolute file path
-        :return: the seq name as Seq### or seq###
+        :param string_containing_sequence: the absolute file path
+        :return: the seq name as Seq### or seq### or None if no seq found
         """
         pattern = "[a-zA-Z]{3}\d{2,}"
-        return re.search(pattern, file_path).group()
+        # make sure the string is valid
+        if string_containing_sequence:
+            # check if we get a result, if so return it
+            if re.search(pattern, string_containing_sequence):
+                return re.search(pattern, string_containing_sequence).group()
+            else:
+                return None
+        else:
+            return None
 
     @staticmethod
-    def _get_active_shot_name(file_path):
+    def _get_shot_name_from_string(string_containing_shot):
         """
         Finds the shot name from a file path. Looks for Shot### or seq###. Shot number is 2 or more digits
-        :param file_path: the absolute file path
-        :return: the shot name as Shot### or shot###
+        :param string_containing_shot: the absolute file path
+        :return: the shot name as Shot### or shot### or None if no shot found
         """
         pattern = "[a-zA-Z]{4}\d{2,}"
-        return re.search(pattern, file_path).group()
+        # make sure the string is valid
+        if string_containing_shot:
+            # check if we get a result, if so return it
+            if re.search(pattern, string_containing_shot):
+                return re.search(pattern, string_containing_shot).group()
+            else:
+                return None
+        else:
+            return None
 
 
 # logging
@@ -209,46 +227,58 @@ LOG.addHandler(logging.StreamHandler())
 LOG.setLevel(10)
 
 
+def natural_sort(iterable):
+    """
+    Sorts a iterable using natural sort
+    :param iterable: The python iterable to be sorted. - ie a list / etc...
+    :return: the sorted list
+    """
+    convert = lambda text: int(text) if text.isdigit() else text
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(iterable, key=alphanum_key)
+
+
 def load_json(json_path):
     """
     Loads a json file
     :param json_path: the path to the json data
-    :return: the json data, or None if couldn't load
+    :return: the json data, or error if couldn't load
     """
     try:
         with open(json_path, "r") as read_file:
             return json.load(read_file)
-    except EnvironmentError:
-        return None
+    except (IOError, OSError, EnvironmentError) as e:
+        error = "Problem loading {0}. Error reported is {1}".format(json_path, e)
+        return error
 
 
-def write_json(json_path, user_data):
+def write_json(json_path, user_data, indent=0):
     """
     Write to a json file
     :param json_path: the path to the file
     :param user_data: the data to write
-    :return: Success message as string if wrote to file, None if didn't
+    :param indent: optional indent
+    :return: None if wrote to disk, error if couldn't write
     """
     try:
         with open(json_path, "w") as write_file:
-            json.dump(user_data, write_file)
-            return "Successfully wrote data to: {0}".format(write_file)
-    except EnvironmentError:
-        return None
+            json.dump(user_data, write_file, indent=indent)
+            return None
+    except (IOError, OSError, EnvironmentError) as e:
+        error = "Problem loading {0}. Error reported is {1}".format(json_path, e)
+        return error
 
 
-def launch_app(app, *args):
+def launch_app(app, args):
     """
     Launch an external application
     :param app: the path to the program to execute
-    :param args: any arguments to pass to the program
+    :param args: any arguments to pass to the program as a list
     """
     cmd = [app]
     for arg in args:
         cmd.append(arg)
-
-    p = Popen([cmd], shell=True)
-
+    p = Popen(cmd, shell=True)
     if p.returncode is not None:
         LOG.debug("App Open Failed for {0}. Error: {1}".format(cmd, p.returncode))
 
@@ -279,6 +309,24 @@ def delete_file(file_path):
         return None
     except (IOError, OSError) as e:
         return "Could not delete {0}. Received error {1}".format(file_path, e)
+
+
+def delete_all(dir_path):
+    """
+    Deletes files and directories
+    :param dir_path: the path to the directory of files - absolute path, can contain subdirs
+    :except IOError, OSError: returns the file  and error
+    """
+    try:
+        full_paths = [os.path.join(dir_path, file_name) for file_name in os.listdir(dir_path)]
+        for file_name in full_paths:
+            if os.path.isdir(file_name):
+                rm_dir(file_name)
+            else:
+                delete_file(file_name)
+        return None
+    except (IOError, OSError) as e:
+        return "Could not delete {0}. Received error {1}".format(file_name, e)
 
 
 def copy_file(src, dest):
@@ -362,6 +410,21 @@ def make_dir(dir_path):
     return None
 
 
+def make_all_dir_in_path(dir_path):
+    """
+    makes all the directories in the path if they don't exist
+    :param dir_path: a file path
+    :return: None if no errors, otherwise return error as string
+    """
+    # make directory if doesn't exist
+    try:
+        os.makedirs(dir_path)
+    except OSError as e:
+        if not os.path.isdir(dir_path):
+            return "Could not make directory path {0}. Received error {1}".format(dir_path, e)
+    return None
+
+
 def rm_dir(dir_path):
     """
     removes a directory if it exists
@@ -374,8 +437,21 @@ def rm_dir(dir_path):
             # this will remove regardless of whether its empty or read only
             shutil.rmtree(dir_path, ignore_errors=True)
     except (IOError, OSError) as e:
-        return "Could not make directory {0}. Received error {1}".format(dir_path, e)
+        return "Could not remove directory {0}. Received error {1}".format(dir_path, e)
     return None
+
+
+def get_subdirs(path):
+    """
+    return a list of directory names not starting with '.' under given path.
+    :param path: the directory path
+    :return: a list of subdirectories, none if no subdirectories
+    """
+    dir_list = []
+    for entry in scandir(path):
+        if not entry.name.startswith('.') and entry.is_dir():
+            dir_list.append(entry.name)
+    return dir_list
 
 
 def get_images_from_dir(dir_path):

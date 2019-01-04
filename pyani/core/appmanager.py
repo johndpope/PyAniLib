@@ -1,6 +1,5 @@
 import zipfile
 import os
-import sys
 import signal
 import psutil
 import pyani.core.util
@@ -38,7 +37,7 @@ class AniAppMngr(object):
 
     @property
     def user_version(self):
-        """The version the user has installed
+        """The version the user has installed.
         """
         # user may not have app, check
         if self.__user_data:
@@ -220,11 +219,14 @@ class AniAppMngr(object):
         pyani.core.util.write_json(self.user_config, user_data)
 
 
-class AniAppMngrGui(QtWidgets.QMainWindow):
-    def __init__(self, version):
-        super(AniAppMngrGui, self).__init__()
-
-        self.version = version
+class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
+    def __init__(self):
+        # build main window structure
+        self.app_name = "PyAppMngr"
+        self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
+        # pass win title, icon path, app manager, width and height
+        super(AniAppMngrGui, self).__init__("Py Ani Tools App Manager", "Resources\\app_update.png",
+                                            self.app_mngr, 800, 400)
 
         # list of apps
         self.app_names = pyani.core.util.load_json(
@@ -237,14 +239,6 @@ class AniAppMngrGui(QtWidgets.QMainWindow):
                 AniAppMngr(name)
             )
 
-        # window helpers
-        self.win_utils = pyani.core.ui.QtWindowUtil(self)
-        self.msg_win = pyani.core.ui.QtMsgWindow(self)
-        # setup main window
-        self.setWindowTitle('Py Ani Tools App Manager')
-        self.win_utils.set_win_icon("Resources\\app_update.png")
-        # main widget for window
-        self.main_win = QtWidgets.QWidget()
         # main ui elements - styling set in the create ui functions
         self.btn_update = QtWidgets.QPushButton("Update App")
         self.btn_install = QtWidgets.QPushButton("Install / Update App(s)")
@@ -252,62 +246,34 @@ class AniAppMngrGui(QtWidgets.QMainWindow):
         # tree app version information
         self.app_tree = pyani.core.ui.CheckboxTreeWidget(self._format_app_info(), 3)
 
-        self.build_ui()
-        # set default window size
-        self.resize(800, 400)
-
-    def build_ui(self):
-        """Builds the UI widgets, slots and layout
-        """
-        self.create_ui()
+        self.create_layout()
         self.set_slots()
-        # set main window
-        self.setCentralWidget(self.main_win)
 
-    def create_ui(self):
-        # set font size and style for title labels
-        titles = QtGui.QFont()
-        titles.setPointSize(14)
-        titles.setBold(True)
-
-        # spacer to use between sections
-        v_spacer = QtWidgets.QSpacerItem(0, 35)
-        empty_space = QtWidgets.QSpacerItem(1, 1)
-
-        # begin layout
-        main_layout = QtWidgets.QVBoxLayout()
-
-        # add version to right side of screen
-        vers_label = QtWidgets.QLabel("Version {0}".format(self.version))
-        h_layout_vers = QtWidgets.QHBoxLayout()
-        h_layout_vers.addStretch(1)
-        h_layout_vers.addWidget(vers_label)
-        main_layout.addLayout(h_layout_vers)
-        main_layout.addItem(v_spacer)
+    def create_layout(self):
 
         # APP HEADER SETUP -----------------------------------
         # |    label    |   space    |     btn     |      btn       |     space    |
         g_layout_header = QtWidgets.QGridLayout()
         header_label = QtWidgets.QLabel("Applications")
-        header_label.setFont(titles)
+        header_label.setFont(self.titles)
         g_layout_header.addWidget(header_label, 0, 0)
-        g_layout_header.addItem(empty_space, 0, 1)
+        g_layout_header.addItem(self.empty_space, 0, 1)
         self.btn_launch.setMinimumSize(150, 30)
         g_layout_header.addWidget(self.btn_launch, 0, 2)
         self.btn_install.setStyleSheet("background-color:{0};".format(pyani.core.ui.GREEN))
         self.btn_install.setMinimumSize(150, 30)
         g_layout_header.addWidget(self.btn_install, 0, 3)
-        g_layout_header.addItem(empty_space, 0, 4)
+        g_layout_header.addItem(self.empty_space, 0, 4)
         g_layout_header.setColumnStretch(1, 2)
         g_layout_header.setColumnStretch(4, 2)
-        main_layout.addLayout(g_layout_header)
-        main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
+        self.main_layout.addLayout(g_layout_header)
+        self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
 
         # APPS TREE  -----------------------------------
-        main_layout.addWidget(self.app_tree)
+        self.main_layout.addWidget(self.app_tree)
 
         # set main windows layout as the stacked layout
-        self.main_win.setLayout(main_layout)
+        self.add_layout_to_win()
 
     def set_slots(self):
         """Create the slots/actions that UI buttons / etc... do
@@ -332,7 +298,8 @@ class AniAppMngrGui(QtWidgets.QMainWindow):
         apps = self._get_selection()
         for app in apps:
             exe_path = os.path.join(app.app_install_path, app.app_name)
-            pyani.core.util.launch_app("{0}.exe".format(exe_path))
+            # pass application path and arguments, in this case none
+            pyani.core.util.launch_app("{0}.exe".format(exe_path), [])
 
     def _get_selection(self):
         """

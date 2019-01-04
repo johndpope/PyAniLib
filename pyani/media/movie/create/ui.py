@@ -1,7 +1,6 @@
 # Contains both command line and gui interfaces for movie creation
 
 import os
-import sys
 import argparse
 from colorama import Fore, Style
 import pyani.media.image.seq
@@ -20,7 +19,7 @@ os.environ['QT_API'] = 'pyqt'
 from qtpy import QtGui, QtWidgets, QtCore
 
 
-class AniShootGui(QtWidgets.QDialog):
+class AniShootGui(pyani.core.ui.AniQMainWindow):
     """
     Gui class for movie shoot creation
     :param movie_generation : the app called to create the actual movie, for example ffmpeg
@@ -28,69 +27,37 @@ class AniShootGui(QtWidgets.QDialog):
     :param strict_pad : enforce the same padding for whole image sequence
     """
     def __init__(self, movie_generation, movie_playback, strict_pad):
-        super(AniShootGui, self).__init__()
-
-        self.win_utils = pyani.core.ui.QtWindowUtil(self)
-        self.setWindowTitle('PyShoot Movie Creator')
-        self.win_utils.set_win_icon("Resources\\pyshoot.png")
-        self.file_dialog_selection = None
-        app_manager = AniAppMngr("PyShoot")
-        self.version = app_manager.user_version
+        # build main window structure
+        self.app_name = "PyShoot"
+        self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
+        # pass win title, icon path, app manager, width and height
+        super(AniShootGui, self).__init__("Py Shoot Movie Creator", "Resources\\pyshoot.png", self.app_mngr, 1000, 400)
 
         # setup data
         self.ani_vars = pyani.core.util.AniVars()
         self.shoot = pyani.media.movie.create.core.AniShoot(movie_generation, movie_playback, strict_pad)
-        self.ui = pyani.media.movie.create.core.AniShootUi()
-        self.msg_win = QtMsgWindow(self)
+
         # disable logging by default
         pyani.core.util.logging_disabled(True)
 
-        # build gui
         # setup UI widgets and layout
-        self.build_ui()
-        self.dialog_places = self._build_places()
-        # set default window size
-        self.resize(1000, 400)
-
-        # version management
-        if not app_manager.is_latest():
-            update = self.msg_win.show_question_msg("Version Update", app_manager.latest_version_info())
-            if update:
-                pyani.core.util.launch_app(app_manager.updater_app)
-                sys.exit(0)
-
-    def build_ui(self):
-        """Builds the UI widgets, slots and layout
-        """
         # create widgets - buttons, checkboxes, etc...
         self.create_widgets()
         # connect slots
         self.set_slots()
         # layout the ui
-        self.set_layout()
+        self.create_layout()
+
+        self.dialog_places = self._build_places()
 
     def create_widgets(self):
         """Creates all the widgets used by the UI
         """
-        # set font size and style for title labels
-        titles = QtGui.QFont()
-        titles.setPointSize(10)
-        titles.setBold(True)
-
-        # version label
-        self.vers_label = QtWidgets.QLabel("Version {0}".format(self.version))
-
-        # spacer to use between sections
-        self.verticalSpacer = QtWidgets.QSpacerItem(0, 25)
-        self.horizontalSpacer = QtWidgets.QSpacerItem(50, 0)
-        self.titleVertSpacer = QtWidgets.QSpacerItem(0, 15)
-        self.emptySpace = QtWidgets.QSpacerItem(1,1)
-
         # ----------------------
         # general options widgets
         # ----------------------
         self.generalOptionsLabel = QtWidgets.QLabel("General Options")
-        self.generalOptionsLabel.setFont(titles)
+        self.generalOptionsLabel.setFont(self.titles)
         self.log_label = QtWidgets.QLabel("Show Log")
         self.log_cbox = QtWidgets.QCheckBox()
         self.log_cbox.setChecked(False)
@@ -108,7 +75,7 @@ class AniShootGui(QtWidgets.QDialog):
         # ----------------------
         # open file dialog to select images
         self.imageOptionsLabel = QtWidgets.QLabel("Image Options")
-        self.imageOptionsLabel.setFont(titles)
+        self.imageOptionsLabel.setFont(self.titles)
         self.filesBtn = QtWidgets.QPushButton("Select Images or Directory")
         self.filesBtn.setMinimumSize(150,30)
         self.filesDisplay = QtWidgets.QLineEdit("")
@@ -118,7 +85,7 @@ class AniShootGui(QtWidgets.QDialog):
         # ----------------------
         # hold frames
         self.frameOptionsLabel = QtWidgets.QLabel("Frame Options")
-        self.frameOptionsLabel.setFont(titles)
+        self.frameOptionsLabel.setFont(self.titles)
         self.frameRangeLabel = QtWidgets.QLabel("Frame Range")
         self.frameRangeInput = QtWidgets.QLineEdit("")
         self.frameRangeInput.setMinimumWidth(300)
@@ -135,7 +102,7 @@ class AniShootGui(QtWidgets.QDialog):
         # movie options widgets
         # ----------------------
         self.movieOptionsLabel = QtWidgets.QLabel("Movie Options")
-        self.movieOptionsLabel.setFont(titles)
+        self.movieOptionsLabel.setFont(self.titles)
 
         # write to path
         self.movieOutputBtn = QtWidgets.QPushButton("Select Movie Directory")
@@ -207,28 +174,16 @@ class AniShootGui(QtWidgets.QDialog):
         # call close built-in function
         self.closeBtn.clicked.connect(self.close)
 
-    def set_layout(self):
+    def create_layout(self):
         """Build the layout of the UI
         """
 
         # ----------------------
-        # START LAYOUT
-        # ----------------------
-        # parent to this class, this is the top level layout (self)
-        topLayout = QtWidgets.QVBoxLayout(self)
-
-        # add version
-        # push to right
-        hLayoutVers = QtWidgets.QHBoxLayout()
-        hLayoutVers.addStretch(1)
-        hLayoutVers.addWidget(self.vers_label)
-        topLayout.addLayout(hLayoutVers)
-        # ----------------------
         # general options
         # ----------------------
         # title
-        topLayout.addWidget(self.generalOptionsLabel)
-        topLayout.addItem(self.titleVertSpacer)
+        self.main_layout.addWidget(self.generalOptionsLabel)
+        self.main_layout.addItem(self.title_vert_spacer)
 
         # use a grid for the options so they align correctly
         gLayoutGeneralOptions = QtWidgets.QGridLayout()
@@ -242,25 +197,25 @@ class AniShootGui(QtWidgets.QDialog):
         gLayoutGeneralOptions.addWidget(self.validate_input_label, 1, 1)
 
         # empty column and stretch to window
-        gLayoutGeneralOptions.addItem(self.emptySpace, 0, 2)
+        gLayoutGeneralOptions.addItem(self.empty_space, 0, 2)
         gLayoutGeneralOptions.setColumnStretch(2, 1)
-        topLayout.addLayout(gLayoutGeneralOptions)
+        self.main_layout.addLayout(gLayoutGeneralOptions)
 
         # ----------------------
         #  image options
         # ----------------------
         # add spacer
-        topLayout.addItem(self.verticalSpacer)
-        topLayout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
+        self.main_layout.addItem(self.v_spacer)
+        self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
         # title
-        topLayout.addWidget(self.imageOptionsLabel)
-        topLayout.addItem(self.titleVertSpacer)
+        self.main_layout.addWidget(self.imageOptionsLabel)
+        self.main_layout.addItem(self.title_vert_spacer)
 
         # image options spaced horizontally
         hLayoutFiles = QtWidgets.QHBoxLayout()
         hLayoutFiles.addWidget(self.filesDisplay)
         hLayoutFiles.addWidget(self.filesBtn)
-        topLayout.addLayout(hLayoutFiles)
+        self.main_layout.addLayout(hLayoutFiles)
 
         # use a grid for the options so they align correctly
         gLayoutImageOptions = QtWidgets.QGridLayout()
@@ -268,21 +223,21 @@ class AniShootGui(QtWidgets.QDialog):
         gLayoutImageOptions.setVerticalSpacing(15)
 
         # empty column
-        gLayoutImageOptions.addItem(self.emptySpace, 1, 2)
+        gLayoutImageOptions.addItem(self.empty_space, 1, 2)
         gLayoutImageOptions.setColumnStretch(2, 1)
 
-        topLayout.addLayout(gLayoutImageOptions)
+        self.main_layout.addLayout(gLayoutImageOptions)
 
         # ----------------------
         # frame options
         # ----------------------
         # add spacer
-        topLayout.addItem(self.verticalSpacer)
-        topLayout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
+        self.main_layout.addItem(self.v_spacer)
+        self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
 
         # title
-        topLayout.addWidget(self.frameOptionsLabel)
-        topLayout.addItem(self.titleVertSpacer)
+        self.main_layout.addWidget(self.frameOptionsLabel)
+        self.main_layout.addItem(self.title_vert_spacer)
 
         # use a grid for the options so they align correctly
         gLayoutFrameOptions = QtWidgets.QGridLayout()
@@ -292,31 +247,31 @@ class AniShootGui(QtWidgets.QDialog):
         # frame range
         gLayoutFrameOptions.addWidget(self.frameRangeLabel, 0, 0)
         gLayoutFrameOptions.addWidget(self.frameRangeInput, 0, 1)
-        gLayoutFrameOptions.addItem(self.horizontalSpacer, 0, 2)
+        gLayoutFrameOptions.addItem(self.horizontal_spacer, 0, 2)
         # frame step
         gLayoutFrameOptions.addWidget(self.stepsLabel, 1, 0)
         gLayoutFrameOptions.addWidget(self.stepsSbox, 1, 1)
 
         # empty column
-        gLayoutFrameOptions.addItem(self.emptySpace, 1, 2)
+        gLayoutFrameOptions.addItem(self.empty_space, 1, 2)
         gLayoutFrameOptions.setColumnStretch(2, 1)
 
-        topLayout.addLayout(gLayoutFrameOptions)
+        self.main_layout.addLayout(gLayoutFrameOptions)
 
         # ----------------------
         # movie options
         # ----------------------
         # add spacer
-        topLayout.addItem(self.verticalSpacer)
-        topLayout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
+        self.main_layout.addItem(self.v_spacer)
+        self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
         # title
-        topLayout.addWidget(self.movieOptionsLabel)
-        topLayout.addItem(self.titleVertSpacer)
+        self.main_layout.addWidget(self.movieOptionsLabel)
+        self.main_layout.addItem(self.title_vert_spacer)
 
         hLayoutMovName = QtWidgets.QHBoxLayout()
         hLayoutMovName.addWidget(self.movie_output_name)
         hLayoutMovName.addWidget(self.movieOutputBtn)
-        topLayout.addLayout(hLayoutMovName)
+        self.main_layout.addLayout(hLayoutMovName)
 
         # use a grid for the options so they align correctly
         gLayoutMovieOptions = QtWidgets.QGridLayout()
@@ -326,39 +281,41 @@ class AniShootGui(QtWidgets.QDialog):
         # options
         gLayoutMovieOptions.addWidget(self.movie_quality_cbox, 0, 0)
         gLayoutMovieOptions.addWidget(self.movie_quality_label, 0, 1)
-        gLayoutMovieOptions.addItem(self.horizontalSpacer, 0, 2)
+        gLayoutMovieOptions.addItem(self.horizontal_spacer, 0, 2)
         gLayoutMovieOptions.addWidget(self.movie_overwrite_cbox, 1, 0)
         gLayoutMovieOptions.addWidget(self.movie_overwrite_label, 1, 1)
-        gLayoutMovieOptions.addItem(self.horizontalSpacer, 1, 2)
+        gLayoutMovieOptions.addItem(self.horizontal_spacer, 1, 2)
         gLayoutMovieOptions.addWidget(self.frame_hold_cbox, 2, 0)
         gLayoutMovieOptions.addWidget(self.frame_hold_label, 2, 1)
-        gLayoutMovieOptions.addItem(self.horizontalSpacer, 2, 2)
+        gLayoutMovieOptions.addItem(self.horizontal_spacer, 2, 2)
         gLayoutMovieOptions.addWidget(self.show_movies_cbox, 3, 0)
         gLayoutMovieOptions.addWidget(self.show_movies_label, 3, 1)
-        gLayoutMovieOptions.addItem(self.horizontalSpacer, 3, 2)
+        gLayoutMovieOptions.addItem(self.horizontal_spacer, 3, 2)
         gLayoutMovieOptions.addWidget(self.movie_combine_cbox, 4, 0)
         gLayoutMovieOptions.addWidget(self.movie_combine_label, 4, 1)
-        gLayoutMovieOptions.addItem(self.horizontalSpacer, 4, 2)
+        gLayoutMovieOptions.addItem(self.horizontal_spacer, 4, 2)
 
         # empty column
-        gLayoutMovieOptions.addItem(self.emptySpace, 5, 2)
+        gLayoutMovieOptions.addItem(self.empty_space, 5, 2)
         gLayoutMovieOptions.setColumnStretch(2, 1)
 
-        topLayout.addLayout(gLayoutMovieOptions)
+        self.main_layout.addLayout(gLayoutMovieOptions)
 
         # ----------------------
         # actions
         # ----------------------
         # add spacer
-        topLayout.addItem(self.verticalSpacer)
+        self.main_layout.addItem(self.v_spacer)
         # push buttons to bottom
-        topLayout.addStretch(1)
+        self.main_layout.addStretch(1)
         # push buttons to right
         hLayoutActions = QtWidgets.QHBoxLayout()
         hLayoutActions.addStretch(1)
         hLayoutActions.addWidget(self.createBtn)
         hLayoutActions.addWidget(self.closeBtn)
-        topLayout.addLayout(hLayoutActions)
+        self.main_layout.addLayout(hLayoutActions)
+
+        self.add_layout_to_win()
 
     def movie_combine_update(self):
         """
@@ -564,26 +521,29 @@ class AniShootCLI:
     def run(self):
         """
         run the app
+        :return log : an errors
         """
         self.show_msg("__Version__ : {0}".format(self.version), Fore.GREEN)
 
         # process user input and setup the image sequence
         self.process_user_input()
 
-        # swap novalidate so it reads as validate
-        validate = not self.args.novalidate
-
+        image_path = os.path.normpath(self.args.img)
         # get the images selected
-        self.get_sequence(self.args.img, self.args.steps, validate)
+        self.get_sequence(image_path, self.args.steps, self.args.validate_submission)
 
         # create the movie
-        self.create_movie(self.args.steps,
-                          self.args.frame_range,
-                          self.args.mov,
-                          validate,
-                          self.args.overwrite,
-                          self.args.play,
-                          self.args.high_quality)
+        log = self.create_movie(
+            self.args.steps,
+            self.args.frame_range,
+            self.args.mov,
+            self.args.validate_submission,
+            self.args.overwrite,
+            self.args.play,
+            self.args.high_quality
+        )
+
+        return log
 
     def build_parser(self):
         """
@@ -601,27 +561,21 @@ class AniShootCLI:
         parser.add_argument('-i', '--img', help="Directory of image sequence to create movie")
         parser.add_argument('-o', '--mov', help="Name of the movie.")
 
-        # Keyword / Optional Arguments
+        # Keyword / Optional Arguments - action is value when provided, default mis value when not provided
         parser.add_argument('-ng', '--nogui', help="Run in command line mode. By default it is gui.",
                             action="store_true", default=False)
-        parser.add_argument('-l', '--log', help="Output a log to terminal. Default is False",
-                            action="store_true", default=False)
-        parser.add_argument('-nv', '--novalidate', help="Do not validate the submission.",
-                            action="store_false", default=True)
         parser.add_argument('-fs', '--steps', help="Frame step size. Default is 1", default=1)
-        parser.add_argument('-fr', '--frame_range', help="Frame range. Default is frame range of image sequence.")
-        parser.add_argument('-nh', '--nohold', help="Do not hold missing frames. Default is True. If this option "
-                                                    "is false, an image with the words missing frame is used for "
-                                                    "any missing images in the sequence.",
-                            action="store_false", default=True)
+        parser.add_argument('-fr', '--frame_range', help="Default is frame range of image sequence.")
         parser.add_argument('-hq', '--high_quality', help="Create an uncompressed movie. Default is False.",
-                            action="store_true", default=False)
-        parser.add_argument('-ov', '--overwrite', help="Overwrite the movie if it exists. Default is False.",
                             action="store_true", default=False)
         parser.add_argument('-p', '--play', help="Play the movie in the movie after creation. Uses the show "
                                                  "default movie playback tool: {0}. "
                                                  "Default is False.".format(self.shoot.movie_playback_app),
                             action="store_true", default=False)
+        self._add_bool_arg(parser, "log", "Output a log to terminal.", False)
+        self._add_bool_arg(parser, "validate_submission", "Check submission for errors.", True)
+        self._add_bool_arg(parser, "frame_hold", "Hold missing frames.", True)
+        self._add_bool_arg(parser, "overwrite", "Overwrite movie on disk.", False)
         return parser
 
     def process_user_input(self):
@@ -638,10 +592,10 @@ class AniShootCLI:
         if not self.args.frame_range:
             self.args.frame_range = "N/A"
 
-        if self.args.nohold:
-            self.shoot.frame_hold = False
-        else:
+        if self.args.frame_hold:
             self.shoot.frame_hold = True
+        else:
+            self.shoot.frame_hold = False
 
         # check if images were given
         if not self.args.img:
@@ -671,6 +625,7 @@ class AniShootCLI:
             msg = self.ui.validate_selection(self.shoot, int(steps))
             if msg:
                 self.show_msg(msg, Fore.RED)
+                return
 
     def create_movie(self, steps, frame_range, movie_name, validate, overwrite, play_movie, quality):
         """
@@ -682,9 +637,16 @@ class AniShootCLI:
         :param overwrite: overwrite movie if exists
         :param play_movie: play the movie after creation as boolean
         :param quality: compressed or uncompressed movie as a boolean
+        :return movie_log : a log of any errors
         """
         frame_steps = int(steps)
         frame_range = frame_range.strip()  # remove white space
+
+        movie_name = os.path.normpath(movie_name)
+        movie_path = os.path.dirname(movie_name)
+
+        # make directory if doesn't exist - makes all directories in path if missing
+        pyani.core.util.make_all_dir_in_path(movie_path)
 
         if validate:
             msg = self.ui.validate_submission(self.shoot.seq_list,
@@ -707,6 +669,8 @@ class AniShootCLI:
         if play_movie and movie_list:
             self.shoot.play_movies(movie_list)
 
+        return movie_log
+
     @staticmethod
     def show_msg(msg, color=Fore.WHITE):
         """
@@ -716,3 +680,18 @@ class AniShootCLI:
         """
         print ("{0}{1}".format(color, msg))
         print(Style.RESET_ALL)
+
+    @staticmethod
+    def _add_bool_arg(parser, name, help, default=False):
+        """
+        Helper function to create a mutually exclusive group argument. For example:
+        create --feature, and --no-feature, one is True, other is False.
+        :param parser: the argparser instance
+        :param name: argument name
+        :param help: the help message
+        :param default: default value if not supplied
+        """
+        group = parser.add_mutually_exclusive_group(required=False)
+        group.add_argument('--' + name, dest=name, help=help, action='store_true')
+        group.add_argument('--no-' + name, dest=name, help=help, action='store_false')
+        parser.set_defaults(**{name: default})
