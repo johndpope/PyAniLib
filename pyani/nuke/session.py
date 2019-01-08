@@ -20,14 +20,16 @@ class AniNukeCmds:
         self.movie_tool = movie_tool
 
     def load_plugin_paths(self):
-        """Loads all sequences' plugins, menus, and scripts folders
+        """Loads show and all sequences' plugins, menus, and scripts folders
         """
+        # load show
+        nuke.pluginAddPath(self.ani_vars.plugin_show)
+        nuke.pluginAddPath(self.ani_vars.templates_show)
         # get list of all sequences
         sequences = self.ani_vars.get_sequence_list()
         for sequence in sequences:
             self.ani_vars.update(sequence)
             nuke.pluginAddPath(self.ani_vars.plugin_seq)
-            nuke.pluginAddPath(self.ani_vars.script_seq)
             nuke.pluginAddPath(self.ani_vars.templates_seq)
 
     def init_script(self):
@@ -40,7 +42,7 @@ class AniNukeCmds:
         # project settings
         self.set_project_settings()
         # menus
-        self.setup_menus()
+        self.setup_seq_menu()
 
     def set_project_settings(self):
         """Set nuke project settings based off sequence and shot
@@ -50,14 +52,32 @@ class AniNukeCmds:
         nuke.root()['first_frame'].setValue(self.ani_vars.first_frame)
         nuke.root()['last_frame'].setValue(self.ani_vars.last_frame)
 
-    def setup_menus(self):
+    @staticmethod
+    def eval_tcl(*args):
+        """evaluates a knob's tcl and sets the evaluated value in another knob
+
+        equivalent to the following, except the knobchanged calls "eval_tcl('image_path_eval', 'file')":
+        knobChanged "nuke.thisNode()\['image_path_eval'].setValue(nuke.thisNode()\['file'].evaluate())"
+
+        :param args: arbitrary amount of knobs. expects two knobs, the first being the knob to set, the second being
+        the knob to evaluate.
+
+        ex:
+        knobChanged "cmds.eval_tcl('mov_eval_name','movieName','image_path_eval','file')"
+        in the above mov_eval_name is a text knob that gets set to the evaluated movieName file field. same for
+        image_path_eval and file
+        """
+        for index in range(0, len(args), 2):
+            nuke.thisNode()[args[index]].setValue(nuke.thisNode()[args[index+1]].evaluate())
+
+    def setup_seq_menu(self):
         """Make the custom show menu
         """
         self.plugins = utils.load_json(os.path.join(self.ani_vars.plugin_seq,
                                                     self.ani_vars.plugins_json_name)).keys()
         self.templates = utils.load_json(os.path.join(self.ani_vars.templates_seq,
                                                       self.ani_vars.templates_json_name)).keys()
-        self.nuke_gui.update_menu(self.plugins, self.templates)
+        self.nuke_gui.build_menu(self.ani_vars.seq_name, self.plugins, self.templates)
 
     def create_movie(self, output_plugin_name):
         """
@@ -148,9 +168,6 @@ class AniNukeGui:
         self.menu_bar = nuke.menu("Nuke")
         # create a custom menu
         self.custom_menu = self.menu_bar.addMenu("&LongGong")
-        # on startup empty, tell user to load a script
-        msg = "This menu will populate when you load a shot's comp file."
-        self.custom_menu.addCommand("Please load a shot's comp file.", lambda: self.show_msg(msg))
         self.backdrop_names = {}
         self.asset_replace_keys = {}
         self.template_types_replaceable = []
@@ -168,33 +185,53 @@ class AniNukeGui:
         """
         nuke.message(msg)
 
-    def update_menu(self, plugins, templates):
+    def default_menu(self):
+        """Builds the menu when not in a shot environment
         """
-        Builds the menu for the sequence
-        :param plugins: list of sequence plugins
-        :param templates: list of sequence templates
+        # Make the custom show menu
+        plugins = utils.load_json(os.path.join(self.ani_vars.plugin_show,
+                                               self.ani_vars.plugins_json_name)).keys()
+        self.build_menu("Show Plugins", plugins, None)
+
+    def build_menu(self, title, plugins, templates):
         """
-        self._build_template_data()
+        Builds the menu for the sequence or if not in a sequence builds menu based off show plugins. For show
+        doesn't add templates, those are shot centric
+        :param title: the menu title
+        :param plugins: list of plugins
+        :param templates: list of templates
+        """
+        template_data = None
+        # name of script - ie the file path
+        current_script = nuke.root().name()
+        # see if we are in a shot env, if so load sequence plugins, otherwise load show plugins
+        if self.ani_vars.is_valid_seq(current_script) and self.ani_vars.is_valid_shot(current_script):
+            self.ani_vars.update_using_shot_path(current_script)
+            template_data = utils.load_json(
+                os.path.join(self.ani_vars.templates_seq, self.ani_vars.templates_json_name)
+            )
+            self._build_template_data(template_data)
+
         self.custom_menu.clearMenu()
-        # display sequence name as a empty command
-        msg = "This is just a label, does not perform an action."
-        self.custom_menu.addCommand(self.ani_vars.seq_name, lambda: self.show_msg(msg))
+        # display title name as a empty command
+        self.custom_menu.addCommand(title, "nuke.tprint('')")
         self.custom_menu.addSeparator()
         # show the plugins and templates available
         for plugin in plugins:
             plugin_base_name = plugin.split(".")[0]
             self.custom_menu.addCommand("Plugins/{0}".format(plugin_base_name),
                                         "nuke.createNode(\"{0}\")".format(plugin))
-        for template in templates:
-            template_base_name = template.split(".")[0]
-            # don't add to menu if it isn't a self contained template, ie skip something like shot_master which
-            # is a collection of templates
+        # this will be none if not in sequence/shot environment - ie loaded a non shot based script
+        if template_data:
+            for template in templates:
+                template_base_name = template.split(".")[0]
+                # don't add to menu if it isn't a self contained template, ie skip something like shot_master which
+                # is a collection of templates
+                if self.backdrop_names[template]:
+                    self.custom_menu.addCommand("Templates/{0}".format(template_base_name),
+                                                partial(self.create_template, template))
 
-            if self.backdrop_names[template]:
-                self.custom_menu.addCommand("Templates/{0}".format(template_base_name),
-                                            partial(self.create_template, template))
-
-    def _build_template_data(self):
+    def _build_template_data(self, template_data):
         """
         A dictionary of data for processing templates, extracts data from sequence template json file
         json format:
@@ -205,10 +242,9 @@ class AniNukeGui:
             "backdrop_name": "empty or backdrop_name",
             "asset_replace_key": "empty or assetname"
           },...
+
+        :param template_data: the template json file data
         """
-        current_script = nuke.root().name()
-        self.ani_vars.update_using_shot_path(current_script)
-        template_data = utils.load_json(os.path.join(self.ani_vars.templates_seq, self.ani_vars.templates_json_name))
         self.backdrop_names = {}
         self.asset_replace_keys = {}
         self.template_types_replaceable = []

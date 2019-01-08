@@ -36,14 +36,12 @@ class AniVars(object):
         # os.path.join has issues, maybe due to .nuke? String concat works
         self.nuke_custom_dir = self.nuke_user_dir + "\\pyanitools"
         self.plugins_json_name = "plugins.json"
-        self.scripts_json_name = "scripts.json"
         self.templates_json_name = "templates.json"
         # movie directories
         self.movie_dir = os.path.normpath("Z:\LongGong\movie")
         self.seq_movie_dir = os.path.normpath("{0}\sequences".format(self.movie_dir))
         # comp plugin, script, template lib directories
         self.plugin_show = os.path.normpath("Z:\LongGong\lib\comp\plugins")
-        self.script_show = os.path.normpath("Z:\LongGong\lib\comp\scripts")
         self.templates_show = os.path.normpath("Z:\LongGong\lib\comp\\templates")
         # image directories
         self.image_dir = os.path.normpath("Z:\LongGong\images")
@@ -131,7 +129,6 @@ class AniVars(object):
         # comp directories
         self.seq_comp_lib = os.path.normpath("{0}\comp".format(self.seq_lib))
         self.plugin_seq = os.path.normpath("{0}\plugins".format(self.seq_comp_lib))
-        self.script_seq = os.path.normpath("{0}\scripts".format(self.seq_comp_lib))
         self.templates_seq = os.path.normpath("{0}\\templates".format(self.seq_comp_lib))
 
     def _make_shot_vars(self):

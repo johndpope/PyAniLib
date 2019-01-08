@@ -151,7 +151,7 @@ class AniToolsSetup(QtWidgets.QDialog):
             else:
                 report.append("Installed Apps To {0}".format(self.apps_dir))
             # copy folder shortcut
-            user_desktop = os.path.join(os.environ["HOMEPATH"], "Desktop")
+            user_desktop = os.path.join("C:\\" + os.environ["HOMEPATH"], "Desktop")
             if not os.path.exists(os.path.join(user_desktop, "PyAniTools.lnk")):
                 error = pyani.core.util.move_file(self.apps_dir + "\\PyAniTools.lnk", user_desktop)
                 if error:
