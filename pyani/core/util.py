@@ -1,10 +1,17 @@
 import re
 import shutil
 import os
-import logging
+import time
 import json
 from scandir import scandir
 from subprocess import Popen, PIPE
+import logging
+import Queue
+import threading
+
+
+logger = logging.getLogger()
+
 
 # regex for matching numerical characters
 DIGITS_RE = re.compile(r'\d+')
@@ -202,128 +209,42 @@ class AniVars(object):
         else:
             return None
 
-
-# logging
 """
-Level	Numeric value
-CRITICAL	50
-ERROR	    40
-WARNING	    30
-INFO	    20
-DEBUG	    10
-NOTSET	    0
+Threaded copy - faster than multi proc copy, and 2-3x speed up over sequential copy
 """
+fileQueue = Queue.Queue()
 
 
-def logging_disabled(state):
-    LOG.disabled = state
-
-
-LOG = logging.getLogger('pyani')
-LOG.addHandler(logging.StreamHandler())
-LOG.setLevel(10)
-
-
-def natural_sort(iterable):
+class ThreadedCopy:
     """
-    Sorts a iterable using natural sort
-    :param iterable: The python iterable to be sorted. - ie a list / etc...
-    :return: the sorted list
-    """
-    convert = lambda text: int(text) if text.isdigit() else text
-    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
-    return sorted(iterable, key=alphanum_key)
-
-
-def load_json(json_path):
-    """
-    Loads a json file
-    :param json_path: the path to the json data
-    :return: the json data, or error if couldn't load
-    """
-    try:
-        with open(json_path, "r") as read_file:
-            return json.load(read_file)
-    except (IOError, OSError, EnvironmentError) as e:
-        error = "Problem loading {0}. Error reported is {1}".format(json_path, e)
-        return error
-
-
-def write_json(json_path, user_data, indent=0):
-    """
-    Write to a json file
-    :param json_path: the path to the file
-    :param user_data: the data to write
-    :param indent: optional indent
-    :return: None if wrote to disk, error if couldn't write
-    """
-    try:
-        with open(json_path, "w") as write_file:
-            json.dump(user_data, write_file, indent=indent)
-            return None
-    except (IOError, OSError, EnvironmentError) as e:
-        error = "Problem loading {0}. Error reported is {1}".format(json_path, e)
-        return error
-
-
-def launch_app(app, args):
-    """
-    Launch an external application
-    :param app: the path to the program to execute
-    :param args: any arguments to pass to the program as a list
-    """
-    cmd = [app]
-    for arg in args:
-        cmd.append(arg)
-    p = Popen(cmd, shell=True)
-    if p.returncode is not None:
-        LOG.debug("App Open Failed for {0}. Error: {1}".format(cmd, p.returncode))
-
-
-def move_file(src, dest):
-    """
-    moves file from src to dest (ie copies to new path and deletes from old path).
-    :param src: source file
-    :param dest: destination directory or file
+    Copies files using threads
+    :param src a list of the files to copy
+    :param dest: a list of the file names to copy to
+    :param threads: number of threads to use, defaults to 16
     :except IOError, OSError: returns the file src and dest and error
     :return: None if no errors, otherwise return error as string
     """
-    try:
-        shutil.move(src, dest)
-        return None
-    except (IOError, OSError) as e:
-        return "Could not move {0} to {1}. Received error {2}".format(src, dest, e)
+    def __init__(self, src, dest, threads=16):
+        self.thread_worker_copy(src, dest, threads)
 
+    def copy_worker(self):
+        while True:
+            src, dest = fileQueue.get()
+            try:
+                shutil.copy(src, dest)
+            except (IOError, OSError) as e:
+                error_msg = "Could not copy {0} to {1}. Received error {2}".format(src, dest, e)
+                logger.error(error_msg)
+            fileQueue.task_done()
 
-def delete_file(file_path):
-    """
-    Deletes file
-    :param file_path: the file to delete - absolute path
-    :except IOError, OSError: returns the file  and error
-    """
-    try:
-        os.remove(file_path)
-        return None
-    except (IOError, OSError) as e:
-        return "Could not delete {0}. Received error {1}".format(file_path, e)
-
-
-def delete_all(dir_path):
-    """
-    Deletes files and directories
-    :param dir_path: the path to the directory of files - absolute path, can contain subdirs
-    :except IOError, OSError: returns the file  and error
-    """
-    try:
-        full_paths = [os.path.join(dir_path, file_name) for file_name in os.listdir(dir_path)]
-        for file_name in full_paths:
-            if os.path.isdir(file_name):
-                rm_dir(file_name)
-            else:
-                delete_file(file_name)
-        return None
-    except (IOError, OSError) as e:
-        return "Could not delete {0}. Received error {1}".format(file_name, e)
+    def thread_worker_copy(self, src, dest, threads):
+        for i in range(threads):
+            t = threading.Thread(target=self.copy_worker)
+            t.daemon = True
+            t.start()
+        for i in range(0, len(src)):
+            fileQueue.put((src[i], dest[i]))
+        fileQueue.join()
 
 
 def copy_file(src, dest):
@@ -338,7 +259,9 @@ def copy_file(src, dest):
         shutil.copy(src, dest)
         return None
     except (IOError, OSError) as e:
-        return "Could not copy {0} to {1}. Received error {2}".format(src, dest, e)
+        error_msg = "Could not copy {0} to {1}. Received error {2}".format(src, dest, e)
+        logger.error(error_msg)
+        return error_msg
 
 
 def copy_files(src, dest, ext=None):
@@ -370,25 +293,84 @@ def copy_files(src, dest, ext=None):
                     shutil.copy2(s, d)
         return None
     except (IOError, OSError) as e:
-        return "Could not copy {0} to {1}. Received error {2}".format(s, d, e)
+        error_msg = "Could not copy {0} to {1}. Received error {2}".format(s, d, e)
+        logger.error(error_msg)
+        return error_msg
 
 
-def copy_image(source, dest):
-    '''
-    Copies a frame from the source file to the destination file or folder. If the file exists will
-    overwrite
-    :param source: the path to the source file
-    :param dest: the path to the destination
-    :raises: IOError if problem copying
+def move_file(src, dest):
+    """
+    moves file from src to dest (ie copies to new path and deletes from old path).
+    :param src: source file
+    :param dest: destination directory or file
+    :except IOError, OSError: returns the file src and dest and error
+    :return: None if no errors, otherwise return error as string
+    """
+    try:
+        shutil.move(src, dest)
+        return None
+    except (IOError, OSError) as e:
+        error_msg = "Could not move {0} to {1}. Received error {2}".format(src, dest, e)
+        logger.error(error_msg)
+        return error_msg
 
-    '''
-    # asterisk on destination name required to suppress input on whether its a file or directory
-    # /Y overwrites without asking
-    cmd = ['xcopy', source, (dest+"*"), '/Y']
-    p = Popen(cmd, stdin= PIPE, stdout=PIPE, stderr=PIPE)
-    output, error = p.communicate()
-    if p.returncode != 0:
-        LOG.debug("Copy Failed {0} {1} {2}".format(p.returncode, output, error))
+
+def delete_file(file_path):
+    """
+    Deletes file
+    :param file_path: the file to delete - absolute path. if the file doesn't exist does nothing
+    :except IOError, OSError: returns the file  and error
+    :return: None if no errors, otherwise return error as string
+    """
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        return None
+    except (IOError, OSError) as e:
+        error_msg = "Could not delete {0}. Received error {1}".format(file_path, e)
+        logger.error(error_msg)
+        return error_msg
+
+
+def delete_by_day(num_days, file_path):
+    """
+    Delete file older than a certain date
+    :param num_days: any files older than this are deleted
+    :param file_path: the full path to the file
+    :return: none if no error, or the error if encountered - will be a IOError or OSError
+    """
+    # get the time in seconds, note a day is 24 hours * 60 min * 60 sec
+    time_in_secs = time.time() - (num_days * 24 * 60 * 60)
+    # check that the path exists before trying to get creation time
+    if os.path.exists(file_path):
+        stat = os.stat(file_path)
+        # check if creation time is older than
+        if stat.st_ctime <= time_in_secs:
+            error = delete_file(file_path)
+            logger.info("Deleted the following log: {0}")
+            return error
+
+
+def delete_all(dir_path):
+    """
+    Deletes files and directories
+    :param dir_path: the path to the directory of files - absolute path, can contain subdirs
+    :except IOError, OSError: returns the file  and error
+     :return: None if no errors, otherwise return error as string
+    """
+    try:
+        full_paths = [os.path.join(dir_path, file_name) for file_name in os.listdir(dir_path)]
+        # note that if there aren't any files in directory this loop won't run
+        for file_name in full_paths:
+            if os.path.isdir(file_name):
+                rm_dir(file_name)
+            else:
+                delete_file(file_name)
+        return None
+    except (IOError, OSError) as e:
+        error_msg = "Could not delete {0}. Received error {1}".format(file_name, e)
+        logger.error(error_msg)
+        return error_msg
 
 
 def make_dir(dir_path):
@@ -403,7 +385,9 @@ def make_dir(dir_path):
             shutil.rmtree(dir_path, ignore_errors=True)
         os.mkdir(dir_path, 0777)
     except (IOError, OSError) as e:
-        return "Could not make directory {0}. Received error {1}".format(dir_path, e)
+        error_msg = "Could not make directory {0}. Received error {1}".format(dir_path, e)
+        logger.error(error_msg)
+        return error_msg
     return None
 
 
@@ -416,9 +400,11 @@ def make_all_dir_in_path(dir_path):
     # make directory if doesn't exist
     try:
         os.makedirs(dir_path)
-    except OSError as e:
+    except (IOError, OSError) as e:
         if not os.path.isdir(dir_path):
-            return "Could not make directory path {0}. Received error {1}".format(dir_path, e)
+            error_msg = "Could not make directory {0}. Received error {1}".format(dir_path, e)
+            logger.error(error_msg)
+            return error_msg
     return None
 
 
@@ -434,7 +420,9 @@ def rm_dir(dir_path):
             # this will remove regardless of whether its empty or read only
             shutil.rmtree(dir_path, ignore_errors=True)
     except (IOError, OSError) as e:
-        return "Could not remove directory {0}. Received error {1}".format(dir_path, e)
+        error_msg = "Could not remove directory {0}. Received error {1}".format(dir_path, e)
+        logger.error(error_msg)
+        return error_msg
     return None
 
 
@@ -451,14 +439,87 @@ def get_subdirs(path):
     return dir_list
 
 
+def natural_sort(iterable):
+    """
+    Sorts a iterable using natural sort
+    :param iterable: The python iterable to be sorted. - ie a list / etc...
+    :return: the sorted list
+    """
+    convert = lambda text: int(text) if text.isdigit() else text
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(iterable, key=alphanum_key)
+
+
+def load_json(json_path):
+    """
+    Loads a json file
+    :param json_path: the path to the json data
+    :return: the json data, or error if couldn't load
+    """
+    try:
+        with open(json_path, "r") as read_file:
+            return json.load(read_file)
+    except (IOError, OSError, EnvironmentError) as e:
+        error_msg = "Problem loading {0}. Error reported is {1}".format(json_path, e)
+        logger.error(error_msg)
+        return error_msg
+
+
+def write_json(json_path, user_data, indent=0):
+    """
+    Write to a json file
+    :param json_path: the path to the file
+    :param user_data: the data to write
+    :param indent: optional indent
+    :return: None if wrote to disk, error if couldn't write
+    """
+    try:
+        with open(json_path, "w") as write_file:
+            json.dump(user_data, write_file, indent=indent)
+            return None
+    except (IOError, OSError, EnvironmentError) as e:
+        error_msg = "Problem loading {0}. Error reported is {1}".format(json_path, e)
+        logger.error(error_msg)
+        return error_msg
+
+
+def launch_app(app, args):
+    """
+    Launch an external application
+    :param app: the path to the program to execute
+    :param args: any arguments to pass to the program as a list
+    :return: None if no errors, otherwise return error as string
+    """
+    cmd = [app]
+    for arg in args:
+        cmd.append(arg)
+    try:
+        Popen(cmd, shell=False)
+    except Exception as e:
+        error_msg = "App Open Failed for {0}. Error: {1}".format(cmd, e)
+        logger.error(error_msg)
+        return error_msg
+    return None
+
+
 def get_images_from_dir(dir_path):
     """
     get list of images in the directory, takes any image of supported types, so if directory has a mix, for
     # example jpeg and exr, it will grab both.
     :param dir_path: path to a directory
-    :return: a list of the images in the directory
+    :return: a list of the images in the directory, or error if encountered
     """
-    return [f.path for f in scandir(dir_path) if f.path.endswith(SUPPORTED_IMAGE_FORMATS)]
+    try:
+        images = [f.path for f in scandir(dir_path) if f.path.endswith(SUPPORTED_IMAGE_FORMATS)]
+    except (IOError, OSError) as e:
+        error_msg = "Error getting a list of images with ext {0} from {1}. Reported error {2}".format(
+            SUPPORTED_IMAGE_FORMATS,
+            dir_path,
+            e
+        )
+        logger.exception(error_msg)
+        return error_msg
+    return images
 
 
 def convert_to_sRGB(red, green, blue):

@@ -21,10 +21,11 @@ class AniAppMngr(object):
     def __init__(self, app_name):
         # these are the same for all apps
         self.__app_data_path = "C:\\PyAniTools\\app_data\\"
-        self.__updater_app = "C:\\PyAniTools\\installed\\PyAppMngr.exe"
+        self.__updater_app = "C:\\PyAniTools\\installed\\PyAppMngr\\PyAppMngr.exe"
         # per app variables
         self.__app_name = app_name
-        self.__app_install_path = "C:\\PyAniTools\\installed\\{0}".format(app_name)
+        self.__tools_install_dir = "C:\\PyAniTools\\installed"
+        self.__app_install_path = "{0}\\{1}".format(self.tools_install_dir, app_name)
         self.__app_exe = "{0}.exe".format(self.app_name)
         self.__app_package = "C:\\PyAniTools\\packages\\{0}.zip".format(self.app_name)
         self.__user_config = os.path.abspath("{0}\\app_pref.json".format(self.app_install_path))
@@ -44,6 +45,12 @@ class AniAppMngr(object):
             return self.__user_data["version"]
         else:
             return None
+
+    @property
+    def tools_install_dir(self):
+        """Location where tools are installed
+        """
+        return self.__tools_install_dir
 
     @property
     def latest_version(self):
@@ -115,21 +122,17 @@ class AniAppMngr(object):
             return "Application install could not be found: {0}".format(self.app_install_path)
         return None
 
-    def install(self, has_pref=False):
+    def install(self):
         """Installs the latest version of the app
-        :param has_pref : boolean whether app has preferences
         :return Error if encountered, None if no errors
         """
-        error = self.unpack_app(self.app_package, self.app_install_path)
-
+        # remove the existing app
+        pyani.core.util.rm_dir(self.app_install_path)
+        # unzip new app files
+        error = self.unpack_app(self.app_package, self.tools_install_dir)
         if error:
             return error
 
-        # create user preference file
-        if has_pref:
-            self._create_user_preferences()
-
-        # update the user version, in case it has changed
         self._update_user_version()
 
         return None
@@ -145,7 +148,6 @@ class AniAppMngr(object):
         try:
             with zipfile.ZipFile(file=package) as zipped:
                 zipped.extractall(path=install_path)
-                print package, install_path
         except zipfile.BadZipfile:
             return "{0} update file is corrupt.".format(package)
 

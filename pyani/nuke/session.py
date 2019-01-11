@@ -190,8 +190,13 @@ class AniNukeGui:
         """
         # Make the custom show menu
         plugins = utils.load_json(os.path.join(self.ani_vars.plugin_show,
-                                               self.ani_vars.plugins_json_name)).keys()
-        self.build_menu("Show Plugins", plugins, None)
+                                               self.ani_vars.plugins_json_name))
+        show_plugins = []
+        for plugin_name in plugins.keys():
+            # only want to show plugins that don't rely on show template
+            if plugins[plugin_name]["requires_template"] == "no":
+                show_plugins.append(plugin_name)
+        self.build_menu("Show Plugins", show_plugins, None)
 
     def build_menu(self, title, plugins, templates):
         """

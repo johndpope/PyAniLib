@@ -1,5 +1,9 @@
 import os
 import sys
+import logging
+import pyani.core.util
+
+logger = logging.getLogger()
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -65,6 +69,9 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         else:
             self.vers_update.setText("")
             self.vers_label.setText("Version {0}".format(self.version))
+
+        # error and message logging
+        self.log = []
 
         # common ui elements
 
@@ -148,10 +155,14 @@ class AniQMainWindow(QtWidgets.QMainWindow):
             e.ignore()
 
     def _update_app(self):
-        """Launches external app updater and closes this app
+        """Launches external app updater and closes this app.
+        displays error if encountered, otherwise exits application
         """
-        pyani.core.util.launch_app(self.app_manager.updater_app)
-        sys.exit(0)
+        error_msg = pyani.core.util.launch_app(self.app_manager.updater_app, "")
+        if error_msg:
+            self.msg_win.show_error_msg("Update Error", error_msg)
+        else:
+            sys.exit(0)
 
     def _build_ui(self):
         """Builds the UI widgets, slots and layout
@@ -183,6 +194,13 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         """Set the link clicked signal for version update text
         """
         self.vers_update.linkActivated.connect(self._update_app)
+
+    def _log_error(self, error):
+        """
+        Simple utility to format errors and append to a list
+        :param error: the error as a string
+        """
+        self.log.append("<font color={0}>{1}</font>".format(pyani.core.ui.RED.name(), error))
 
 
 class FileDialog(QFileDialog):
@@ -235,13 +253,17 @@ class FileDialog(QFileDialog):
                 files.append(os.path.join(str(self.directory().absolutePath()), itemName))
         self.selectedFiles = files
         self.close()
+        logger.info("File dialog class un-normalized selection: {0}".format(", ".join(self.selectedFiles)))
 
     def get_selection(self):
         '''
         Getter function to return the selected files / folders as a list
-        :return a list of files and folders selected in the file dialog
+        :return a list of files and folders selected in the file dialog normalized to os path system convention
         '''
-        return self.selectedFiles
+        # make sure paths get normalized so they are correct
+        normalized_paths = [os.path.normpath(file_name) for file_name in self.selectedFiles]
+        logger.info("File dialog class normalized selection: {0}".format(", ".join(normalized_paths)))
+        return normalized_paths
 
 
 class QHLine(QtWidgets.QFrame):

@@ -211,7 +211,7 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
         self.app_name = "PyExrViewer"
         self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
         # pass win title, icon path, app manager, width and height
-        super(AniExrViewerGui, self).__init__("Py Exr Manager", "Resources\\pyexrviewer.png", self.app_mngr, 1920, 1000)
+        super(AniExrViewerGui, self).__init__("Py Exr Viewer", "Resources\\pyexrviewer.ico", self.app_mngr, 1920, 1000)
 
         # class variables
         self.exr_image = None

@@ -2,6 +2,7 @@
 
 import os
 import argparse
+import logging
 from colorama import Fore, Style
 import pyani.media.image.seq
 import pyani.media.movie.create.core
@@ -9,6 +10,8 @@ import pyani.core.util
 from pyani.core.ui import QtMsgWindow
 from pyani.core.ui import FileDialog
 from pyani.core.appmanager import AniAppMngr
+
+logger = logging.getLogger()
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -25,297 +28,218 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
     :param movie_generation : the app called to create the actual movie, for example ffmpeg
     :param movie_playback : the app called to play the movie, for example Shotgun RV
     :param strict_pad : enforce the same padding for whole image sequence
+    :param log_error : the log of errors
     """
-    def __init__(self, movie_generation, movie_playback, strict_pad):
+    def __init__(self, movie_generation, movie_playback, strict_pad, log_error):
         # build main window structure
         self.app_name = "PyShoot"
         self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
         # pass win title, icon path, app manager, width and height
-        super(AniShootGui, self).__init__("Py Shoot Movie Creator", "Resources\\pyshoot.png", self.app_mngr, 1000, 400)
+        super(AniShootGui, self).__init__("Py Shoot Movie Creator", "Resources\\pyshoot.ico", self.app_mngr, 1000, 400)
 
         # setup data
         self.ani_vars = pyani.core.util.AniVars()
         self.shoot = pyani.media.movie.create.core.AniShoot(movie_generation, movie_playback, strict_pad)
+        self.ui = pyani.media.movie.create.core.AniShootUi()
 
-        # disable logging by default
-        pyani.core.util.logging_disabled(True)
+        # progress updating
+        self.progress_update = QtWidgets.QProgressDialog("Task in Progress...", "Cancel", 0, 100)
 
-        # setup UI widgets and layout
-        # create widgets - buttons, checkboxes, etc...
-        self.create_widgets()
-        # connect slots
-        self.set_slots()
+        # ui elements
+        self.files_button = QtWidgets.QPushButton("Select Images or Directory")
+        self.frame_range_input = QtWidgets.QLineEdit("")
+        self.files_display = QtWidgets.QLineEdit("")
+        self.steps_sbox = QtWidgets.QSpinBox()
+        self.movie_output_button = QtWidgets.QPushButton("Select Movie Directory and Name")
+        self.movie_output_name = QtWidgets.QLineEdit("")
+        self.create_button = QtWidgets.QPushButton('Create')
+        self.close_button = QtWidgets.QPushButton('Close')
+        # defined later using ui function in create layout()
+        self.movie_quality_cbox = None
+        self.movie_combine_cbox = None
+        self.frame_hold_cbox = None
+        self.show_movies_cbox = None
+        self.file_dialog_selection = None
+
         # layout the ui
         self.create_layout()
+        # connect slots
+        self.set_slots()
+
+        # check if logging was setup correctly in main()
+        if log_error:
+            self.msg_win.show_warning_msg(
+                "Error Log Warning",
+                "Error logging could not be setup because {0}. You can continue, however "
+                "errors will not be logged.".format(log_error)
+            )
 
         self.dialog_places = self._build_places()
-
-    def create_widgets(self):
-        """Creates all the widgets used by the UI
-        """
-        # ----------------------
-        # general options widgets
-        # ----------------------
-        self.generalOptionsLabel = QtWidgets.QLabel("General Options")
-        self.generalOptionsLabel.setFont(self.titles)
-        self.log_label = QtWidgets.QLabel("Show Log")
-        self.log_cbox = QtWidgets.QCheckBox()
-        self.log_cbox.setChecked(False)
-        directions = 'Prints a log of the movie creation to the terminal.'
-        self.log_cbox.setToolTip(directions)
-
-        self.validate_input_label = QtWidgets.QLabel("Validate Submission. <i>(Recommended)</i>")
-        self.validate_input_cbox = QtWidgets.QCheckBox()
-        self.validate_input_cbox.setChecked(True)
-        directions = 'Turns off validation checks. Not recommended, however for performance you can toggle off.'
-        self.validate_input_cbox.setToolTip(directions)
-
-        # ----------------------
-        # image options widgets
-        # ----------------------
-        # open file dialog to select images
-        self.imageOptionsLabel = QtWidgets.QLabel("Image Options")
-        self.imageOptionsLabel.setFont(self.titles)
-        self.filesBtn = QtWidgets.QPushButton("Select Images or Directory")
-        self.filesBtn.setMinimumSize(150,30)
-        self.filesDisplay = QtWidgets.QLineEdit("")
-
-        # ----------------------
-        # frame options widgets
-        # ----------------------
-        # hold frames
-        self.frameOptionsLabel = QtWidgets.QLabel("Frame Options")
-        self.frameOptionsLabel.setFont(self.titles)
-        self.frameRangeLabel = QtWidgets.QLabel("Frame Range")
-        self.frameRangeInput = QtWidgets.QLineEdit("")
-        self.frameRangeInput.setMinimumWidth(300)
-        directions = ("Takes a frame range (denoted with '-' or single frames (separated with commas).\n"
-                      "You can combine ranges with single frames.\nUse a comma to separate (i.e. 101-105,108,120-130)"
-                      )
-        self.frameRangeInput.setToolTip(directions)
-        # steps - default to 1, every frame
-        self.stepsLabel = QtWidgets.QLabel("Steps")
-        self.stepsSbox = QtWidgets.QSpinBox()
-        self.stepsSbox.setMinimum(1)
-
-        # ----------------------
-        # movie options widgets
-        # ----------------------
-        self.movieOptionsLabel = QtWidgets.QLabel("Movie Options")
-        self.movieOptionsLabel.setFont(self.titles)
-
-        # write to path
-        self.movieOutputBtn = QtWidgets.QPushButton("Select Movie Directory")
-        self.movieOutputBtn.setMinimumSize(150,30)
-        self.movie_output_name = QtWidgets.QLineEdit("")
-
-        self.movie_quality_label = QtWidgets.QLabel("High Quality")
-        self.movie_quality_cbox = QtWidgets.QCheckBox()
-        self.movie_quality_cbox.setChecked(False)
-        directions = 'Creates an uncompressed movie file.'
-        self.movie_quality_cbox.setToolTip(directions)
-
-        self.movie_overwrite_label = QtWidgets.QLabel("Overwrite if Exists")
-        self.movie_overwrite_cbox = QtWidgets.QCheckBox()
-        self.movie_overwrite_cbox.setChecked(True)
-        directions = 'If the movie exists, overwrites the existing movie.'
-        self.movie_overwrite_cbox.setToolTip(directions)
-
-        self.movie_combine_label = QtWidgets.QLabel("Combine Sequences Into One Movie")
-        self.movie_combine_cbox = QtWidgets.QCheckBox()
-        self.movie_combine_cbox.setChecked(False)
-        directions = ('Makes one movie out of different image sequences. Default behavior makes a movie per image'
-                      ' sequence.'
-                      )
-        self.movie_combine_cbox.setToolTip(directions)
-
-        self.frame_hold_label = QtWidgets.QLabel("Hold Missing Frames")
-        self.frame_hold_cbox = QtWidgets.QCheckBox()
-        self.frame_hold_cbox.setChecked(True)
-        directions = ('Holds the previous frame until an existing frame is found. When unchecked, a missing frame'
-                      'image shows. '
-                      )
-
-        self.frame_hold_cbox.setToolTip(directions)
-
-        self.show_movies_label = QtWidgets.QLabel("View Movie(s) in RV after creation")
-        self.show_movies_cbox = QtWidgets.QCheckBox()
-        self.show_movies_cbox.setChecked(True)
-        directions = 'Launches playback application to view movie(s)'
-        self.show_movies_cbox.setToolTip(directions)
-
-        # ----------------------
-        # action button widgets
-        # ----------------------
-        # create the movie
-        self.createBtn = QtWidgets.QPushButton('Create')
-        self.createBtn.setMinimumSize(150,40)
-        self.createBtn.setStyleSheet("background-color:{0};".format(pyani.core.ui.GREEN))
-        # close application
-        self.closeBtn = QtWidgets.QPushButton('Close')
-        self.closeBtn.setMinimumSize(150,40)
-        self.closeBtn.setStyleSheet("background-color:{0};".format(pyani.core.ui.GOLD))
 
     def set_slots(self):
         """Create the slots/actions that UI buttons / etc... do
         """
         # get selection which launches file dialog
-        self.filesBtn.clicked.connect(self.get_sequence)
+        self.files_button.clicked.connect(self.get_sequence)
         # open dialog to select output path
-        self.movieOutputBtn.clicked.connect(self.save_movie)
+        self.movie_output_button.clicked.connect(self.save_movie)
         # if state changes, update selection
         self.movie_combine_cbox.stateChanged.connect(self.movie_combine_update)
         # if state changes, update selection
         self.frame_hold_cbox.stateChanged.connect(self.update_hold_frame)
-        # if state changes update
-        self.log_cbox.stateChanged.connect(self.update_logging)
         # process options and create movie
-        self.createBtn.clicked.connect(self.create_movie)
+        self.create_button.clicked.connect(self.create_movie)
         # call close built-in function
-        self.closeBtn.clicked.connect(self.close)
+        self.close_button.clicked.connect(self.close_and_cleanup)
 
     def create_layout(self):
         """Build the layout of the UI
         """
 
         # ----------------------
-        # general options
-        # ----------------------
-        # title
-        self.main_layout.addWidget(self.generalOptionsLabel)
-        self.main_layout.addItem(self.title_vert_spacer)
-
-        # use a grid for the options so they align correctly
-        gLayoutGeneralOptions = QtWidgets.QGridLayout()
-        gLayoutGeneralOptions.setHorizontalSpacing(20)
-        gLayoutGeneralOptions.setVerticalSpacing(15)
-
-        # options
-        gLayoutGeneralOptions.addWidget(self.log_cbox, 0, 0)
-        gLayoutGeneralOptions.addWidget(self.log_label, 0, 1)
-        gLayoutGeneralOptions.addWidget(self.validate_input_cbox, 1, 0)
-        gLayoutGeneralOptions.addWidget(self.validate_input_label, 1, 1)
-
-        # empty column and stretch to window
-        gLayoutGeneralOptions.addItem(self.empty_space, 0, 2)
-        gLayoutGeneralOptions.setColumnStretch(2, 1)
-        self.main_layout.addLayout(gLayoutGeneralOptions)
-
-        # ----------------------
         #  image options
         # ----------------------
-        # add spacer
-        self.main_layout.addItem(self.v_spacer)
-        self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
+        # open file dialog to select images
+        image_options_label = QtWidgets.QLabel("Image Options")
+        image_options_label.setFont(self.titles)
+        self.files_button.setMinimumSize(150, 30)
+
         # title
-        self.main_layout.addWidget(self.imageOptionsLabel)
+        self.main_layout.addWidget(image_options_label)
         self.main_layout.addItem(self.title_vert_spacer)
 
         # image options spaced horizontally
-        hLayoutFiles = QtWidgets.QHBoxLayout()
-        hLayoutFiles.addWidget(self.filesDisplay)
-        hLayoutFiles.addWidget(self.filesBtn)
-        self.main_layout.addLayout(hLayoutFiles)
-
-        # use a grid for the options so they align correctly
-        gLayoutImageOptions = QtWidgets.QGridLayout()
-        gLayoutImageOptions.setHorizontalSpacing(20)
-        gLayoutImageOptions.setVerticalSpacing(15)
-
-        # empty column
-        gLayoutImageOptions.addItem(self.empty_space, 1, 2)
-        gLayoutImageOptions.setColumnStretch(2, 1)
-
-        self.main_layout.addLayout(gLayoutImageOptions)
+        h_layout_files = QtWidgets.QHBoxLayout()
+        h_layout_files.addWidget(self.files_display)
+        h_layout_files.addWidget(self.files_button)
+        self.main_layout.addLayout(h_layout_files)
 
         # ----------------------
         # frame options
         # ----------------------
+        # hold frames
+        frame_options_label = QtWidgets.QLabel("Frame Options")
+        frame_options_label.setFont(self.titles)
+        frame_range_label = QtWidgets.QLabel("Frame Range")
+        self.frame_range_input.setMinimumWidth(300)
+        directions = ("Takes a frame range (denoted with '-' or single frames (separated with commas).\n"
+                      "You can combine ranges with single frames.\nUse a comma to separate (i.e. 101-105,108,120-130)"
+                      )
+        self.frame_range_input.setToolTip(directions)
+        # steps - default to 1, every frame
+        steps_label = QtWidgets.QLabel("Steps")
+        self.steps_sbox.setMinimum(1)
+
         # add spacer
         self.main_layout.addItem(self.v_spacer)
         self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
-
         # title
-        self.main_layout.addWidget(self.frameOptionsLabel)
+        self.main_layout.addWidget(frame_options_label)
         self.main_layout.addItem(self.title_vert_spacer)
-
         # use a grid for the options so they align correctly
-        gLayoutFrameOptions = QtWidgets.QGridLayout()
-        gLayoutFrameOptions.setHorizontalSpacing(50)
-        gLayoutFrameOptions.setVerticalSpacing(15)
-
+        g_layout_frame_options = QtWidgets.QGridLayout()
+        g_layout_frame_options.setHorizontalSpacing(50)
+        g_layout_frame_options.setVerticalSpacing(15)
         # frame range
-        gLayoutFrameOptions.addWidget(self.frameRangeLabel, 0, 0)
-        gLayoutFrameOptions.addWidget(self.frameRangeInput, 0, 1)
-        gLayoutFrameOptions.addItem(self.horizontal_spacer, 0, 2)
+        g_layout_frame_options.addWidget(frame_range_label, 0, 0)
+        g_layout_frame_options.addWidget(self.frame_range_input, 0, 1)
+        g_layout_frame_options.addItem(self.horizontal_spacer, 0, 2)
         # frame step
-        gLayoutFrameOptions.addWidget(self.stepsLabel, 1, 0)
-        gLayoutFrameOptions.addWidget(self.stepsSbox, 1, 1)
-
+        g_layout_frame_options.addWidget(steps_label, 1, 0)
+        g_layout_frame_options.addWidget(self.steps_sbox, 1, 1)
         # empty column
-        gLayoutFrameOptions.addItem(self.empty_space, 1, 2)
-        gLayoutFrameOptions.setColumnStretch(2, 1)
+        g_layout_frame_options.addItem(self.empty_space, 1, 2)
+        g_layout_frame_options.setColumnStretch(2, 1)
 
-        self.main_layout.addLayout(gLayoutFrameOptions)
+        self.main_layout.addLayout(g_layout_frame_options)
 
         # ----------------------
         # movie options
         # ----------------------
+        movie_options_label = QtWidgets.QLabel("Movie Options")
+        movie_options_label.setFont(self.titles)
+        self.movie_output_button.setMinimumSize(150, 30)
+        movie_quality_label, self.movie_quality_cbox = pyani.core.ui.build_checkbox(
+            "High Quality",
+            False,
+            'Creates an uncompressed movie file.'
+        )
+        movie_combine_label, self.movie_combine_cbox = pyani.core.ui.build_checkbox(
+            "Combine Sequences Into One Movie",
+            False,
+            'Makes one movie out of different image sequences. Default behavior makes a movie per image sequence.'
+        )
+        frame_hold_label, self.frame_hold_cbox = pyani.core.ui.build_checkbox(
+            "Hold Missing Frames",
+            True,
+            "Holds the previous frame until an existing frame is found. When unchecked, a missing frame image shows."
+        )
+        show_movies_label, self.show_movies_cbox = pyani.core.ui.build_checkbox(
+            "View Movie(s) in RV after creation",
+            True,
+            "Launches playback application to view movie(s)"
+        )
+
         # add spacer
         self.main_layout.addItem(self.v_spacer)
         self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
         # title
-        self.main_layout.addWidget(self.movieOptionsLabel)
+        self.main_layout.addWidget(movie_options_label)
         self.main_layout.addItem(self.title_vert_spacer)
 
-        hLayoutMovName = QtWidgets.QHBoxLayout()
-        hLayoutMovName.addWidget(self.movie_output_name)
-        hLayoutMovName.addWidget(self.movieOutputBtn)
-        self.main_layout.addLayout(hLayoutMovName)
+        h_layout_mov_name = QtWidgets.QHBoxLayout()
+        h_layout_mov_name.addWidget(self.movie_output_name)
+        h_layout_mov_name.addWidget(self.movie_output_button)
+        self.main_layout.addLayout(h_layout_mov_name)
 
         # use a grid for the options so they align correctly
-        gLayoutMovieOptions = QtWidgets.QGridLayout()
-        gLayoutMovieOptions.setHorizontalSpacing(20)
-        gLayoutMovieOptions.setVerticalSpacing(5)
+        g_layout_movie_options = QtWidgets.QGridLayout()
+        g_layout_movie_options.setHorizontalSpacing(20)
+        g_layout_movie_options.setVerticalSpacing(5)
 
         # options
-        gLayoutMovieOptions.addWidget(self.movie_quality_cbox, 0, 0)
-        gLayoutMovieOptions.addWidget(self.movie_quality_label, 0, 1)
-        gLayoutMovieOptions.addItem(self.horizontal_spacer, 0, 2)
-        gLayoutMovieOptions.addWidget(self.movie_overwrite_cbox, 1, 0)
-        gLayoutMovieOptions.addWidget(self.movie_overwrite_label, 1, 1)
-        gLayoutMovieOptions.addItem(self.horizontal_spacer, 1, 2)
-        gLayoutMovieOptions.addWidget(self.frame_hold_cbox, 2, 0)
-        gLayoutMovieOptions.addWidget(self.frame_hold_label, 2, 1)
-        gLayoutMovieOptions.addItem(self.horizontal_spacer, 2, 2)
-        gLayoutMovieOptions.addWidget(self.show_movies_cbox, 3, 0)
-        gLayoutMovieOptions.addWidget(self.show_movies_label, 3, 1)
-        gLayoutMovieOptions.addItem(self.horizontal_spacer, 3, 2)
-        gLayoutMovieOptions.addWidget(self.movie_combine_cbox, 4, 0)
-        gLayoutMovieOptions.addWidget(self.movie_combine_label, 4, 1)
-        gLayoutMovieOptions.addItem(self.horizontal_spacer, 4, 2)
+        g_layout_movie_options.addWidget(self.movie_quality_cbox, 0, 0)
+        g_layout_movie_options.addWidget(movie_quality_label, 0, 1)
+        g_layout_movie_options.addItem(self.horizontal_spacer, 0, 2)
+        g_layout_movie_options.addWidget(self.frame_hold_cbox, 1, 0)
+        g_layout_movie_options.addWidget(frame_hold_label, 1, 1)
+        g_layout_movie_options.addItem(self.horizontal_spacer, 1, 2)
+        g_layout_movie_options.addWidget(self.show_movies_cbox, 2, 0)
+        g_layout_movie_options.addWidget(show_movies_label, 2, 1)
+        g_layout_movie_options.addItem(self.horizontal_spacer, 2, 2)
+        g_layout_movie_options.addWidget(self.movie_combine_cbox, 3, 0)
+        g_layout_movie_options.addWidget(movie_combine_label, 3, 1)
+        g_layout_movie_options.addItem(self.horizontal_spacer, 3, 2)
 
         # empty column
-        gLayoutMovieOptions.addItem(self.empty_space, 5, 2)
-        gLayoutMovieOptions.setColumnStretch(2, 1)
+        g_layout_movie_options.addItem(self.empty_space, 5, 2)
+        g_layout_movie_options.setColumnStretch(2, 1)
 
-        self.main_layout.addLayout(gLayoutMovieOptions)
+        self.main_layout.addLayout(g_layout_movie_options)
 
         # ----------------------
         # actions
         # ----------------------
+        self.create_button.setMinimumSize(150, 40)
+        self.create_button.setStyleSheet("background-color:{0};".format(pyani.core.ui.GREEN))
+        self.close_button.setMinimumSize(150, 40)
+        self.close_button.setStyleSheet("background-color:{0};".format(pyani.core.ui.GOLD))
         # add spacer
         self.main_layout.addItem(self.v_spacer)
         # push buttons to bottom
         self.main_layout.addStretch(1)
         # push buttons to right
-        hLayoutActions = QtWidgets.QHBoxLayout()
-        hLayoutActions.addStretch(1)
-        hLayoutActions.addWidget(self.createBtn)
-        hLayoutActions.addWidget(self.closeBtn)
-        self.main_layout.addLayout(hLayoutActions)
+        h_layout_actions = QtWidgets.QHBoxLayout()
+        h_layout_actions.addStretch(1)
+        h_layout_actions.addWidget(self.create_button)
+        h_layout_actions.addWidget(self.close_button)
+        self.main_layout.addLayout(h_layout_actions)
 
         self.add_layout_to_win()
+
+    def close_and_cleanup(self):
+        self.shoot.cleanup()
+        self.close()
 
     def movie_combine_update(self):
         """
@@ -325,14 +249,18 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         :return: exits after error if unsuccessful
         """
         if self.movie_combine_cbox.checkState():
-            self._unlock_gui_object(self.frameRangeInput)
+            self.progress_update.setLabelText("Combining Sequences...")
+            self.progress_update.show()
+            QtWidgets.QApplication.processEvents()
+
+            self._unlock_gui_object(self.frame_range_input)
             self.shoot.combine_seq = True
             # try to combine, if can't report to user
-            error_msg = self.shoot.combine_sequences()
+            error_msg = self.shoot.combine_sequences(self.progress_update)
             if error_msg:
                 self.msg_win.show_error_msg("Invalid Selection", error_msg)
                 # reset since couldn't combine
-                self._lock_gui_object(self.frameRangeInput)
+                self._lock_gui_object(self.frame_range_input)
                 self.shoot.combine_seq = False
                 self.movie_combine_cbox.blockSignals(True)
                 self.movie_combine_cbox.setCheckState(False)
@@ -340,9 +268,13 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
                 return
             # update display with combined sequence info
             self.display_gui_info()
+
+            self.progress_update.setLabelText("Finished Combining Sequences")
+            self.progress_update.hide()
+            QtWidgets.QApplication.processEvents()
         # unchecked, so un-combine sequences
         else:
-            self._lock_gui_object(self.frameRangeInput)
+            self._lock_gui_object(self.frame_range_input)
             self.shoot.combine_seq = False
             self.shoot.separate_sequences()
             # update display
@@ -354,14 +286,6 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         in the slot, because then qt won't garbage collect since you reference self (i.ee the checkbox)
         """
         self.shoot.frame_hold = self.frame_hold_cbox.checkState()
-
-    def update_logging(self):
-        """Sets logging to be on or off
-        """
-        if self.log_cbox.checkState():
-            pyani.core.util.logging_disabled(False)
-        else:
-            pyani.core.util.logging_disabled(True)
 
     def get_sequence(self):
         """
@@ -375,28 +299,25 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
 
         # only process selection if a selection was made
         if self.file_dialog_selection:
-            error_msg, self.shoot = self.ui.process_input(self.file_dialog_selection, self.shoot)
+            error_msg = self.ui.process_input(self.file_dialog_selection, self.shoot)
             if error_msg:
                 self.msg_win.show_error_msg("Invalid Selection", error_msg)
                 return
 
             # validate sequences
-            if self.validate_input_cbox.checkState():
-                msg = self.ui.validate_selection(self.shoot, int(self.stepsSbox.value()))
-                if msg:
-                    self.msg_win.show_error_msg("Invalid Selection", msg)
-                else:
-                    self.display_gui_info()
+            msg = self.ui.validate_selection(self.shoot, int(self.steps_sbox.value()))
+            if msg:
+                self.msg_win.show_error_msg("Invalid Selection", msg)
             else:
                 self.display_gui_info()
 
             # check if frame range input should be locked, because there are multiple sequences
-            if self.frameRangeInput.text() == "N/A":
+            if self.frame_range_input.text() == "N/A":
                 # disable so user can't change
-                self._lock_gui_object(self.frameRangeInput)
+                self._lock_gui_object(self.frame_range_input)
             else:
                 # enable so user can change
-                self._unlock_gui_object(self.frameRangeInput)
+                self._unlock_gui_object(self.frame_range_input)
 
     def display_gui_info(self):
         """
@@ -404,6 +325,8 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         sequence selection, and combined sequence selection. Displays single sequence as path.[frame range].exr
         multiple sequences displayed as path_to_multiple sequences: sequence_dir\image_name.[frame range].exr , next
         sequence and so on...
+
+        Displays and logs error if cannot parse directory paths
         """
         # only display info if there is a sequence
         if not self.shoot.seq_list:
@@ -414,28 +337,50 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
 
         # one sequence
         if len(seq_list) == 1:
-            self.filesDisplay.setText(str(seq_list[0]))
-            self.frameRangeInput.setText(seq_list[0].frame_range().strip("[]"))
+            self.files_display.setText(str(seq_list[0]))
+            self.frame_range_input.setText(seq_list[0].frame_range().strip("[]"))
             # special case, want the combined movie to not default to temp, where its images are, but the original
             # directory
             if self.shoot.combine_seq:
                 directory = self.shoot.seq_parent_directory()
             else:
                 directory = seq_list[0].directory()
-            self.movie_output_name.setText("{0}.mp4".format(os.path.join(directory, seq_list[0].name)))
+
+            if directory:
+                self.movie_output_name.setText("{0}.mp4".format(os.path.join(directory, seq_list[0].name)))
+            else:
+                self.msg_win.show_error_msg("Gui Display Error", "Could not parse movie name")
+
         # multiple sequences
         else:
             # multiple sequences share a common parent folder, so get that by going up one level in file system
-            parent_dir = os.path.abspath(os.path.join(os.path.dirname(seq_list[0].directory()), '..'))
-            # build file list of sub dirs and their ranges
-            seq_names = []
-            for seq in seq_list:
-                format_name = "{0}\{1}.{2}.{3} ".format(seq[0].dirname.split("\\")[-1], seq[0].base_name,
-                                                        seq.frame_range(), seq[0].ext)
-                seq_names.append(format_name)
+            try:
+                parent_dir = os.path.abspath(os.path.join(os.path.dirname(seq_list[0].directory()), '..'))
+            except (IOError, OSError, WindowsError) as e:
+                error_msg = "Could not parse parent directory for {0}. Error is {1}".format(seq_list[0].directory(), e)
+                self.msg_win.show_error_msg("Gui Display Error", error_msg)
+                logger.exception(error_msg)
+                return
 
-            self.filesDisplay.setText("{0} : {1}".format(parent_dir, ', '.join(seq_names)))
-            self.frameRangeInput.setText("N/A")
+            try:
+                # build file list of sub dirs and their ranges
+                seq_names = []
+                for seq in seq_list:
+                    format_name = "{0}\{1}.{2}.{3} ".format(
+                        seq[0].dirname.split("\\")[-1],
+                        seq[0].base_name,
+                        seq.frame_range(),
+                        seq[0].ext
+                    )
+                    seq_names.append(format_name)
+            except (IndexError, ValueError) as e:
+                error_msg = "Could not parse parent directory for {0}. Error is {1}".format(seq_list[0].directory(), e)
+                self.msg_win.show_error_msg("Gui Display Error", error_msg)
+                logger.exception(error_msg)
+                return
+
+            self.files_display.setText("{0} : {1}".format(parent_dir, ', '.join(seq_names)))
+            self.frame_range_input.setText("N/A")
             self.movie_output_name.setText("{0}\[seq_shot].mp4".format(parent_dir))
 
     def save_movie(self):
@@ -446,32 +391,45 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
     def create_movie(self):
         """Creates movie for the image sequences
         """
-        frame_steps = (int(self.stepsSbox.text()))
-        frame_range = str(self.frameRangeInput.text()).strip()  # remove white space
+        self.progress_update.setLabelText("Checking Submission...")
+        self.progress_update.show()
+        QtWidgets.QApplication.processEvents()
+
+        frame_steps = (int(self.steps_sbox.text()))
+        frame_range = str(self.frame_range_input.text()).strip()  # remove white space
         movie_name = str(self.movie_output_name.text())
-        if self.validate_input_cbox.checkState():
-            msg = self.ui.validate_submission(self.shoot.seq_list,
-                                              self.shoot.combine_seq,
-                                              frame_range,
-                                              movie_name,
-                                              self.movie_overwrite_cbox.checkState())
-            if msg:
-                self.msg_win.show_error_msg("Invalid Option", msg)
-                return False
+        # validate input
+        msg = self.ui.validate_submission(self.shoot.seq_list,
+                                          self.shoot.combine_seq,
+                                          frame_range,
+                                          movie_name,
+                                          frame_steps
+                                          )
+        if msg:
+            self.msg_win.show_error_msg("Invalid Option", msg)
+            return False
 
         quality = self.movie_quality_cbox.checkState()
 
-        movie_log, movie_list = self.shoot.create_movie(frame_steps, frame_range, movie_name, quality)
+        movie_log, movie_list = self.shoot.create_movie(frame_steps, frame_range, movie_name, quality, self.progress_update)
         self.msg_win.show_info_msg("Movie Report", "Created {0} Movie(s).".format(len(movie_list)))
+
+        # update progress
+        self.progress_update.setLabelText("Finished")
+        self.progress_update.setValue(100)
+        self.progress_update.hide()
+        QtWidgets.QApplication.processEvents()
 
         # open movie playback if option is checked and movie created
         if self.show_movies_cbox.checkState() and movie_list:
-            self.shoot.play_movies(movie_list)
+            error = self.shoot.play_movies(movie_list)
+            if error:
+                self.msg_win.show_error_msg("Playback error", "Error opening playback app. Error is {0}".format(error))
 
         # report movie not created
         if movie_log:
             self.msg_win.show_warning_msg("Movie Report", "Could not create some or all movie. "
-                                                          "See Log for More Information.")
+                                                          "See Log in C:\PyAniTools\logs\PyShoot\ for more info.")
 
     @staticmethod
     def _lock_gui_object(pyqt_object):
@@ -511,8 +469,6 @@ class AniShootCLI:
         self.ani_vars = pyani.core.util.AniVars()
         self.shoot = pyani.media.movie.create.core.AniShoot(movie_generation, movie_playback, strict_pad)
         self.ui = pyani.media.movie.create.core.AniShootUi()
-        # disable logging by default
-        pyani.core.util.logging_disabled(True)
 
         # get arguments from command line
         parser = self.build_parser()
@@ -572,7 +528,6 @@ class AniShootCLI:
                                                  "default movie playback tool: {0}. "
                                                  "Default is False.".format(self.shoot.movie_playback_app),
                             action="store_true", default=False)
-        self._add_bool_arg(parser, "log", "Output a log to terminal.", False)
         self._add_bool_arg(parser, "validate_submission", "Check submission for errors.", True)
         self._add_bool_arg(parser, "frame_hold", "Hold missing frames.", True)
         self._add_bool_arg(parser, "overwrite", "Overwrite movie on disk.", False)
@@ -581,14 +536,6 @@ class AniShootCLI:
     def process_user_input(self):
         """process the command line arguments, creating the default values for optional arguments
         """
-        # check if logging should be enabled or disabled
-        if self.args.log:
-            pyani.core.util.logging_disabled(False)
-        else:
-            pyani.core.util.logging_disabled(True)
-
-        pyani.core.util.LOG.debug("command line args {0}:".format(self.args))
-
         if not self.args.frame_range:
             self.args.frame_range = "N/A"
 
@@ -695,3 +642,4 @@ class AniShootCLI:
         group.add_argument('--' + name, dest=name, help=help, action='store_true')
         group.add_argument('--no-' + name, dest=name, help=help, action='store_false')
         parser.set_defaults(**{name: default})
+
