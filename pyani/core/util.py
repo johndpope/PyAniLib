@@ -23,191 +23,159 @@ SUPPORTED_IMAGE_FORMATS = ("exr", "jpg", "jpeg", "tif", "png")  # tuple to work 
 SUPPORTED_MOVIE_FORMATS = ("mp4")  # tuple to work with endswith of scandir
 
 
-class AniVars(object):
-    '''
-    object that holds variables for shot, sequence and scenes. Parses based off a shot path since there is no access
-    to a show environment vars. Option to not provide a shot path, in which case a dummy path is created
+class WinTaskScheduler:
+    """Wrapper around windows task scheduler command line tool named schtasks. Provides functionality to create,
+    enable/disable, and query state
+    """
+    def __init__(self, task_name, command):
+        self.__task_name = task_name
+        self.__task_command = command
 
-    List of Ani Vars:
+    @property
+    def task_name(self):
+        """Return the task name
+        """
+        return self.__task_name
 
-    print AniVar_instance
+    @property
+    def task_command(self):
+        """Return the task command
+        """
+        return self.__task_command
 
-    '''
+    def setup_task(self,  schedule_type="daily", start_time="12:00"):
+        """
+        creates a task in windows scheduler using the command line tool schtasks. Uses syntax:
+        schtasks /create /sc <ScheduleType> /tn <TaskName> /tr <TaskRun>
+        ex:
+        schtasks /Create /sc hourly /tn pyanitools_update /tr "C:\\PyAniTools\\installed\\PyAppMngr\\PyAppMngr.exe"
 
-    def __init__(self, shot_path=None):
-        # not dependent on seq or shot
-        self.desktop = os.path.expanduser("~/Desktop")
-        self.seq_shot_list = self._get_sequences_and_shots("C:\\PyAniTools\\app_data\\Shared\\sequences.json")
-        self.nuke_user_dir = os.path.join(os.path.expanduser("~"), ".nuke")
-        self.shot_master_template = "shot_master.nk"
-        # os.path.join has issues, maybe due to .nuke? String concat works
-        self.nuke_custom_dir = self.nuke_user_dir + "\\pyanitools"
-        self.plugins_json_name = "plugins.json"
-        self.templates_json_name = "templates.json"
-        # movie directories
-        self.movie_dir = os.path.normpath("Z:\LongGong\movie")
-        self.seq_movie_dir = os.path.normpath("{0}\sequences".format(self.movie_dir))
-        # comp plugin, script, template lib directories
-        self.plugin_show = os.path.normpath("Z:\LongGong\lib\comp\plugins")
-        self.templates_show = os.path.normpath("Z:\LongGong\lib\comp\\templates")
-        # image directories
-        self.image_dir = os.path.normpath("Z:\LongGong\images")
-        # begin vars dependent on seq and shot
-        self.seq_name = None
-        self.shot_name = None
-        self.shot_dir = None
-        self.shot_light_dir = None
-        self.shot_light_work_dir = None
-        self.shot_maya_dir = None
-        self.shot_comp_dir = None
-        self.shot_comp_work_dir = None
-        self.shot_comp_plugin_dir = None
-        self.shot_movie_dir = None
-        self.seq_lib = None
-        self.seq_comp_lib = None
-        self.plugin_seq = None
-        self.script_seq = None
-        self.templates_seq = None
-        self.seq_image_dir = None
-        self.shot_image_dir = None
-        self.shot_layer_dir = None
-        self.first_frame = None
-        self.last_frame = None
-        self.frame_range = None
+        :param schedule_type: when to run, options are:
+            MINUTE, HOURLY, DAILY, WEEKLY, MONTHLY, ONCE, ONSTART, ONLOGON, ONIDLE
+        :param start_time: optional start time
+        :return: any errors, otherwise None
+        """
+        is_scheduled, error = self.is_task_scheduled()
+        if error:
+            return error
 
-        if shot_path:
-            self.seq_name = self._get_sequence_name_from_string(shot_path)
-            self.shot_name = self._get_shot_name_from_string(shot_path)
-            self._make_seq_vars()
-            self._make_shot_vars()
+        if not is_scheduled:
+            p = Popen(
+                [
+                    "schtasks",
+                    "/Create",
+                    "/sc", schedule_type,
+                    "/tn", self.task_name,
+                    "/tr", self.task_command,
+                    "/st", start_time
+                ],
+                stdout=PIPE,
+                stderr=PIPE
+            )
+            output, error = p.communicate()
+            if p.returncode != 0:
+                error = "Problem scheduling task {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
+                    self.task_name,
+                    p.returncode,
+                    output,
+                    error
+                )
+                logger.error(error)
+                return error
+        return None
 
-        self.places = [
-            self.movie_dir,
-            self.seq_movie_dir,
-            self.image_dir,
-            self.desktop
-        ]
-
-    # produce better output
-    def __str__(self):
-        return json.dumps(vars(self),indent=4 )
-
-    def __repr__(self):
-        return '<pyani.core.util.AniVars "Seq{0}, Shot{1}">'.format(self.seq_name, self.shot_name)
-
-    def is_valid_seq(self, seq):
-        if self._get_sequence_name_from_string(seq):
-            return True
+    def is_task_scheduled(self):
+        """
+        checks for a task in windows scheduler using the command line tool schtasks. Uses syntax:
+        schtasks /query which returns a table format.
+        :returns: True if scheduled, False if not. Also returns error if encountered any, otherwise None
+        """
+        p = Popen(["schtasks", "/Query"], stdout=PIPE, stderr=PIPE)
+        output, error = p.communicate()
+        if p.returncode != 0:
+            error = "Problem querying task {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
+                self.task_name,
+                p.returncode,
+                output,
+                error
+            )
+            logger.error(error)
+            return False, error
+        if re.search(r'\b{0}\b'.format(self.task_name), output):
+            return True, None
         else:
-            return False
+            return False, None
 
-    def is_valid_shot(self, shot):
-        if self._get_shot_name_from_string(shot):
-            return True
-        else:
-            return False
-
-    def get_sequence_list(self):
-        return self.seq_shot_list.keys()
-
-    def get_shot_list(self):
-        shot_list = self.seq_shot_list[self.seq_name]
-        return [shot["Shot"] for shot in shot_list]
-
-    def update_using_shot_path(self, shot_path):
-        self.seq_name = self._get_sequence_name_from_string(shot_path)
-        self.shot_name = self._get_shot_name_from_string(shot_path)
-        self._make_seq_vars()
-        self._make_shot_vars()
-
-    def update(self, seq_name, shot_name=None):
-        self.seq_name = seq_name
-        self._make_seq_vars()
-        if shot_name:
-            self.shot_name = shot_name
-            self._make_shot_vars()
-
-    def _make_seq_vars(self):
-        self.seq_lib = os.path.normpath("Z:\LongGong\lib\sequences\{0}".format(self.seq_name))
-        # movie directories
-        self.seq_movie_dir = os.path.normpath("{0}\sequences".format(self.movie_dir))
-        # image directories
-        self.seq_image_dir = os.path.normpath("{0}\{1}".format(self.image_dir, self.seq_name))
-        # comp directories
-        self.seq_comp_lib = os.path.normpath("{0}\comp".format(self.seq_lib))
-        self.plugin_seq = os.path.normpath("{0}\plugins".format(self.seq_comp_lib))
-        self.templates_seq = os.path.normpath("{0}\\templates".format(self.seq_comp_lib))
-
-    def _make_shot_vars(self):
-        # shot directories in shot
-        self.shot_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}".format(self.seq_name, self.shot_name))
-        self.shot_light_dir = os.path.normpath("{0}\lighting".format(self.shot_dir))
-        self.shot_light_work_dir = os.path.normpath("{0}\work".format(self.shot_light_dir))
-        self.shot_maya_dir = os.path.normpath("{0}\scenes".format(self.shot_light_work_dir))
-        self.shot_comp_dir = os.path.normpath("{0}\composite".format(self.shot_dir))
-        self.shot_comp_work_dir = os.path.normpath("{0}\work".format(self.shot_comp_dir))
-        self.shot_comp_plugin_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}\Composite\plugins".format(
-            self.seq_name, self.shot_name)
-        )
-        # directories for shot outside shot directory
-
-        # image directories
-        self.shot_image_dir = os.path.normpath("{0}\{1}".format(self.seq_image_dir, self.shot_name))
-        self.shot_layer_dir = os.path.normpath("{0}\{1}".format(self.shot_image_dir, "\light\layers"))
-        # movie directories
-        self.shot_movie_dir = os.path.normpath("{0}\sequences\{1}".format(self.movie_dir, self.seq_name))
-        # frames
-        for shot in self.seq_shot_list[self.seq_name]:
-            if shot["Shot"] == self.shot_name:
-                self.first_frame = shot["first_frame"]
-                self.last_frame = shot["last_frame"]
-                self.frame_range = "{0}-{1}".format(str(self.first_frame), str(self.last_frame))
-                break
-
-    @staticmethod
-    def _get_sequences_and_shots(file_path):
+    def is_task_enabled(self):
         """
-        Reads the json dict of sequences, shots, and frame ranges
-        :param file_path: path to json file
-        :return: a python dict as with Seq### as key, then a list of dicts with keys "Shot", "first_frame", "last_frame"
+        Gets the task state, uses syntax:
+        schtasks /query /tn "task name" /v /fo list
+        :returns: true if enbaled, false if not, or returns error as string
         """
-        return load_json(file_path)
+        is_scheduled, error = self.is_task_scheduled()
+        if error:
+            return error
+        # only attempt to disable or enable if the task exists
+        if is_scheduled:
+            p = Popen(
+                ["schtasks", "/Query", "/tn", self.task_name, "/v", "/fo", "list"],
+                stdout=PIPE,
+                stderr=PIPE
+            )
+            output, error = p.communicate()
+            logging.info("task query is: {0}".format(output))
+            for line in output.split("\n"):
+                if "scheduled task state" in line.lower():
+                    if "enabled" in line.lower():
+                        return True
+                    # don't need to look for 'disabled', if the word enabled isn't present, then we default to
+                    # task disabled
+                    else:
+                        return False
+            if p.returncode != 0:
+                error = "Problem getting task state for {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
+                    self.task_name,
+                    p.returncode,
+                    output,
+                    error
+                )
+                logger.error(error)
+                return error
 
-    @staticmethod
-    def _get_sequence_name_from_string(string_containing_sequence):
+    def set_task_enabled(self, enabled):
         """
-        Finds the sequence name from a file path. Looks for Seq### or seq###. Sequence number is 2 or more digits
-        :param string_containing_sequence: the absolute file path
-        :return: the seq name as Seq### or seq### or None if no seq found
+        set the state of a task, either enabled or disabled. calls:
+        schtasks.exe /Change /TN "task name" [/Disable or /Enable]
+        :param enabled: True or False
+        :return: error as string or None
         """
-        pattern = "[a-zA-Z]{3}\d{2,}"
-        # make sure the string is valid
-        if string_containing_sequence:
-            # check if we get a result, if so return it
-            if re.search(pattern, string_containing_sequence):
-                return re.search(pattern, string_containing_sequence).group()
+        is_scheduled, error = self.is_task_scheduled()
+        if error:
+            return error
+        # only attempt to disable or enable if the task exists
+        if is_scheduled:
+            if enabled:
+                state = "/Enable"
             else:
-                return None
-        else:
-            return None
+                state = "/Disable"
+            p = Popen(
+                ["schtasks", "/Change", "/tn", self.task_name, state],
+                stdout=PIPE,
+                stderr=PIPE
+            )
+            output, error = p.communicate()
+            if p.returncode != 0:
+                error = "Problem setting task {0} to {1}. Return Code is {2}. Output is {3}. Error is {4} ".format(
+                    self.task_name,
+                    state,
+                    p.returncode,
+                    output,
+                    error
+                )
+                logger.error(error)
+                return error
+        return None
 
-    @staticmethod
-    def _get_shot_name_from_string(string_containing_shot):
-        """
-        Finds the shot name from a file path. Looks for Shot### or seq###. Shot number is 2 or more digits
-        :param string_containing_shot: the absolute file path
-        :return: the shot name as Shot### or shot### or None if no shot found
-        """
-        pattern = "[a-zA-Z]{4}\d{2,}"
-        # make sure the string is valid
-        if string_containing_shot:
-            # check if we get a result, if so return it
-            if re.search(pattern, string_containing_shot):
-                return re.search(pattern, string_containing_shot).group()
-            else:
-                return None
-        else:
-            return None
 
 """
 Threaded copy - faster than multi proc copy, and 2-3x speed up over sequential copy
@@ -313,7 +281,6 @@ def move_file(src, dest):
         error_msg = "Could not move {0} to {1}. Received error {2}".format(src, dest, e)
         logger.error(error_msg)
         return error_msg
-
 
 def delete_file(file_path):
     """
@@ -483,18 +450,19 @@ def write_json(json_path, user_data, indent=0):
         return error_msg
 
 
-def launch_app(app, args):
+def launch_app(app, args, open_shell=False):
     """
     Launch an external application
     :param app: the path to the program to execute
     :param args: any arguments to pass to the program as a list
+    :param open_shell: optional, defaults to false, if true opens command prompt
     :return: None if no errors, otherwise return error as string
     """
     cmd = [app]
     for arg in args:
         cmd.append(arg)
     try:
-        Popen(cmd, shell=False)
+        Popen(cmd, shell=open_shell)
     except Exception as e:
         error_msg = "App Open Failed for {0}. Error: {1}".format(cmd, e)
         logger.error(error_msg)
@@ -525,10 +493,10 @@ def get_images_from_dir(dir_path):
 def convert_to_sRGB(red, green, blue):
     """
     Convert linear to sRGB
-    :param red: the red channel data
-    :param green: the green channel data
-    :param blue: the blue channel data
-    :return: the color transformed channel data as a red, green blue tuple
+    :param red: the red channel data as a list
+    :param green: the green channel data as a list
+    :param blue: the blue channel data as a list
+    :return: the color transformed channel data as a list per r,g,b channel
     """
 
     def encode_to_sRGB(v):

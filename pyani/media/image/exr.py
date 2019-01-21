@@ -2,6 +2,7 @@ import os
 import OpenEXR
 import Imath
 import array
+import logging
 from PIL import Image
 import pyani.core.util
 import pyani.core.ui
@@ -18,6 +19,9 @@ os.environ['QT_API'] = 'pyqt'
 # import from QtPy instead of doing it directly
 # note that QtPy always uses PyQt5 API
 from qtpy import QtGui, QtWidgets, QtCore
+
+
+logger = logging.getLogger()
 
 
 class AniExr(object):
@@ -48,12 +52,39 @@ class AniExr(object):
         """
         return self.__image_path
 
-    @property
-    def layer_names(self):
-        """The exr layers as a sorted list, but put RGB first
+    def is_valid_exr(self):
         """
-        sorted_layers = sorted(self.__layers.keys())
-        sorted_layers.insert(0, sorted_layers.pop(sorted_layers.index("RGB")))
+        Check if exr is valid and complete (all data present)
+        :return: The error if not readable or missing pixels, None otherwise
+        """
+        if not OpenEXR.isOpenExrFile(self.image_path):
+            error = "The following exr does not exist or is not readable: {0}".format(self.image_path)
+            logging.exception(error)
+            return error
+        if not OpenEXR.InputFile(self.image_path).isComplete():
+            error = "The following exr has missing pixels: {0}".format(self.image_path)
+            logging.exception(error)
+            return error
+        return None
+
+    def layer_names(self):
+        """The exr layers as a sorted list, but put RGB first. Displays error if there are no layers.
+        :exception KeyError - means no layers present
+        :exception IndexError - no RGB layer present
+        :return a list of sorted layers with RGB layer first, or an error
+        """
+        try:
+            sorted_layers = sorted(self.__layers.keys())
+        except KeyError as e:
+            error = "No layers present in the exr. Error is {0}".format(e)
+            logging.exception(error)
+            return error
+        try:
+            sorted_layers.insert(0, sorted_layers.pop(sorted_layers.index("RGB")))
+        except IndexError as e:
+            error = "No RGB layer present in the exr. Error is {0}".format(e)
+            logging.exception(error)
+            return error
         return sorted_layers
 
     @staticmethod
@@ -91,33 +122,55 @@ class AniExr(object):
         """
         get the image representation of the layer as a PIL Image object
         :param layer_name: the layer name
-        :return: a PIL image object
+        :exception KeyError - occurs if layer name isn't in the dictionary object of PIL Image Objects
+        :return: a PIL image object, or error if encountered
         """
-        return self.__layer_images[layer_name]
+        try:
+            return self.__layer_images[layer_name]
+        except KeyError as e:
+            error = "The layer name, {0}, does not exist. Error is {1}".format(layer_name, e)
+            logging.exception(error)
+            return error
 
     def load(self):
         """loads the image layers using multiprocessing
+        :return error if encountered - no layers, missing RGB layer, multiprocessing error
         """
         # mp mannager so that we can get return values
         manager = multiprocessing.Manager()
         return_dict = manager.dict()
         jobs = []
+        errors = []
 
-        layers = self.layer_names
-        # create a process per layer
-        for i in range(0, len(layers)):
-            channels = self.layer_channel_names(layers[i])
-            p = multiprocessing.Process(target=load_exr_layer_mp,
-                                        args=(self.image_path, layers[i], channels, self.size(), True, return_dict))
-            jobs.append(p)
-            p.start()
+        layers = self.layer_names()
+        # check if its a list, if not its an error
+        if not isinstance(layers, list):
+            return layers
+        try:
+            # create a process per layer
+            for i in range(0, len(layers)):
+                channels = self.layer_channel_names(layers[i])
+                p = multiprocessing.Process(target=load_exr_layer_mp,
+                                            args=(self.image_path, layers[i], channels, self.size(), True, return_dict))
+                jobs.append(p)
+                p.start()
 
-        # wait for all processes to finish
-        for proc in jobs:
-            proc.join()
+            # wait for all processes to finish
+            for proc in jobs:
+                proc.join()
+
+        except multiprocessing.ProcessError as e:
+            logging.exception("Encountered a multiprocessing error: {0}".format(e))
 
         # dict, key is the layer name, value is a PIL Image object
         self.__layer_images = return_dict
+        # validate layers
+        for layer in return_dict.values():
+            if not isinstance(layer, Image.Image):
+                errors.append(layer)
+
+        return errors
+
 
     @staticmethod
     def _build_layers_from_channels(channels):
@@ -166,52 +219,76 @@ def load_exr_layer_mp(image_path, layer_name, channel_names, size, color_transfo
     :param channel_names: the channels belonging to the layer
     :param size: the width and height as tuple
     :param color_transform: true to apply color transform
-    :param return_dict: used to store the image smade of the exr layers
+    :param return_dict: used to store the images made of the exr layers
     """
-    img_file = OpenEXR.InputFile(image_path)
+    try:
+        img_file = OpenEXR.InputFile(image_path)
 
-    # single channel layer, put same value in red, green, and blue
-    if len(channel_names) == 1:
-        r_channel = channel_names[0]
-        g_channel = channel_names[0]
-        b_channel = channel_names[0]
-    # multi channel layer
-    else:
-        r_channel = channel_names[0]
-        g_channel = channel_names[1]
-        b_channel = channel_names[2]
+        # single channel layer, put same value in red, green, and blue
+        if len(channel_names) == 1:
+            r_channel = channel_names[0]
+            g_channel = channel_names[0]
+            b_channel = channel_names[0]
+        # multi channel layer
+        else:
+            r_channel = channel_names[0]
+            g_channel = channel_names[1]
+            b_channel = channel_names[2]
 
-    (r, g, b) = img_file.channels([r_channel, g_channel, b_channel], Imath.PixelType(Imath.PixelType.FLOAT))
+        (r, g, b) = img_file.channels([r_channel, g_channel, b_channel], Imath.PixelType(Imath.PixelType.FLOAT))
 
-    red = array.array('f', r)
-    green = array.array('f', g)
-    blue = array.array('f', b)
+        red = array.array('f', r)
+        green = array.array('f', g)
+        blue = array.array('f', b)
 
-    # apply color transform (sRGB) if option is True
-    if color_transform:
-        if not channel_names[0] == 'Z':
-            red, green, blue = pyani.core.util.convert_to_sRGB(red, green, blue)
+        # apply color transform (sRGB) if option is True
+        if color_transform:
+            if not channel_names[0] == 'Z':
+                red, green, blue = pyani.core.util.convert_to_sRGB(red, green, blue)
 
-    # convert to rgb 8-bit image
-    rgbf = [Image.frombytes("F", size, red.tostring())]
-    rgbf.append(Image.frombytes("F", size, green.tostring()))
-    rgbf.append(Image.frombytes("F", size, blue.tostring()))
-    rgb8 = [im.convert("L") for im in rgbf]
+        # convert to rgb 8-bit image
+        rgbf = [Image.frombytes("F", size, red.tostring())]
+        rgbf.append(Image.frombytes("F", size, green.tostring()))
+        rgbf.append(Image.frombytes("F", size, blue.tostring()))
+        rgb8 = [im.convert("L") for im in rgbf]
 
-    img_file.close()
+        return_dict[layer_name] = Image.merge("RGB", rgb8)
 
-    return_dict[layer_name] = Image.merge("RGB", rgb8)
+        img_file.close()
+
+    except (IOError, ValueError, IndexError) as e:
+        error = "Error loading Exr layer: {0}. Error is {1} ".format(layer_name, e)
+        return_dict[layer_name] = error
+        logger.exception(error)
 
 
 class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
     """
     Class for a gui that displays exrs. Provides: layer/channel viewing, drag and drop for file load.
+    :param error_logging : error log (pyani.core.error_logging.ErrorLogging object) from trying
+    to create logging in main program
     """
-    def __init__(self):
+    def __init__(self, error_logging):
         self.app_name = "PyExrViewer"
         self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
         # pass win title, icon path, app manager, width and height
-        super(AniExrViewerGui, self).__init__("Py Exr Viewer", "Resources\\pyexrviewer.ico", self.app_mngr, 1920, 1000)
+        super(AniExrViewerGui, self).__init__(
+            "Py Exr Viewer",
+            "Resources\\pyexrviewer.ico",
+            self.app_mngr,
+            1920,
+            1000,
+            error_logging
+        )
+
+        # check if logging was setup correctly in main()
+        if error_logging.error_log_list:
+            errors = ', '.join(error_logging.error_log_list)
+            self.msg_win.show_warning_msg(
+                "Error Log Warning",
+                "Error logging could not be setup because {0}. You can continue, however "
+                "errors will not be logged.".format(errors)
+            )
 
         # class variables
         self.exr_image = None
@@ -318,22 +395,25 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
     def open_file_browser(self):
         """Gets the file name selected from the dialog and stores in text edit box in gui"""
         name = FileDialog.getOpenFileName(self, "Select Exr Image")
-        self.image_file_path.setText(name)
-        self._load_image(self.image_file_path.text())
+        if name:
+            self.image_file_path.setText(name)
+            self._load_image(self.image_file_path.text())
 
     def display_layer(self):
-        """Shows the exr layer in the app
+        """Shows the exr layer in the app. Displays error if layer or pixmap isn't valid
         """
         # skip processing if the menu is empty - avoids problem when we clear the ui on a new
         # image load. Clearing the ui changes the current index and we have a slot / signal that looks
         # for that change and tries to display a new layer. However none exist since its a reset!
         if self.layer_list_menu.currentText():
             layer_image = self.exr_image.get_layer_image(str(self.layer_list_menu.currentText()))
-            error = None
-            if error is not None:
-                self.msg_win.show_error_msg("Error", error)
+            # if the layer isn't a PIL Image object, its an error, so display
+            if not isinstance(layer_image, Image.Image):
+                self.msg_win.show_error_msg("Exr Layer Error", layer_image)
             else:
                 pix = self._pil_to_pixmap(layer_image)
+                if not isinstance(pix, QtGui.QPixmap):
+                    self.msg_win.show_error_msg("Exr Layer Error", pix)
                 # resize if needed
                 width, height = self.exr_image.size()
                 if width > height and width > self.default_img_width:
@@ -343,47 +423,71 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
                 else:
                     self.label_image_display.setPixmap(pix)
 
-                self.main_app_widget.update()
-
     def next_layer_in_menu(self):
         """Go to the next layer in the menu
         """
         menu_size = int(self.layer_list_menu.count())
-        next_layer_ind = (self.layer_list_menu.currentIndex() + 1) % menu_size
-        self.layer_list_menu.setCurrentIndex(next_layer_ind)
+        if menu_size > 0:
+            next_layer_ind = (self.layer_list_menu.currentIndex() + 1) % menu_size
+            self.layer_list_menu.setCurrentIndex(next_layer_ind)
 
     def prev_layer_in_menu(self):
         """Go to the prev layer in the menu
         """
         menu_size = int(self.layer_list_menu.count())
-        prev_layer_ind = (self.layer_list_menu.currentIndex() - 1) % menu_size
-        self.layer_list_menu.setCurrentIndex(prev_layer_ind)
+        if menu_size > 0:
+            prev_layer_ind = (self.layer_list_menu.currentIndex() - 1) % menu_size
+            self.layer_list_menu.setCurrentIndex(prev_layer_ind)
 
     def _build_layer_menu(self):
         """Populates the layer menu with the exr layers
         """
         # build the menu of layers
-        for layer in self.exr_image.layer_names:
+        for layer in self.exr_image.layer_names():
             self.layer_list_menu.addItem(layer)
 
     def _load_image(self, file_names):
         """
-        Load the exr image and its layers
-        :param file_names: the exr image path(s)
+        Load the exr image and its layers. Displays and logs error if problem loading exr.
+        :param file_names: an exr image path or a list of the exr image path(s)
+        :exception pyani.media.image.core.AniImageError, IOError, KeyError, IndexError: Image is not readable,
+        missing pixels, or doesn't exist
         """
-        exr_img_path = file_names[-1]
+        if isinstance(file_names, list):
+            exr_img_path = file_names[-1]
+        else:
+            exr_img_path = file_names
+
+        # load image - checks for exceptions when image does not exist, is an invalid exr or other image format
+        # invalid exr layers (key error or index error)
+        try:
+            self.exr_image = AniExr(os.path.normpath(str(exr_img_path)))
+        except (pyani.media.image.core.AniImageError, IOError, KeyError, IndexError) as e:
+            error = "Could not load image: {0}. Error is {1}.".format(exr_img_path, e)
+            logging.exception(error)
+            self.msg_win.show_error_msg("Image Load Error", error)
+            return
+        # verify exr is readable and has all pixels
+        error = self.exr_image.is_valid_exr()
+        if error:
+            self.msg_win.show_error_msg("Invalid Exr", error)
 
         # reset any ui elements
         self.reset_ui()
-        # load image
-        self.exr_image = AniExr(os.path.normpath(str(exr_img_path)))
+
         self.image_file_path.setText(exr_img_path)
         # show a progress busy indicator
         self.msg_win.show_msg("Loading", "Loading Exr Layers, Please Wait.")
         QtWidgets.QApplication.processEvents()
+
         # load the layers as images
-        self.exr_image.load()
+        errors = self.exr_image.load()
+        # done loading hide window
         self.msg_win.msg_box.hide()
+        # display any errors
+        if errors:
+            self.msg_win.show_error_msg(', '.join(errors))
+            return
 
         # build layer menu - clear first in case loading a new image
         self._build_layer_menu()
@@ -399,17 +503,23 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
         via stackoveflow https://stackoverflow.com/questions/34697559/pil-image-to-qpixmap-conversion-issue
         Reverse the channels
         :param image: a PIL image object
-        :return: converted QT pixmap
+        :exception ValueError - if the data isn't valid in the PIL Image object
+        :return: converted QT pixmap or error
         """
-        if image.mode == "RGB":
-            r, g, b = image.split()
-            image = Image.merge("RGB", (b, g, r))
-        elif image.mode == "RGBA":
-            r, g, b, a = image.split()
-            image = Image.merge("RGBA", (b, g, r, a))
-        elif image.mode == "L":
-            image = image.convert("RGBA")
-        image2 = image.convert("RGBA")
-        data = image2.tobytes("raw", "RGBA")
-        qt_image = QtGui.QImage(data, image.size[0], image.size[1], QtGui.QImage.Format_ARGB32)
-        return QtGui.QPixmap.fromImage(qt_image)
+        try:
+            if image.mode == "RGB":
+                r, g, b = image.split()
+                image = Image.merge("RGB", (b, g, r))
+            elif image.mode == "RGBA":
+                r, g, b, a = image.split()
+                image = Image.merge("RGBA", (b, g, r, a))
+            elif image.mode == "L":
+                image = image.convert("RGBA")
+            image2 = image.convert("RGBA")
+            data = image2.tobytes("raw", "RGBA")
+            qt_image = QtGui.QImage(data, image.size[0], image.size[1], QtGui.QImage.Format_ARGB32)
+            return QtGui.QPixmap.fromImage(qt_image)
+        except ValueError as e:
+            error = "Problem converting PIL Image object to a pixmap. Error is {0}".format(e)
+            logging.exception(error)
+            return error

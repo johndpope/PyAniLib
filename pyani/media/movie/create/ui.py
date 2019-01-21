@@ -5,11 +5,13 @@ import argparse
 import logging
 from colorama import Fore, Style
 import pyani.media.image.seq
+import pyani.media.image.core
 import pyani.media.movie.create.core
 import pyani.core.util
 from pyani.core.ui import QtMsgWindow
 from pyani.core.ui import FileDialog
 from pyani.core.appmanager import AniAppMngr
+import pyani.core.anivars
 
 logger = logging.getLogger()
 
@@ -19,7 +21,7 @@ logger = logging.getLogger()
 os.environ['QT_API'] = 'pyqt'
 # import from QtPy instead of doing it directly
 # note that QtPy always uses PyQt5 API
-from qtpy import QtGui, QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore
 
 
 class AniShootGui(pyani.core.ui.AniQMainWindow):
@@ -28,17 +30,28 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
     :param movie_generation : the app called to create the actual movie, for example ffmpeg
     :param movie_playback : the app called to play the movie, for example Shotgun RV
     :param strict_pad : enforce the same padding for whole image sequence
-    :param log_error : the log of errors
+    :param error_logging : error log class from trying to create logging in main program
     """
-    def __init__(self, movie_generation, movie_playback, strict_pad, log_error):
+    def __init__(self, movie_generation, movie_playback, strict_pad, error_logging):
         # build main window structure
         self.app_name = "PyShoot"
         self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
         # pass win title, icon path, app manager, width and height
-        super(AniShootGui, self).__init__("Py Shoot Movie Creator", "Resources\\pyshoot.ico", self.app_mngr, 1000, 400)
+        super(AniShootGui, self).__init__(
+            "Py Shoot Movie Creator", "Resources\\pyshoot_icon.ico", self.app_mngr, 1000, 400, error_logging
+        )
+
+        # check if logging was setup correctly in main()
+        if error_logging.error_log_list:
+            errors = ', '.join(error_logging.error_log_list)
+            self.msg_win.show_warning_msg(
+                "Error Log Warning",
+                "Error logging could not be setup because {0}. You can continue, however "
+                "errors will not be logged.".format(errors)
+            )
 
         # setup data
-        self.ani_vars = pyani.core.util.AniVars()
+        self.ani_vars = pyani.core.anivars.AniVars()
         self.shoot = pyani.media.movie.create.core.AniShoot(movie_generation, movie_playback, strict_pad)
         self.ui = pyani.media.movie.create.core.AniShootUi()
 
@@ -65,14 +78,6 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         self.create_layout()
         # connect slots
         self.set_slots()
-
-        # check if logging was setup correctly in main()
-        if log_error:
-            self.msg_win.show_warning_msg(
-                "Error Log Warning",
-                "Error logging could not be setup because {0}. You can continue, however "
-                "errors will not be logged.".format(log_error)
-            )
 
         self.dialog_places = self._build_places()
 
@@ -451,7 +456,6 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         """returns a list of qt urls to directories in the os"""
         return [QtCore.QUrl.fromLocalFile(place) for place in self.ani_vars.places]
 
-
 class AniShootCLI:
     """
     Command line version of the shoot movie creation app. Does not support multiple movie creation like
@@ -466,13 +470,24 @@ class AniShootCLI:
         self.version = app_manager.user_version
 
         # setup data
-        self.ani_vars = pyani.core.util.AniVars()
+        self.ani_vars = pyani.core.anivars.AniVars()
         self.shoot = pyani.media.movie.create.core.AniShoot(movie_generation, movie_playback, strict_pad)
         self.ui = pyani.media.movie.create.core.AniShootUi()
 
         # get arguments from command line
         parser = self.build_parser()
         self.args = parser.parse_args()
+
+        # try to format image dir and mov file path, if can't just set to args - means wasn't provided
+        self.image_dir = self.args.img
+        self.mov_path = self.args.mov
+        try:
+            self.image_dir = self.image_dir.replace("/", "\\")
+            self.image_dir = os.path.normpath(self.image_dir)
+            self.mov_path = self.mov_path.replace("/", "\\")
+            self.mov_path = os.path.normpath(self.mov_path)
+        except:
+            pass
 
     def run(self):
         """
@@ -481,19 +496,18 @@ class AniShootCLI:
         """
         self.show_msg("__Version__ : {0}".format(self.version), Fore.GREEN)
 
-        # process user input and setup the image sequence
-        self.process_user_input()
+        # process user input and setup the image sequence, if errors exit
+        if not self.process_user_input():
+            return
 
-        image_path = os.path.normpath(self.args.img)
         # get the images selected
-        self.get_sequence(image_path, self.args.steps, self.args.validate_submission)
+        self.get_sequence()
 
         # create the movie
         log = self.create_movie(
             self.args.steps,
             self.args.frame_range,
-            self.args.mov,
-            self.args.validate_submission,
+            self.mov_path,
             self.args.overwrite,
             self.args.play,
             self.args.high_quality
@@ -510,7 +524,9 @@ class AniShootCLI:
         # The arguments are  displayed when a user incorrectly uses your tool or if they ask for help
         parser = argparse.ArgumentParser(
             description="Shoots movie from an image sequence",
-            usage="PyShoot.exe -ng -i 'Z:\Images\Seq180\Shot_040\\' -o 'Z:\Movies\Seq180\Shot_040\my_movie.mp4'"
+            usage="Given Z:\Images\Seq180\Shot_040\comp.####.exr "
+                  "PyShoot.exe -ng -i Z:\Images\Seq180\Shot_040\\ -n test -e exr "
+                  "-o Z:\Movies\Seq180\Shot_040\my_movie.mp4"
         )
 
         # Positional Arguments
@@ -518,6 +534,8 @@ class AniShootCLI:
         parser.add_argument('-o', '--mov', help="Name of the movie.")
 
         # Keyword / Optional Arguments - action is value when provided, default mis value when not provided
+        parser.add_argument('-n', '--name', help="Name of the images", default="")
+        parser.add_argument('-e', '--ext', help="image format", default="")
         parser.add_argument('-ng', '--nogui', help="Run in command line mode. By default it is gui.",
                             action="store_true", default=False)
         parser.add_argument('-fs', '--steps', help="Frame step size. Default is 1", default=1)
@@ -528,13 +546,14 @@ class AniShootCLI:
                                                  "default movie playback tool: {0}. "
                                                  "Default is False.".format(self.shoot.movie_playback_app),
                             action="store_true", default=False)
-        self._add_bool_arg(parser, "validate_submission", "Check submission for errors.", True)
         self._add_bool_arg(parser, "frame_hold", "Hold missing frames.", True)
         self._add_bool_arg(parser, "overwrite", "Overwrite movie on disk.", False)
         return parser
 
     def process_user_input(self):
-        """process the command line arguments, creating the default values for optional arguments
+        """
+        process the command line arguments, creating the default values for optional arguments
+        :return True if success, False if error
         """
         if not self.args.frame_range:
             self.args.frame_range = "N/A"
@@ -544,43 +563,90 @@ class AniShootCLI:
         else:
             self.shoot.frame_hold = False
 
-        # check if images were given
-        if not self.args.img:
-            self.show_msg("Please provide an image sequence.", Fore.RED)
+        # check if image path was given
+        if not self.image_dir:
+            logging.error("No image directory given.")
+            self.show_msg("Please provide an image directory.", Fore.RED)
+            return False
+
+        # check if image name was given
+        if self.args.name:
+            if self.args.ext == "":
+                logging.error("When specifying an image name, please also give the format.")
+                self.show_msg("When specifying an image name, please also give the format.", Fore.RED)
+                return False
+
+        # check if image ext was given
+        if self.args.ext:
+            if self.args.name == "":
+                logging.error("When specifying an image format, please also give the images' name.")
+                self.show_msg("When specifying an image format, please also give the images' name.", Fore.RED)
+                return False
+
+        # check if image directory exists
+        if not os.path.exists(self.image_dir):
+            logging.error("Image directory {0} doesn't exist.".format(self.image_dir))
+            self.show_msg("Image directory {0} doesn't exist.".format(self.image_dir), Fore.RED)
+            return False
 
         # check if movie name given
-        if not self.args.mov:
+        if not self.mov_path:
+            logging.error("No movie name given.")
             self.show_msg("Please provide a movie name.", Fore.RED)
+            return False
 
-    def get_sequence(self, images, steps, validate):
+        # check if directory exists, if not make it
+        mov_path = self.args.mov.split("\"")[:-1]
+        mov_dir = os.path.normpath("\\".join(mov_path))
+        if not os.path.exists(mov_dir):
+            pyani.core.util.make_all_dir_in_path(mov_dir)
+            return False
+
+        return True
+
+    def get_sequence(self):
         """
         Build an image sequence
-        :param images: a set of images
-        :param steps: the frame step size
-        :param validate: check image selection as boolean
         """
-        # build the sequence
-        if not isinstance(images, list):
-            images = [images]
-        error_msg, self.shoot = self.ui.process_input(images, self.shoot)
+        image_path = os.path.normpath(self.args.img)
+        steps = int(self.args.steps)
+        name = self.args.name
+        images = []
+
+        # make image list
+        if os.path.exists(image_path):
+            # check if image name was given
+            if self.args.name:
+                for image in os.listdir(image_path):
+                    if image.endswith(self.args.ext):
+                        img = pyani.media.image.core.AniImage(os.path.join(image_path, image))
+                        if img.base_name == name:
+                            images.append(os.path.join(image_path, image))
+            else:
+                images = [
+                    os.path.join(image_path, image) for image in os.listdir(image_path)
+                    if image.endswith(pyani.core.util.SUPPORTED_IMAGE_FORMATS)
+                ]
+
+        error_msg = self.ui.process_input(images, self.shoot)
         if error_msg:
+            logging.error(error_msg)
             self.show_msg(error_msg, Fore.RED)
             return
 
         # validate sequence
-        if validate:
-            msg = self.ui.validate_selection(self.shoot, int(steps))
-            if msg:
-                self.show_msg(msg, Fore.RED)
-                return
+        msg = self.ui.validate_selection(self.shoot, int(steps))
+        if msg:
+            logging.error(msg)
+            self.show_msg(msg, Fore.RED)
+            return
 
-    def create_movie(self, steps, frame_range, movie_name, validate, overwrite, play_movie, quality):
+    def create_movie(self, steps, frame_range, movie_name, overwrite, play_movie, quality):
         """
         Creates a movie from an image sequence
         :param steps: frame steps as int
         :param frame_range: frame range as string, accepts ###-### and ###,### or a combination ###,###-###
         :param movie_name: output path for movie
-        :param validate: check submission before creating as boolean
         :param overwrite: overwrite movie if exists
         :param play_movie: play the movie after creation as boolean
         :param quality: compressed or uncompressed movie as a boolean
@@ -595,15 +661,15 @@ class AniShootCLI:
         # make directory if doesn't exist - makes all directories in path if missing
         pyani.core.util.make_all_dir_in_path(movie_path)
 
-        if validate:
-            msg = self.ui.validate_submission(self.shoot.seq_list,
-                                              self.shoot.combine_seq,
-                                              frame_range,
-                                              movie_name,
-                                              overwrite)
-            if msg:
-                self.show_msg(msg, Fore.RED)
-                return False
+        msg = self.ui.validate_submission(self.shoot.seq_list,
+                                          self.shoot.combine_seq,
+                                          frame_range,
+                                          movie_name,
+                                          overwrite)
+        if msg:
+            logging.error(msg)
+            self.show_msg(msg, Fore.RED)
+            return False
 
         movie_log, movie_list = self.shoot.create_movie(frame_steps, frame_range, movie_name, quality)
         # report movie creation, since no multi-movie support in command line, always just one movie created
@@ -642,4 +708,3 @@ class AniShootCLI:
         group.add_argument('--' + name, dest=name, help=help, action='store_true')
         group.add_argument('--no-' + name, dest=name, help=help, action='store_false')
         parser.set_defaults(**{name: default})
-

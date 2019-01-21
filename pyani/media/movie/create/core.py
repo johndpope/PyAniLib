@@ -20,7 +20,7 @@ logger = logging.getLogger()
 
 class AniShoot:
     """
-    TODO: add explaination of how class works, especially combiend sequences and being last element
+    Class that creates movies based off user specified frame range and steps.
     """
     def __init__(self, movie_generation, movie_playback, strict_pad):
         self.__seq_list = []
@@ -185,7 +185,8 @@ class AniShoot:
                 src.append(image.path)
 
             thread_count = 120
-            progress_update.setLabelText("Copying Images to Temp Dir Using {0} Threads...".format(str(thread_count)))
+            progress_update.setLabelText("Copying Images to Temp Dir Using {0} Threads. This could take a while "
+                                         "if the images are large in size.".format(str(thread_count)))
             progress_update.setValue(75)
             QtWidgets.QApplication.processEvents()
             try:
@@ -211,7 +212,7 @@ class AniShoot:
         if self.seq_list:
             self.__seq_list.pop(-1)
 
-    def create_movie(self, steps, frame_range, movie_path, movie_quality, progress_update):
+    def create_movie(self, steps, frame_range, movie_path, movie_quality, progress_update=None):
         """
         Create a movie for each image sequence. Tries to create movie, if can't logs and tries the next movie
         Reports progress back to the ui
@@ -219,7 +220,7 @@ class AniShoot:
         :param frame_range: frame range from user
         :param movie_path: the movie name
         :param movie_quality: the quality - regular or uncompressed
-        :param progress_update: a pyqt progress dialog object
+        :param progress_update: a pyqt progress dialog object, optional
         :return: a text log, movie_names
         """
 
@@ -244,11 +245,12 @@ class AniShoot:
 
         for movie_number, seq in enumerate(seq_list):
             # update progress
-            progress_update.setLabelText(
-                "Creating Movie {0} of {1}\n\tSetting Up Frame Range".format(movie_number, movie_total)
-            )
-            progress_update.setValue(10)
-            QtWidgets.QApplication.processEvents()
+            if progress_update:
+                progress_update.setLabelText(
+                    "Creating Movie {0} of {1}\n\tSetting Up Frame Range".format(movie_number, movie_total)
+                )
+                progress_update.setValue(10)
+                QtWidgets.QApplication.processEvents()
 
             # figure out if start / end sequence is based off the sequence and/or user input
             user_frame_start, user_frame_end, error = self._setup_frame_range(frame_range, seq)
@@ -259,20 +261,12 @@ class AniShoot:
             # update progress
             # get number of missing frames
             missing = len(seq.missing())
-            if missing > 50:
-                progress_update.setLabelText(
-                    "Creating Movie {0} of {1}\n\tFilling {2} Frames. This may take 10-20 seconds".format(
-                        movie_number,
-                        movie_total,
-                        missing
-                    )
-                )
-            else:
+            if progress_update:
                 progress_update.setLabelText(
                     "Creating Movie {0} of {1}\n\tFilling {2} Frames.".format(movie_number, movie_total, missing)
                 )
-            progress_update.setValue(30)
-            QtWidgets.QApplication.processEvents()
+                progress_update.setValue(30)
+                QtWidgets.QApplication.processEvents()
 
             image_seq_to_write = seq
             # if user frame start is outside image seq start or seq end or missing frames or steps > 1
@@ -288,12 +282,13 @@ class AniShoot:
                     log += "Movie {0} had the following errors: {1}".format(movie_list[movie_number], error)
                     continue
 
-            # update progress
-            progress_update.setLabelText(
-                "Creating Movie {0} of {1}\n\tChecking Frame Steps".format(movie_number, movie_total)
-            )
-            progress_update.setValue(50)
-            QtWidgets.QApplication.processEvents()
+            if progress_update:
+                # update progress
+                progress_update.setLabelText(
+                    "Creating Movie {0} of {1}\n\tChecking Frame Steps".format(movie_number, movie_total)
+                )
+                progress_update.setValue(50)
+                QtWidgets.QApplication.processEvents()
 
             # next setup steps for ffmpeg
             if steps > 1:
@@ -303,11 +298,12 @@ class AniShoot:
                     continue
 
             # update progress
-            progress_update.setLabelText(
-                "Creating Movie {0} of {1}\n\tWriting Movie to Disk".format(movie_number, movie_total)
-            )
-            progress_update.setValue(75)
-            QtWidgets.QApplication.processEvents()
+            if progress_update:
+                progress_update.setLabelText(
+                    "Creating Movie {0} of {1}\n\tWriting Movie to Disk".format(movie_number, movie_total)
+                )
+                progress_update.setValue(75)
+                QtWidgets.QApplication.processEvents()
 
             # write movie
             error = self.write_movie(movie_list[movie_number], user_frame_start, image_seq_to_write, movie_quality)
@@ -468,6 +464,7 @@ class AniShoot:
         # image must exist
         src = []
         dest = []
+        thread_count = 90
         for image in seq:
             # make sure images are in the user frame range, if not don't add to list or copy.
             if user_frame_start <= image.frame <= user_frame_end:
@@ -476,7 +473,7 @@ class AniShoot:
                 dest.append(image_renamed)
         try:
             # threaded ok, order of copy doesn't matter
-            pyani.core.util.ThreadedCopy(src, dest, threads=90)
+            pyani.core.util.ThreadedCopy(src, dest, threads=thread_count)
         except (IOError, OSError, WindowsError) as e:
             error_msg = "Problem copying existing images in tmp dir. Error is {0}".format(e)
             logger.exception(error_msg)

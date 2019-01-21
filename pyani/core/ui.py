@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import pyani.core.util
+import pyani.core.error_logging
 
 logger = logging.getLogger()
 
@@ -19,6 +20,7 @@ from PyQt4.QtGui import QFileDialog
 GOLD = "#be9117"
 GREEN = "#397d42"
 CYAN = "#429db6"
+WHITE = "#ffffff"
 YELLOW = QtGui.QColor(234, 192, 25)
 RED = QtGui.QColor(216, 81, 81)
 
@@ -34,15 +36,54 @@ except AttributeError:
 class AniQMainWindow(QtWidgets.QMainWindow):
     """
     Builds a QMain Window with the given title, icon and optional width and height
+    Provides the main window widget, called self.main_win
+    Provides the main layout for the window - self.main_layout which is a QVBoxlayout
+    Adds two ui elements, version as a Qlabel and a help link to documentation as a Qlabel at the top of the window
+    Handles version management displaying a message when updates are available
+    Drag and drop support
+    Creates a msg window class variable which allows apps to display pop up dialog warnings,
+    errors, info, etc.. - uses pyani.core.ui.QtMsgWindow class
+    Provides some spacing and font widgets:
+        self.titles : 14 pt size font bold
+        self.bold_font : a bold font - default QT pt size
+        self.v_spacer = QSpacerItem 35 px high
+        self.empty_space = QSpacerItem with width 1 px and height 1 px
+        self.horizontal_spacer = QSpacerItem 50 px width
+        self.title_vert_spacer = QSpacerItem 15 px high
+    :param win_title : the window's title as a string
+    :param win_icon : absolute path to a png or icon (.ico) file
+    :param app_mngr : an AniAppMngr class object for managing applications
+    :param width : optional width of the window
+    :param height: optional height of the window
+    :param error_logging : optional error log (pyani.core.error_logging.ErrorLogging object) from trying
+    to create logging in main program
     """
-    def __init__(self, win_title, win_icon, app_mngr, width=600, height=600):
+    def __init__(self, win_title, win_icon, app_mngr, width=600, height=600, error_logging=None):
         super(AniQMainWindow, self).__init__()
+
+        # if no error logging object, create a dummy object to grab the root log dir. Don't need a real app name
+        # to get this
+        if not error_logging:
+            error_logging = pyani.core.error_logging.ErrorLogging("Generic App")
+            log_name = error_logging.root_log_dir
+        else:
+            log_name = error_logging.log_file_name
 
         # setup version management
         self.app_manager = app_mngr
         self.version = self.app_manager.user_version
         self.vers_label = QtWidgets.QLabel()
         self.vers_update = QtWidgets.QLabel()
+
+        # help links - http://172.18.10.11:8090/display/KB/{app name} - spaces use +, so Py+Shoot or Py+App+Mngr
+        self.help_page_label = QtWidgets.QLabel(
+            "<a href=\"{0}\"><span style=\" text-decoration: none; color:{1}\">"
+            "Click here for the application documentation</a>".format(self.app_manager.app_doc_page, WHITE)
+        )
+        # path to help icon
+        self.help_icon = os.path.normpath(
+            "C:\Users\Patrick\PycharmProjects\PyAniTools\Resources_Shared\help_icon_32.png"
+        )
 
         # setup title and icon
         self.win_utils = QtWindowUtil(self)
@@ -56,16 +97,26 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         self.msg_win = QtMsgWindow(self)
         self.progress_win = QtMsgWindow(self)
 
-        # version management
-        if not self.app_manager.is_latest():
+        # version management - check version data
+        # check if app manager had an error loading version data. If so then display message to user.
+        if self.version is None or self.app_manager.latest_version is None:
+            self.vers_update.setText("")
+            self.vers_label.setText("Could not load version data. See log.")
+            self.vers_label.setStyleSheet("color:{0};".format(RED.name()))
+            self.msg_win.show_warning_msg(
+                "Version Warning",
+                "There was a problem loading the version information. You can continue, but please "
+                "file a jira and attach the latest log file from here {0}.".format(log_name)
+            )
+        # check if the app manager is the latest version, if not show message for update
+        elif not self.app_manager.is_latest():
             self.vers_update.setText(
                 "<a href=\"#update\"><span style=\" text-decoration: none; color:{0}\">There is a newer version, "
                 "click here to update.</span></a>".format(RED.name())
             )
             self.vers_label.setText("Version {0}".format(self.version))
             self.vers_label.setStyleSheet("color:{0};".format(RED.name()))
-            #
-
+        # latest version
         else:
             self.vers_update.setText("")
             self.vers_label.setText("Version {0}".format(self.version))
@@ -164,6 +215,13 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         else:
             sys.exit(0)
 
+    def _help_link(self):
+        """Launch default browser and load application doc page
+        """
+        link = QtCore.QUrl(self.app_manager.app_doc_page)
+
+        QtGui.QDesktopServices.openUrl(link)
+
     def _build_ui(self):
         """Builds the UI widgets, slots and layout
         """
@@ -179,9 +237,17 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         version_font = QtGui.QFont()
         version_font.setPointSize(10)
         version_font.setBold(True)
+        help_font = QtGui.QFont()
+        help_font.setPointSize(10)
 
         self.vers_label.setFont(version_font)
+        self.help_page_label.setFont(help_font)
         h_layout_vers = QtWidgets.QHBoxLayout()
+
+        pic = QtWidgets.QLabel()
+        pic.setPixmap(QtGui.QPixmap(self.help_icon))
+        h_layout_vers.addWidget(pic)
+        h_layout_vers.addWidget(self.help_page_label)
         h_layout_vers.addStretch(1)
         h_layout_vers.addWidget(self.vers_label)
         self.main_layout.addLayout(h_layout_vers)
@@ -191,9 +257,10 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         self.main_layout.addLayout(h_layout_vers_update)
 
     def _set_slots(self):
-        """Set the link clicked signal for version update text
+        """Set the link clicked signal for version update text and help link
         """
         self.vers_update.linkActivated.connect(self._update_app)
+        self.help_page_label.linkActivated.connect(self._help_link)
 
     def _log_error(self, error):
         """
@@ -259,11 +326,14 @@ class FileDialog(QFileDialog):
         '''
         Getter function to return the selected files / folders as a list
         :return a list of files and folders selected in the file dialog normalized to os path system convention
+        and sorted
         '''
         # make sure paths get normalized so they are correct
         normalized_paths = [os.path.normpath(file_name) for file_name in self.selectedFiles]
-        logger.info("File dialog class normalized selection: {0}".format(", ".join(normalized_paths)))
-        return normalized_paths
+        sorted_normalized_paths = sorted(normalized_paths)
+        logger.info("File dialog class normalized selection: {0}".format(", ".join(sorted_normalized_paths)))
+        # sort the paths
+        return sorted_normalized_paths
 
 
 class QHLine(QtWidgets.QFrame):
@@ -290,6 +360,11 @@ class QtMsgWindow(QtWidgets.QMessageBox):
         super(QtMsgWindow, self).__init__()
         # create the window and tell it to parent to the main window
         self.msg_box = QtWidgets.QMessageBox(main_win)
+
+    def hide(self):
+        """Hide the msg box
+        """
+        self.msg_box.hide()
 
     def show_error_msg(self, title, msg):
         """
@@ -346,6 +421,7 @@ class QtMsgWindow(QtWidgets.QMessageBox):
         self.msg_box.setWindowTitle(title)
         self.msg_box.setIcon(icon)
         self.msg_box.setText(msg)
+        self.msg_box.setStandardButtons(self.msg_box.Ok)
         self.msg_box.show()
 
 
@@ -366,22 +442,6 @@ class QtWindowUtil:
         icon = QtGui.QIcon()
         icon.addPixmap(QtGui.QPixmap(_fromUtf8(img)), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.__win.setWindowIcon(icon)
-
-
-def build_checkbox(label, state, directions):
-    """
-    Builds a check box with label, state and directions
-    :param label: the label to the left of the check box
-    :param state: True if checked, False if unchecked
-    :param directions: the text when you hover over the check box
-    :return: the label, check box
-    """
-    label = QtWidgets.QLabel(label)
-    cbox = QtWidgets.QCheckBox()
-    cbox.setChecked(state)
-    cbox_directions = directions
-    cbox.setToolTip(cbox_directions)
-    return label, cbox
 
 
 class CheckboxTreeWidgetItem(object):
@@ -554,6 +614,22 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
                 if tree_item.text(0) == item:
                     tree_item.setHidden(False)
             iterator += 1
+
+
+def build_checkbox(label, state, directions):
+    """
+    Builds a check box with label, state and directions
+    :param label: the label to the left of the check box
+    :param state: True if checked, False if unchecked
+    :param directions: the text when you hover over the check box
+    :return: the label, check box
+    """
+    label = QtWidgets.QLabel(label)
+    cbox = QtWidgets.QCheckBox()
+    cbox.setChecked(state)
+    cbox_directions = directions
+    cbox.setToolTip(cbox_directions)
+    return label, cbox
 
 
 def center(win):
