@@ -266,6 +266,24 @@ def copy_files(src, dest, ext=None):
         return error_msg
 
 
+def make_file(file_name):
+    """
+    makes a file on disk
+    :param file_name: name of the file to create, absolute path
+    :except IOError, OSError: returns the filename and error
+    :return: None if no errors, otherwise return error as string
+    """
+    try:
+        with open(file_name, "w") as init_file:
+            init_file.write("# init.py created by PyAniTools\n")
+            init_file.close()
+        return None
+    except (IOError, OSError) as e:
+        error_msg = "Could not move {0} to {1}. Received error {2}".format(file_name, e)
+        logger.error(error_msg)
+        return error_msg
+
+
 def move_file(src, dest):
     """
     moves file from src to dest (ie copies to new path and deletes from old path).
@@ -426,7 +444,7 @@ def load_json(json_path):
     try:
         with open(json_path, "r") as read_file:
             return json.load(read_file)
-    except (IOError, OSError, EnvironmentError) as e:
+    except (IOError, OSError, EnvironmentError, ValueError) as e:
         error_msg = "Problem loading {0}. Error reported is {1}".format(json_path, e)
         logger.error(error_msg)
         return error_msg
@@ -444,25 +462,42 @@ def write_json(json_path, user_data, indent=0):
         with open(json_path, "w") as write_file:
             json.dump(user_data, write_file, indent=indent)
             return None
-    except (IOError, OSError, EnvironmentError) as e:
+    except (IOError, OSError, EnvironmentError, ValueError) as e:
         error_msg = "Problem loading {0}. Error reported is {1}".format(json_path, e)
         logger.error(error_msg)
         return error_msg
 
 
-def launch_app(app, args, open_shell=False):
+def launch_app(app, args, open_shell=False, wait_to_complete=False):
     """
     Launch an external application
     :param app: the path to the program to execute
     :param args: any arguments to pass to the program as a list
     :param open_shell: optional, defaults to false, if true opens command prompt
+    :param wait_to_complete, defaults to False, waits for process to finish - this will freeze app calling
     :return: None if no errors, otherwise return error as string
     """
     cmd = [app]
     for arg in args:
         cmd.append(arg)
+
     try:
-        Popen(cmd, shell=open_shell)
+        if wait_to_complete:
+            p = Popen(cmd, stdout=PIPE, stderr=PIPE)
+            output, error = p.communicate()
+            if p.returncode != 0:
+                error = "Problem executing command {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
+                    cmd,
+                    p.returncode,
+                    output,
+                    error
+                )
+                logger.error(error)
+                return error
+            else:
+                return output
+        else:
+            Popen(cmd, shell=open_shell)
     except Exception as e:
         error_msg = "App Open Failed for {0}. Error: {1}".format(cmd, e)
         logger.error(error_msg)

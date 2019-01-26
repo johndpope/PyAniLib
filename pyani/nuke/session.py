@@ -34,12 +34,20 @@ class AniNukeCmds:
 
         sequence = session['core']['seq']
         shot = session['core']['shot']
-        # do this first, update func needs this set
-        self.ani_vars.load_seq_shot_list()
-        self.ani_vars.update(sequence, shot)
-        nuke.pluginAddPath(self.ani_vars.shot_comp_plugin_dir)
-        nuke.pluginAddPath(self.ani_vars.plugin_seq)
-        nuke.pluginAddPath(self.ani_vars.templates_seq)
+
+        # show based plugins and templates since not in shot envir
+        if sequence == "non-prod":
+            nuke.pluginAddPath(self.ani_vars.plugin_show)
+            nuke.pluginAddPath(self.ani_vars.templates_show)
+        # sequence and shot based plugins since in shot envir
+        else:
+            # do this first, update func needs this set
+            self.ani_vars.load_seq_shot_list()
+            self.ani_vars.update(sequence, shot)
+            nuke.pluginAddPath(self.ani_vars.shot_comp_plugin_dir)
+            nuke.pluginAddPath(self.ani_vars.plugin_seq)
+            nuke.pluginAddPath(self.ani_vars.templates_seq)
+
         logging.info("Plugin Paths: {0}".format(nuke.pluginPath()))
 
     def init_script(self):
@@ -47,11 +55,8 @@ class AniNukeCmds:
          like frame range, and builds custom menus
         """
         logging.info("Nuke Script Name is {0}".format(nuke.root().name()))
-        self.nuke_gui = AniNukeGui()
         # project settings
         self.set_project_settings()
-        # menus
-        self.setup_seq_menu()
 
     def set_project_settings(self):
         """Set nuke project settings based off sequence and shot
@@ -132,29 +137,15 @@ class AniNukeCmds:
         for index in range(0, len(args), 2):
             nuke.thisNode()[args[index]].setValue(nuke.thisNode()[args[index+1]].evaluate())
 
-    def setup_seq_menu(self):
-        """Make the custom show menu
-        """
-        self.plugins = utils.load_json(os.path.join(self.ani_vars.plugin_seq,
-                                                    self.ani_vars.plugins_json_name)).keys()
-        if not isinstance(self.plugins, list):
-            logging.error(self.plugins)
-        self.templates = utils.load_json(os.path.join(self.ani_vars.templates_seq,
-                                                      self.ani_vars.templates_json_name)).keys()
-        if not isinstance(self.templates, list):
-            logging.error(self.templates)
-        self.nuke_gui.build_menu(self.ani_vars.seq_name, self.plugins, self.templates)
-
-    def create_movie(self, output_plugin_name):
+    def create_movie(self):
         """
         Create a movie from the scripts composited image sequence
-        :param output_plugin_name: name of the OUTPUT gizmo.
         """
-        group = nuke.toNode(output_plugin_name)
-        # get options
-        movie_name = group.knob("movieName").evaluate()
-        image_name = group.knob("file").evaluate()
+        group = nuke.thisGroup()
 
+        # get options
+        image_name = group.knob("file").evaluate()
+        movie_name = group.knob("movieName").evaluate()
         create_movie = group.knob("writeMovie").getValue()
         hq_movie = group.knob("hqMovie").getValue()
         view_movie = group.knob("viewMovie").getValue()
@@ -271,6 +262,7 @@ class AniNukeGui:
         self.tempDir = os.path.join(tempfile.gettempdir(), "Nuke")
         # commands class - an AniNukeCmds object, pass blank string for movie tool, don't need that part of commands
         self.cmds = AniNukeCmds("")
+        self.session = pyani.core.appsession.AniSession()
 
 
     @staticmethod
@@ -281,7 +273,100 @@ class AniNukeGui:
         """
         nuke.message(msg)
 
-    def build_menu(self, title, plugins, templates):
+    def setup_menu(self):
+        """
+        Builds the menu for the sequence or if not in a sequence builds menu based off show plugins. For show
+        doesn't add templates, those are shot centric. Shot menu contains plugins, templates, and create shot camera.
+        If a shot has plugins, shows those as well
+        """
+        session = self.session.get_session()
+        sequence = session['core']['seq']
+        shot = session['core']['shot']
+        self.ani_vars.load_seq_shot_list()
+
+        # show based plugins and templates since not in shot envir
+        if sequence == "non-prod":
+            plugins = utils.load_json(os.path.join(self.ani_vars.plugin_show,
+                                                   self.ani_vars.plugins_json_name))
+            if not isinstance(plugins, list):
+                logging.error(plugins)
+            templates = utils.load_json(os.path.join(self.ani_vars.templates_show,
+                                                     self.ani_vars.templates_json_name))
+            if not isinstance(templates, list):
+                logging.error(templates)
+        # sequence and shot based plugins since in shot envir
+        else:
+            self.ani_vars.update(sequence, shot)
+            plugins = utils.load_json(os.path.join(self.ani_vars.plugin_seq,
+                                                   self.ani_vars.plugins_json_name))
+            if not isinstance(plugins, list):
+                logging.error(plugins)
+            templates = utils.load_json(os.path.join(self.ani_vars.templates_seq,
+                                                     self.ani_vars.templates_json_name))
+            if not isinstance(templates, list):
+                logging.error(templates)
+
+        shot_plugins = None
+        self.custom_menu.clearMenu()
+
+        # see if we are in a shot env, if so load sequence plugins, otherwise load show plugins
+        if self.ani_vars.is_valid_seq(sequence) and self.ani_vars.is_valid_shot(shot):
+            self.ani_vars.update(sequence, shot)
+            self._build_template_data(templates)
+
+            # display seq_name name as a empty command
+            self.custom_menu.addCommand(sequence, "nuke.tprint('')")
+            self.custom_menu.addSeparator()
+
+            # check for shot plugins, need to disable sequence plugin, if shot has the same plugin
+            if self.ani_vars.shot_name:
+                # make sure plugins exist
+                if os.path.exists(self.ani_vars.shot_comp_plugin_dir):
+                    # check for plugins
+                    shot_plugins = [
+                        p for p in os.listdir(self.ani_vars.shot_comp_plugin_dir) if not p.endswith('json')
+                    ]
+
+        # show the plugins - available for shot and non shot environments
+        for plugin in plugins.keys():
+            plugin_base_name = plugin.split(".")[0]
+            if shot_plugins:
+                if plugin in shot_plugins:
+                    self.custom_menu.addCommand("Plugins/{0} (not available, shot is overriding)".format(
+                        plugin_base_name), "nuke.message('Not Available, Use Shot Copy')")
+                # plugin not in shot
+                else:
+                    self.custom_menu.addCommand("Plugins/{0}".format(plugin_base_name),
+                                                "nuke.createNode(\"{0}\")".format(plugin))
+            # no shot script loaded
+            else:
+                self.custom_menu.addCommand("Plugins/{0}".format(plugin_base_name),
+                                            "nuke.createNode(\"{0}\")".format(plugin))
+
+        # only show templates and shot options in shot environment
+        if self.ani_vars.is_valid_shot(shot):
+            for template in templates.keys():
+                template_base_name = template.split(".")[0]
+                # don't add to menu if it isn't a self contained template, ie skip something like shot_master which
+                # is a collection of templates
+                if self.backdrop_names[template]:
+                    self.custom_menu.addCommand("Templates/{0}".format(template_base_name),
+                                                partial(self.create_template, template))
+
+                self.custom_menu.addSeparator()
+                self.custom_menu.addCommand(self.ani_vars.shot_name, "nuke.tprint('')")
+                self.custom_menu.addSeparator()
+                # add shot camera command
+                self.custom_menu.addCommand("Get Shot Camera",
+                                            lambda: self.cmds.create_shot_camera(self.ani_vars.shot_cam_dir))
+                if shot_plugins:
+                    # show the plugins available
+                    for shot_plugin in shot_plugins:
+                        plugin_base_name = shot_plugin.split(".")[0]
+                        self.custom_menu.addCommand("Shot Plugins/{0}".format(plugin_base_name),
+                                                    "nuke.createNode(\"{0}\")".format(shot_plugin))
+
+    def build_menu2(self, title, plugins, templates):
         """
         Builds the menu for the sequence or if not in a sequence builds menu based off show plugins. For show
         doesn't add templates, those are shot centric. Shot menu contains plugins, templates, and create shot camera.

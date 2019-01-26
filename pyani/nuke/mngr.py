@@ -468,11 +468,19 @@ class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
         for shot in shots:
             # update ani vars
             self.nuke_mngr.ani_vars.update(self.nuke_mngr.ani_vars.seq_name, shot)
+
+            # make path if doesn't exist
+            if not os.path.exists(self.nuke_mngr.ani_vars.shot_comp_work_dir):
+                error = pyani.core.util.make_all_dir_in_path(self.nuke_mngr.ani_vars.shot_comp_work_dir)
+                if error:
+                    error_log.append(error)
+
             # build name for comp file
             comp_source = os.path.join(self.nuke_mngr.ani_vars.templates_seq,
                                        self.nuke_mngr.ani_vars.shot_master_template)
             comp_name = "{0}_{1}_V001.nk".format(self.nuke_mngr.ani_vars.seq_name,
                                                  self.nuke_mngr.ani_vars.shot_name)
+
             comp_dest = os.path.join(self.nuke_mngr.ani_vars.shot_comp_work_dir, comp_name)
             error = pyani.core.util.copy_file(comp_source, comp_dest)
             # log error, or if no error log shot so can report success
@@ -483,12 +491,14 @@ class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
             progress.setValue(progress.value() + percent_inc)
             QtWidgets.QApplication.processEvents()
 
-        if error_log:
-            self.msg_win.show_error_msg("Copy To Shot Error", ", ".join(error_log))
-
         progress.setValue(100)
         QtWidgets.QApplication.processEvents()
         self.progress_win.msg_box.hide()
+
+        if error_log:
+            self.msg_win.show_error_msg("Copy To Shot Error", ", ".join(error_log))
+            return
+
         # show a message since there is no visual indication in gui that shots updated
         self.msg_win.show_info_msg("Update Complete",
                                    "Shot Update Complete. Updated: {0}".format(", ".join(shot_log)))
@@ -722,6 +732,9 @@ class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
             self.nuke_mngr.ani_vars.update(self.nuke_mngr.ani_vars.seq_name, shot)
             if not os.path.exists(self.nuke_mngr.ani_vars.shot_dir):
                 missing_shots.append(shot)
+            # if plugin dir doesn't exist, make it
+            if not os.path.exists(self.nuke_mngr.ani_vars.shot_comp_plugin_dir):
+                pyani.core.util.make_all_dir_in_path(self.nuke_mngr.ani_vars.shot_comp_plugin_dir)
             # copy the json file
             json_plugin_path = os.path.join(self.nuke_mngr.ani_vars.plugin_seq, self.nuke_mngr.plugins_json_name)
             error = pyani.core.util.copy_file(json_plugin_path, self.nuke_mngr.ani_vars.shot_comp_plugin_dir)
@@ -739,9 +752,10 @@ class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
 
         if missing_shots or error_log:
             if missing_shots:
-                self.msg_win.show_error_msg("Shot Error",
-                                            "The shot(s) {0} do not exist on disk. Could not copy. "
-                                            "Please use the 'Create shot nuke scripts' option under Sequence "
+                self.msg_win.show_error_msg("Shot Warning",
+                                            "The shot(s) {0} nuke script does not exist on disk. Copied the plugin, "
+                                            "but make sure you create the shot nuke script as well. You can use "
+                                            "the 'Create shot nuke scripts' option under Sequence "
                                             "Setup if the sequence hasn't been setup or use the Update Shot Nuke"
                                             "Script button if the sequence has been setup already."
                                             .format(", ".join(missing_shots)))

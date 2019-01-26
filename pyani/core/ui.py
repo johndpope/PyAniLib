@@ -97,6 +97,13 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         self.msg_win = QtMsgWindow(self)
         self.progress_win = QtMsgWindow(self)
 
+
+        logging.info(
+            "User version: {0}, Latest Version {1}".format(
+                self.app_manager.user_version,
+                self.app_manager.latest_version
+            )
+        )
         # version management - check version data
         # check if app manager had an error loading version data. If so then display message to user.
         if self.version is None or self.app_manager.latest_version is None:

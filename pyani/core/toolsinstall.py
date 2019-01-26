@@ -292,9 +292,14 @@ class AniToolsSetup:
         """
         # installed, but new apps to install_apps that user doesn't have
         if os.path.exists(self.app_vars.apps_dir):
+            # get missing apps, check for valid list
+            missing_apps = self.missing_apps()
+            # exit if an error - ie not a list of apps or None
+            if not isinstance(missing_apps, list) and missing_apps is not None:
+                return missing_apps
             # install_apps any missing apps
-            if self.missing_apps():
-                for app in self.missing_apps():
+            if missing_apps:
+                for app in missing_apps:
                     # copy its shortcut
                     self.install_app_shortcut(app)
                     # install_apps in directory - C:\PyAniTools\installed\appname
@@ -307,7 +312,7 @@ class AniToolsSetup:
             # update app mngr - copy the app folder from the extracted zip to install_apps location
             error = pyani.core.util.rm_dir(self.app_vars.app_mngr_path)
             if error:
-                return self.log_error(error)
+                return self.log_error(error), None
             logging.info("Removed: {0}".format(self.app_vars.app_mngr_path))
             self.app_vars.app_mngr_path = os.path.join(self.app_vars.setup_dir, "PyAniTools\\installed\\PyAppMngr")
             error = pyani.core.util.move_file(self.app_vars.app_mngr_path, self.app_vars.apps_dir)
@@ -316,30 +321,35 @@ class AniToolsSetup:
             logging.info("Moving: {0} to {1}".format(self.app_vars.app_mngr_path, self.app_vars.apps_dir))
             # copy its shortcut
             self.install_app_shortcut("PyAppMngr")
-        return None, self.missing_apps()
+            # no errors, return any missing apps
+            return None, missing_apps
+        # no errors, but no new apps since directory doesn't exist
+        return None, None
 
     def make_nuke_dir(self):
         """
-        make .nuke
-        :return error if encountered or None, also returns if directory created since if exists we skip
+        make .nuke and init.py if they don't exist
+        :return error if encountered or None, also returns if directory and file created since if exists we skip
         """
         if not os.path.exists(self.ani_vars.nuke_user_dir):
             error = pyani.core.util.make_dir(self.ani_vars.nuke_user_dir)
             if error:
                 return self.log_error(error), False
-            # no error, but created
-            else:
-                logging.info("made dir: {0}".format(self.ani_vars.nuke_user_dir))
-                return None, True
+            error = pyani.core.util.make_file(os.path.join(self.ani_vars.nuke_user_dir, "init.py"))
+            if error:
+                return self.log_error(error), False
+            # no error, created both
+            logging.info("made dir: {0}".format(self.ani_vars.nuke_user_dir))
+            return None, True
         # no error but didn't create
         return None, False
 
     def make_custom_nuke_dir(self):
         """
-        make custom folder in .nuke
+        make custom folder in C:PyAniTools\
         :return error if encountered or None, also returns if directory created since if exists we skip
         """
-        # if the custom dir doesn't exist (.nuke/pyanitools), add it and append init.py with the custom nuke path
+        # if the custom dir doesn't exist (C:PyAniTools\lib), add it and append init.py with the custom nuke path
         if not os.path.exists(self.ani_vars.nuke_custom_dir):
             error = pyani.core.util.make_dir(self.ani_vars.nuke_custom_dir)
             if error:
@@ -372,17 +382,25 @@ class AniToolsSetup:
         :return error if encountered or None, also true if added to init, false if didn't
         """
         try:
-            with open(self.app_vars.nuke_init_file_path, "a+") as init_file:
-                # use mmap just in case init.py is large, shouldn't be, just a precaution. Otherwise could just
-                # load into a string - note in python 3 mmap is like bytearray
-                file_in_mem = mmap.mmap(init_file.fileno(), 0, access=mmap.ACCESS_READ)
-                if file_in_mem.find(self.app_vars.custom_plugin_path) == -1:
+            # check if file empty, mmap won't work with empty files
+            if os.stat(self.app_vars.nuke_init_file_path).st_size == 0:
+                with open(self.app_vars.nuke_init_file_path, "w") as init_file:
                     init_file.write("\n" + self.app_vars.custom_plugin_path + "\n")
                     init_file.close()
                     logging.info("added custom path to .nuke\init.py")
                     return None, True
-                return None, False
-        except (IOError, OSError) as e:
+            else:
+                with open(self.app_vars.nuke_init_file_path, "a+") as init_file:
+                    # use mmap just in case init.py is large, shouldn't be, just a precaution. Otherwise could just
+                    # load into a string - note in python 3 mmap is like bytearray
+                    file_in_mem = mmap.mmap(init_file.fileno(), 0, access=mmap.ACCESS_READ)
+                    if file_in_mem.find(self.app_vars.custom_plugin_path) == -1:
+                        init_file.write("\n" + self.app_vars.custom_plugin_path + "\n")
+                        init_file.close()
+                        logging.info("added custom path to .nuke\init.py")
+                        return None, True
+                    return None, False
+        except (IOError, OSError, ValueError) as e:
             error = "Could not open {0}. Received error {1}".format(self.app_vars.nuke_init_file_path, e)
             logger.exception(error)
             return self.log_error(error), False
@@ -404,7 +422,8 @@ class AniToolsSetup:
 
     def missing_apps(self):
         """Look for any misisng apps in the install_apps directory
-        :return: None if no misisng apps, a list of apps if there are missing apps
+        :return: None if no misisng apps, a list of apps if there are missing apps, or an error string if errored
+        loding the apps list
         """
         app_list_json = os.path.join(self.app_vars.app_data_dir, "Shared\\app_list.json")
         app_list = pyani.core.util.load_json(app_list_json)
@@ -572,7 +591,7 @@ class AniToolsSetupGui(QtWidgets.QDialog):
             updates_exist = True
             logging.info("App Download ran with success.")
         else:
-            success_log.extend("No updates to download.")
+            success_log.append("No updates to download.")
             logging.info("No updates to download.")
 
         # set the install_apps path
@@ -682,6 +701,7 @@ class AniToolsSetupGui(QtWidgets.QDialog):
                     )
         # already installed
         else:
+            # returns either a list or none for new_apps
             error, new_apps = self.tools_setup.add_new_apps()
             if error:
                 return error
@@ -707,7 +727,9 @@ class AniToolsSetupGui(QtWidgets.QDialog):
             if created:
                 log_success.append("Created {0}".format(self.ani_vars.nuke_user_dir))
 
-        # check for  custom nuke folder in .nuke
+        print self.ani_vars.nuke_custom_dir, self.tools_setup.app_vars.setup_nuke_scripts_path
+
+        # check for custom nuke folder in C:PyAniTools\
         error, created = self.tools_setup.make_custom_nuke_dir()
         if error:
             return error

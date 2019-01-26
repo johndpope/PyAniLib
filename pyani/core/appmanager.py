@@ -166,7 +166,7 @@ class AniAppMngr(object):
             if error:
                 return error
             # unzip new app files
-            error = self.unpack_app(self.app_package, self.tools_install_dir)
+            error = self.unpack_app(self.app_package, self.app_install_path)
             if error:
                 return error
 
@@ -249,6 +249,7 @@ class AniAppMngr(object):
         """Updates the user version - call after updating an app
         """
         self.__user_data = pyani.core.util.load_json(self.user_config)
+        self.__user_version = self.__user_data["version"]
 
     def download_update(self):
         """
@@ -372,7 +373,15 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
             self.msg_win.show_error_msg("Critical Error", error)
         else:
             for name in self.app_names:
-                self.app_mngrs.append(AniAppMngr(name))
+                app_mngr = AniAppMngr(name)
+                if app_mngr.log:
+                    self.msg_win.show_warning_msg(
+                        "Warning",
+                        "Could not correctly load data for {0}. This application will not be available to update"
+                        "until the error is resolved. Error is {1}".format(name, ", ".join(app_mngr.log))
+                    )
+                else:
+                    self.app_mngrs.append(AniAppMngr(name))
 
         # main ui elements - styling set in the create ui functions
         self.btn_update = QtWidgets.QPushButton("Update App")
@@ -543,8 +552,8 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
             if error:
                 error_log.append(error)
                 continue
-            item = [app.app_name, app.user_version]
-            item_color = [None, None]
+            item = [app.app_name, app.user_version, ""]
+            item_color = [None, None, None]
             updated_item = pyani.core.ui.CheckboxTreeWidgetItem(item, item_color)
             self.app_tree.update_item(app.app_name, updated_item)
 

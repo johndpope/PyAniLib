@@ -43,15 +43,17 @@ class AniSession:
 
     def create_session(self):
         """
-        Creates a json with the environment variables apps need, like nuke which needs a seq and shot to build
-        plugin paths.
+        Creates a json with the environment variables apps need (if its not created),
+        like nuke which needs a seq and shot to build plugin paths.
         :return: any errors, or none
         """
-        return pyani.core.util.write_json(self.ani_vars.session_vars_json, self.env_format, indent=1)
+        if not os.path.exists(self.ani_vars.session_vars_json):
+            return pyani.core.util.write_json(self.ani_vars.session_vars_json, self.env_format, indent=1)
+        return None
 
     def get_session(self):
         """
-        This returns the session data, as the dict described above ine the class doc string
+        This returns the session data, as the dict described above in the class doc string
         :return: a dict of dicts
         """
         return pyani.core.util.load_json(self.ani_vars.session_vars_json)
