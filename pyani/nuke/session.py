@@ -28,22 +28,51 @@ class AniNukeCmds:
         self.movie_tool = movie_tool
 
     def load_nuke_env(self):
-        """Loads all sequence and shot plugin paths
+        """Loads all sequence and shot plugin paths. Validates the plugins are there, if not displays warning
+        using nuke.message
         """
         session = self.session.get_session()
-
-        sequence = session['core']['seq']
-        shot = session['core']['shot']
+        # could not set session, fall back to show plugins
+        if not isinstance(session, dict):
+            nuke.message("Could not load session. Using the show plugins. If you think this is an error, please "
+                         "file a jira.")
+            sequence = "non-prod"
+            shot = "non-prod"
+        # set session
+        else:
+            sequence = session['core']['seq']
+            shot = session['core']['shot']
 
         # show based plugins and templates since not in shot envir
         if sequence == "non-prod":
+            # check that plugin paths exist
+            if not os.path.exists(self.ani_vars.plugin_show):
+                nuke.message("Could not load show plugins {0}. Please check they exist. If not see Installing Show "
+                             "Nuke Plugins and Templates on Confluence to add them.".format(self.ani_vars.plugin_show))
+                return
+            if not os.path.exists(self.ani_vars.templates_show):
+                nuke.message("Could not load show templates {0}. Please check they exist. If not see Installing Show "
+                             "Nuke Plugins and Templates on Confluence to add them.".format(self.ani_vars.templates_show))
+                return
             nuke.pluginAddPath(self.ani_vars.plugin_show)
             nuke.pluginAddPath(self.ani_vars.templates_show)
         # sequence and shot based plugins since in shot envir
         else:
+
             # do this first, update func needs this set
             self.ani_vars.load_seq_shot_list()
             self.ani_vars.update(sequence, shot)
+            # check that plugin paths exist
+            if not os.path.exists(self.ani_vars.plugin_seq):
+                nuke.message("Could not load seq: {0} plugins path: {1}. Please see Production Team > Tools > Py Ani "
+                             "Tools > PyNukeMngr on Confluence to add them".format(sequence, self.ani_vars.plugin_seq))
+                return
+            if not os.path.exists(self.ani_vars.templates_seq):
+                nuke.message(
+                    "Could not load seq: {0} templates path: {1}. Please see Production Team > Tools > Py Ani "
+                    "Tools > PyNukeMngr on Confluence to add them".format(sequence, self.ani_vars.templates_seq)
+                )
+                return
             nuke.pluginAddPath(self.ani_vars.shot_comp_plugin_dir)
             nuke.pluginAddPath(self.ani_vars.plugin_seq)
             nuke.pluginAddPath(self.ani_vars.templates_seq)
@@ -59,7 +88,7 @@ class AniNukeCmds:
         self.set_project_settings()
 
     def set_project_settings(self):
-        """Set nuke project settings based off sequence and shot
+        """Set nuke project settings based reset sequence and shot
         """
         logging.info(
             "Setting Project Settings: Seq: {0}, Shot: {1}, First frame: {2}, Last frame: {3}".format
@@ -77,7 +106,7 @@ class AniNukeCmds:
 
     @staticmethod
     def create_shot_camera(cam_dir):
-        """Creates a camera node that reads the newest (based off modification time) shot camera abc. Ignores
+        """Creates a camera node that reads the newest (based reset modification time) shot camera abc. Ignores
         any file other than alembic (abc). If no cameras found lets user know and does nothing.
         :param cam_dir: the directory to the camera(s)
         """
@@ -90,7 +119,7 @@ class AniNukeCmds:
                 os.path.join(cam_dir, cam) for cam in os.listdir(cam_dir) if cam.endswith('.abc') and 'camera' in cam
             ]
             logging.info("Found cameras: {0}".format(', '.join(cams)))
-            if not isinstance(cams, list):
+            if not isinstance(cams, list) or cams == []:
                 nuke.message("No cameras found in {0}".format(cam_dir))
                 return
             # get latest camera in directory
@@ -99,6 +128,7 @@ class AniNukeCmds:
             # set 'file' and 'read from file' knobs here to avoid pop up asking to destroy cam data,
             #  and avoids needing to show panel for values to get set
             nuke.createNode("Camera2", "file {0} read_from_file True".format(latest_cam))
+
 
     @staticmethod
     def load_and_create_plugin(plugin, plugin_path):
@@ -216,6 +246,24 @@ class AniNukeCmds:
         return node_list
 
     @staticmethod
+    def set_postage_off():
+        """
+        Turn reset all postage stamps for read and constant nodes
+        """
+        for i in nuke.allNodes():
+            if i.Class() == "Read" or i.Class() == "Constant":
+                i['postage_stamp'].setValue(0)
+
+    @staticmethod
+    def set_postage_on():
+        """
+        Turn on all postage stamps for read and constant nodes
+        """
+        for i in nuke.allNodes():
+            if i.Class() == "Read" or i.Class() == "Constant":
+                i['postage_stamp'].setValue(1)
+
+    @staticmethod
     def set_merge_operation(operation, merge_list):
         """
         sets merges in the merge list to the operation given
@@ -229,7 +277,7 @@ class AniNukeCmds:
     def set_static_text_to_eval_tcl(read, txt):
         """
         set knob callback to evaluate tcl in file read and put in a static text
-        Based off:
+        Based reset:
         cmd = "nuke.thisNode()['image_path_eval'].setValue(nuke.thisNode()['file'].evaluate())"
         n = nuke.selectedNode()
         n['knobChanged'].setValue(cmd)
@@ -275,7 +323,7 @@ class AniNukeGui:
 
     def setup_menu(self):
         """
-        Builds the menu for the sequence or if not in a sequence builds menu based off show plugins. For show
+        Builds the menu for the sequence or if not in a sequence builds menu based reset show plugins. For show
         doesn't add templates, those are shot centric. Shot menu contains plugins, templates, and create shot camera.
         If a shot has plugins, shows those as well
         """
@@ -366,81 +414,6 @@ class AniNukeGui:
                         self.custom_menu.addCommand("Shot Plugins/{0}".format(plugin_base_name),
                                                     "nuke.createNode(\"{0}\")".format(shot_plugin))
 
-    def build_menu2(self, title, plugins, templates):
-        """
-        Builds the menu for the sequence or if not in a sequence builds menu based off show plugins. For show
-        doesn't add templates, those are shot centric. Shot menu contains plugins, templates, and create shot camera.
-        If a shot has plugins, shows those as well
-        :param title: the menu title
-        :param plugins: list of plugins
-        :param templates: list of templates
-        """
-        template_data = None
-        # name of script - ie the file path
-        current_script = nuke.root().name()
-        # see if we are in a shot env, if so load sequence plugins, otherwise load show plugins
-        if self.ani_vars.is_valid_seq(current_script) and self.ani_vars.is_valid_shot(current_script):
-            self.ani_vars.update_using_shot_path(current_script)
-            template_data = utils.load_json(
-                os.path.join(self.ani_vars.templates_seq, self.ani_vars.templates_json_name)
-            )
-            self._build_template_data(template_data)
-
-        self.custom_menu.clearMenu()
-        # display title name as a empty command
-        self.custom_menu.addCommand(title, "nuke.tprint('')")
-        self.custom_menu.addSeparator()
-
-        # if we are in a shot environment, then check for shot plugins, need to disable sequence plugin,
-        # if shot has the same plugin
-        if self.ani_vars.shot_name:
-            # check for plugins
-            shot_plugins = [p for p in os.listdir(self.ani_vars.shot_comp_plugin_dir) if not p.endswith('json')]
-        else:
-            shot_plugins = None
-
-        if plugins:
-            # show the plugins and templates available
-            for plugin in plugins:
-                plugin_base_name = plugin.split(".")[0]
-                if shot_plugins:
-                    if plugin in shot_plugins:
-                        self.custom_menu.addCommand("Plugins/{0} (not available, shot is overriding)".format(
-                            plugin_base_name), "nuke.message('Not Available, Use Shot Copy')")
-                    # plugin not in shot
-                    else:
-                        self.custom_menu.addCommand("Plugins/{0}".format(plugin_base_name),
-                                                    "nuke.createNode(\"{0}\")".format(plugin))
-                # no shot script loaded
-                else:
-                    self.custom_menu.addCommand("Plugins/{0}".format(plugin_base_name),
-                                                "nuke.createNode(\"{0}\")".format(plugin))
-        if templates:
-            # this will be none if not in sequence/shot environment - ie loaded a non shot based script
-            if template_data:
-                for template in templates:
-                    template_base_name = template.split(".")[0]
-                    # don't add to menu if it isn't a self contained template, ie skip something like shot_master which
-                    # is a collection of templates
-                    if self.backdrop_names[template]:
-                        self.custom_menu.addCommand("Templates/{0}".format(template_base_name),
-                                                    partial(self.create_template, template))
-
-        # shot dependent, only add if shot has been set
-        if self.ani_vars.shot_name:
-            self.custom_menu.addSeparator()
-            self.custom_menu.addCommand(self.ani_vars.shot_name, "nuke.tprint('')")
-            self.custom_menu.addSeparator()
-            # add shot camera command
-            self.custom_menu.addCommand("Get Shot Camera",
-                                        lambda: self.cmds.create_shot_camera(self.ani_vars.shot_cam_dir))
-            if shot_plugins:
-                # show the plugins available
-                for shot_plugin in shot_plugins:
-                    plugin_base_name = shot_plugin.split(".")[0]
-                    self.custom_menu.addCommand("Shot Plugins/{0}".format(plugin_base_name),
-                                                "nuke.createNode(\"{0}\")".format(shot_plugin))
-
     def _build_template_data(self, template_data):
         """
         A dictionary of data for processing templates, extracts data from sequence template json file
@@ -530,7 +503,7 @@ class AniNukeGui:
             asset_delivery.knob("assetName").setValue(asset_name)
             version_list = utils.get_subdirs(self.ani_vars.shot_layer_dir)
             latest_version = utils.natural_sort(version_list)[-1]
-            # strip off 'v' from the folder name, the nuke field wants just a number
+            # strip reset 'v' from the folder name, the nuke field wants just a number
             asset_delivery.knob("vers").setValue(latest_version.split("v")[1])
 
         # non replaceable text, just load the original nuke script
@@ -621,7 +594,7 @@ class AniNukeGui:
         Takes a node's screensize into account to ensure correct alignment no matter what kind of node it is.
         Ignores Viewers and child nodes with hidden inputs
         :param direction: up, down, left or right to place nodes.
-        :param node: optional node to use if not placing based off selection
+        :param node: optional node to use if not placing based reset selection
         :return:
         """
 
@@ -634,7 +607,7 @@ class AniNukeGui:
         selection = nuke.selectedNodes()
 
         if selection:
-            # set the axis based off direction, and which element of our 2D positions list to use. 0 = x, 1 = y
+            # set the axis based reset direction, and which element of our 2D positions list to use. 0 = x, 1 = y
             if direction in ['left', 'right']:
                 axis = 'x'
                 index = 0

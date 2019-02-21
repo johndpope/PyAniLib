@@ -1,5 +1,6 @@
 import ffmpeg
 import os
+import time
 import tempfile
 import re
 import pyani.core.util
@@ -20,7 +21,7 @@ logger = logging.getLogger()
 
 class AniShoot:
     """
-    Class that creates movies based off user specified frame range and steps.
+    Class that creates movies based reset user specified frame range and steps.
     """
     def __init__(self, movie_generation, movie_playback, strict_pad):
         self.__seq_list = []
@@ -38,6 +39,9 @@ class AniShoot:
         self.combine_seq = False
         # whether to frame hold
         self.frame_hold = True
+
+        # number threads to use when multi-threading
+        self._thread_count_max = 90
 
         # temporary image file names when need to rename
         self.temp_image_name = "img_temp"
@@ -85,7 +89,7 @@ class AniShoot:
 
     def create_sequences(self, image_path_list):
         """
-        Builds a list of sequence(s) based off a list of image paths. Stores in
+        Builds a list of sequence(s) based reset a list of image paths. Stores in
         member variable seq_list. Clears the member variable if it has sequences in it.
         :param image_path_list: a list of paths to images, ex:
         C:\Images\sq180\s.1001.exr
@@ -94,6 +98,8 @@ class AniShoot:
         # reset sequence if exists
         if self.__seq_list:
             self.__seq_list = []
+
+        print image_path_list
 
         # process any image paths that are directories and get images
         images_from_directories_list = []
@@ -184,7 +190,12 @@ class AniShoot:
                 renamed_image_paths.append(new_image_name)
                 src.append(image.path)
 
-            thread_count = 120
+            # if thread count max is smaller than the size of the existing frames, use thread count max, otherwise
+            # size existing frames which is smaller than thread count
+            if self._thread_count_max < len(src):
+                thread_count = self._thread_count_max
+            else:
+                thread_count = len(src)
             progress_update.setLabelText("Copying Images to Temp Dir Using {0} Threads. This could take a while "
                                          "if the images are large in size.".format(str(thread_count)))
             progress_update.setValue(75)
@@ -252,7 +263,7 @@ class AniShoot:
                 progress_update.setValue(10)
                 QtWidgets.QApplication.processEvents()
 
-            # figure out if start / end sequence is based off the sequence and/or user input
+            # figure out if start / end sequence is based reset the sequence and/or user input
             user_frame_start, user_frame_end, error = self._setup_frame_range(frame_range, seq)
             if error:
                 log += "Movie {0} had the following errors: {1}".format(movie_list[movie_number], error)
@@ -410,20 +421,21 @@ class AniShoot:
             missing_frame_image = convert_image(self.missing_frame_image['png'], seq[0].ext)
             logger.info("Missing image format is png")
 
-        # name of files (up to frame) in temp dir
+        # name of files (up to frame portion of file name) in temp dir
         image_head_temp = os.path.join(self.temp_dir, seq.name + "_" + seq[0].base_name)
 
         seq_start = seq.start_frame()
         seq_end = seq.end_frame()
 
         # Get all missing frames
+        existing_frames_list = [int(frame.frame) for frame in seq.frames()]
 
         # missing frames between user start and end, avoid missing frames outside user frame range
         missing_frames = [frame for frame in seq.missing() if user_frame_start <= frame <= user_frame_end]
 
         # user start is before sequence start
         if user_frame_start < seq_start:
-            # get missing frames based off user inputted start
+            # get missing frames based reset user inputted start
             missing_temp = range(int(user_frame_start), int(seq_start))
             # make into frames with padding
             pad = user_frame_start.pad
@@ -439,7 +451,7 @@ class AniShoot:
 
         # user end is after seq end
         if user_frame_end > seq_end:
-            # get missing frames based off user inputted end - a range of ints
+            # get missing frames based reset user inputted end - a range of ints
             missing_temp = range(int(seq_end) + 1, int(user_frame_end) + 1)
             # make into frames with padding
             pad = user_frame_end.pad
@@ -464,7 +476,6 @@ class AniShoot:
         # image must exist
         src = []
         dest = []
-        thread_count = 90
         for image in seq:
             # make sure images are in the user frame range, if not don't add to list or copy.
             if user_frame_start <= image.frame <= user_frame_end:
@@ -472,6 +483,12 @@ class AniShoot:
                 src.append(image.path)
                 dest.append(image_renamed)
         try:
+            # if thread count max is smaller than the size of the existing frames, use thread count max, otherwise
+            # size existing frames which is smaller than thread count
+            if self._thread_count_max < len(src):
+                thread_count = self._thread_count_max
+            else:
+                thread_count = len(src)
             # threaded ok, order of copy doesn't matter
             pyani.core.util.ThreadedCopy(src, dest, threads=thread_count)
         except (IOError, OSError, WindowsError) as e:
@@ -488,6 +505,7 @@ class AniShoot:
             return None, error_msg
 
         missing_dest = []
+        missing_source = []
         # loop through missing frames, and copy from previous frame, skipping existing frames
         while missing_frames:
             # remove first missing frame from the list
@@ -512,11 +530,17 @@ class AniShoot:
                     if os.path.exists(first_existing_frame.image_parent):
                         frame_to_copy = first_existing_frame
                         break
-            # we know the frame before this missing one exists since its not the start
+            # frames other than the start
             else:
                 try:
-                    # the frame number right before the missing frame, converted to a padded frame
-                    frame_to_copy = AniFrame.from_int(frame-1, seq.padding(formatted=False), seq[0].path)
+                    # find the closest existing frame before this one
+                    frame_to_copy_as_int = pyani.core.util.find_closest_number(
+                        existing_frames_list, int(frame.frame), use_smallest=True
+                    )
+                    # convert the closest existing frame before current frame to a AniFrame object
+                    frame_to_copy = AniFrame.from_int(
+                        frame_to_copy_as_int, seq.padding(formatted=False), seq[0].path
+                    )
                 except AniFrameError as e:
                     error_msg = "Problem creating AniFrame for frame (unpadded) {0}. Error is {1}".format(
                         str(frame-1),
@@ -545,12 +569,21 @@ class AniShoot:
                 return None, error_msg
 
             missing_image = "{0}.{1}.{2}".format(image_head_temp, frame_padded, seq[0].ext)
+            # save a list of the images to copy
+            missing_source.append(image_to_copy)
+            # save a list of where we are copying the above images to
             missing_dest.append(missing_image)
-            # this needs to be sequential, can't use threaded copy
-            error_msg = pyani.core.util.copy_file(image_to_copy, missing_image)
-            if error_msg:
-                logger.exception(error_msg)
-                return None, error_msg
+
+        # if thread count max is smaller than the size of the existing frames, use thread count max, otherwise
+        # size existing frames which is smaller than thread count
+        if self._thread_count_max < len(src):
+            thread_count = self._thread_count_max
+        else:
+            thread_count = len(src)
+        # do threaded copy to fill missing frames. Threaded ok because removed dependency that copy has to be
+        # sequential all missing frames copy off an existing frame. i.e. multiple missing frames may copy the same
+        # image
+        pyani.core.util.ThreadedCopy(missing_source, missing_dest, threads=thread_count)
 
         try:
             copied_image_list.extend([AniImage(image) for image in missing_dest])
@@ -562,8 +595,7 @@ class AniShoot:
 
         return filled_sequence, None
 
-    @staticmethod
-    def _setup_steps_for_write(image_seq, steps):
+    def _setup_steps_for_write(self, image_seq, steps):
         """
         Creates an image sequence on disk that holds frames for the given step size. Does not modify file names.
         Expects a complete sequence, where every frame exists on disk
@@ -592,8 +624,14 @@ class AniShoot:
                 dest.append(image_to_overwrite)
 
         try:
+            # if thread count max is smaller than the size of the existing frames, use thread count max, otherwise
+            # size existing frames which is smaller than thread count
+            if self._thread_count_max < len(src):
+                thread_count = self._thread_count_max
+            else:
+                thread_count = len(src)
             # threaded ok, order of copy doesn't matter
-            pyani.core.util.ThreadedCopy(src, dest, threads=90)
+            pyani.core.util.ThreadedCopy(src, dest, threads=thread_count)
         except (IOError, WindowsError, OSError) as e:
             error_msg = "Problem creating images for steps. Error is {0}".format(e)
             logger.exception(error_msg)
@@ -604,7 +642,7 @@ class AniShoot:
     @staticmethod
     def _setup_frame_range(frame_range, seq):
         """
-        process frame range input - figure out if start / end sequence is based off the sequence and/or user input
+        process frame range input - figure out if start / end sequence is based reset the sequence and/or user input
         :param frame_range: a frame range as a string
         :param seq: an image sequence - pyani.media.image.seq.AniImageSeq object
         :returns: the frame range start and frame range end as frame objects - pyani.media.image.core.AniFrame and error

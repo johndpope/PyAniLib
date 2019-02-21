@@ -15,6 +15,7 @@ os.environ['QT_API'] = 'pyqt'
 from qtpy import QtGui, QtWidgets, QtCore
 # qtpy doesn't have fileDialog, so grab from PyQT4
 from PyQt4.QtGui import QFileDialog
+from PyQt4.QtCore import pyqtSignal
 
 
 GOLD = "#be9117"
@@ -25,12 +26,154 @@ YELLOW = QtGui.QColor(234, 192, 25)
 RED = QtGui.QColor(216, 81, 81)
 
 
-# try to set to unicode - based off what QDesigner does
+# try to set to unicode - based reset what QDesigner does
 try:
     _fromUtf8 = QtCore.QString.fromUtf8
 except AttributeError:
     def _fromUtf8(s):
         return s
+
+
+class TranslucentWidgetSignals(QtCore.QObject):
+    """
+    Close signal for pop up window to communicate with main window calling pop-up
+    """
+    # SIGNALS
+    CLOSE = pyqtSignal()
+
+
+class TranslucentWidget(QtWidgets.QWidget):
+    """
+    Creates a transparent window with user size and colors. Works like this:
+    Given a window A:
+    -----------------
+    |               |
+    |               |
+    |       A       |
+    |               |
+    -----------------
+    we draw over all of A, but making B whatever transparency/color we want, and same for C where C is "the pop-up"
+    -----------------
+    |     -----     |
+    |  B  | C |     |
+    |     -----     |
+    |               |
+    -----------------
+    """
+
+    def __init__(self, parent=None):
+        super(TranslucentWidget, self).__init__(parent)
+
+        # make the window frameless
+        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+
+        # ui elements
+        self.close_btn = QtWidgets.QPushButton(self)
+        self.close_btn.setText("x")
+        font = QtGui.QFont()
+        font.setPixelSize(18)
+        font.setBold(True)
+        self.close_btn.setFont(font)
+        self.close_btn.setFixedSize(30, 30)
+
+        # set attributes defaults - colors, window size
+
+        # window bg and border color (outside/behind popup window - the one pop up covers)
+        self.__fill_color_outside_popup = QtGui.QColor(0, 0, 0, 0)
+        self.__pen_color_outside_popup = QtGui.QColor(0, 0, 0, 0)
+        # popup window bg and border color
+        self.__fill_color_popup = QtGui.QColor(150, 150, 150, 150)
+        self.__pen_color_popup = QtGui.QColor(150, 150, 150, 255)
+        # close button color
+        self.close_btn.setStyleSheet("background-color: rgb(0, 0, 0, 0); color: rgb(0, 0, 0, 255)")
+
+        # size
+        self.__popup_width = 200
+        self.__popup_height = 200
+
+        # the text in the window
+        self.__text = "<font size='4'>Html formatted text here</font>"
+
+        self.set_slots()
+        self.SIGNALS = TranslucentWidgetSignals()
+
+    def set_slots(self):
+        self.close_btn.clicked.connect(self._on_close)
+
+    def set_win_size(self, width, height):
+        """
+        Set pop up size
+        :param width: width as an integer
+        :param height: height as an integer
+        """
+        self.__popup_width = width
+        self.__popup_height = height
+
+    def set_colors(self, fill, border, btn_color):
+        """
+        Set the bg and border color of the pop, as well as the btn color
+        :param fill: rgba as a tuple i.e (255, 255, 255, 255)
+        :param border: rgba as a tuple i.e (255, 255, 255, 255)
+        :param btn_color: rgba as a tuple i.e (255, 255, 255, 255)
+        """
+        self.__fill_color_outside_popup = QtGui.QColor(0, 0, 0, 0)
+        self.__pen_color_outside_popup = QtGui.QColor(0, 0, 0, 0)
+        # popup window bg and border color
+        self.__fill_color_popup = QtGui.QColor(fill[0], fill[1], fill[2], fill[3])
+        self.__pen_color_popup = QtGui.QColor(border[0], border[1], border[2], border[3])
+        # close button color
+        self.close_btn.setStyleSheet(
+            "background-color: rgb(0, 0, 0, 0); color: rgb({0}, {1}, {2}, {3})".format(
+                btn_color[0],
+                btn_color[1],
+                btn_color[2],
+                btn_color[3]
+            )
+        )
+
+    def resizeEvent(self, event):
+        s = self.size()
+        # get right edge of popup
+        right_edge = int(s.width() / 2 + self.__popup_width / 2)
+        # get top edge of popup
+        top_edge = int(s.height() / 2 - self.__popup_height / 2)
+        # put close button at top right of window
+        self.close_btn.move(right_edge - 35, top_edge)
+
+    def set_text(self, text):
+        self.__text = text
+
+    def paintEvent(self, event):
+        """Draw the window - note that we are really drawing over any existing window, filling the entire space. We
+        just make parts transparent. see class doc string
+        """
+        # get current window size
+        s = self.size()
+        qp = QtGui.QPainter()
+        qp.begin(self)
+        qp.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        # draw bg window, one behind popup
+        qp.setPen(self.__pen_color_outside_popup)
+        qp.setBrush(self.__fill_color_outside_popup)
+        qp.drawRect(0, 0, s.width(), s.height())
+        # draw popup
+        qp.setPen(self.__pen_color_popup)
+        qp.setBrush(self.__fill_color_popup)
+        # left edge
+        left_edge = int(s.width() / 2 - self.__popup_width / 2)
+        # top edge
+        top_edge = int(s.height() / 2 - self.__popup_height / 2)
+        qp.drawRoundedRect(left_edge, top_edge, self.__popup_width, self.__popup_height, 5, 5)
+        # draw text - use html
+        td = QtGui.QTextDocument()
+        td.setHtml(self.__text)
+        qp.translate(left_edge, top_edge)
+        td.drawContents(qp, QtCore.QRectF(0, 0, self.__popup_width, self.__popup_height))
+        qp.end()
+
+    def _on_close(self):
+        self.SIGNALS.CLOSE.emit()
 
 
 class AniQMainWindow(QtWidgets.QMainWindow):
@@ -56,7 +199,7 @@ class AniQMainWindow(QtWidgets.QMainWindow):
     :param width : optional width of the window
     :param height: optional height of the window
     :param error_logging : optional error log (pyani.core.error_logging.ErrorLogging object) from trying
-    to create logging in main program
+           to create logging in main program
     """
     def __init__(self, win_title, win_icon, app_mngr, width=600, height=600, error_logging=None):
         super(AniQMainWindow, self).__init__()
@@ -354,8 +497,21 @@ class QHLine(QtWidgets.QFrame):
         self.setFrameShape(QtWidgets.QFrame.HLine)
         self.setFrameShadow(QtWidgets.QFrame.Plain)
         self.setStyleSheet("background-color:{0};".format(color))
+        self.setLineWidth(1)
 
-        self.setLineWidth(3)
+
+class QVLine(QtWidgets.QFrame):
+    """
+    Creates a vertical line
+    :arg: a color in qt css style
+    """
+    def __init__(self, color):
+        super(QVLine, self).__init__()
+        # override behavior of style sheet
+        self.setFrameShape(QtWidgets.QFrame.VLine)
+        self.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.setStyleSheet("background-color:{0};".format(color))
+        self.setLineWidth(1)
 
 
 class QtMsgWindow(QtWidgets.QMessageBox):
@@ -432,6 +588,118 @@ class QtMsgWindow(QtWidgets.QMessageBox):
         self.msg_box.show()
 
 
+class QtInputDialogMenu(QtWidgets.QDialog):
+    """
+    Class that provides a popup window with a menu of options, optional preference checkbox and an ok and cancel
+    button
+    :param parent_win: the window calling this popup
+    :param title: the window title as a string
+    :param option_label: the text label next to the menu as a string
+    :param option_list: the menu text options as a list
+    :param pref: optional - whether to display the preference checkbox as a boolean
+    :param pref_label: optional - required if pref=True, text next to checkbox
+    :param pref_state: optional - default state of checkbox, defaults to reset
+    :param pref_desc: optional - a text description if the user hovers over the check box
+    """
+    def __init__(
+            self,
+            parent_win,
+            title,
+            option_label,
+            option_list,
+            pref=False,
+            pref_label=None,
+            pref_state=False,
+            pref_desc=""
+    ):
+        super(QtInputDialogMenu, self).__init__(parent=parent_win)
+        # the selection from the menu option
+        self.__selection = None
+        # menu options
+        self.menu_cbox = QtWidgets.QComboBox()
+        self.options_label = option_label
+        self.options = option_list
+        # preference options if provided
+        self.has_pref = pref
+        if self.has_pref and pref_label is None:
+            self.pref_label = "No label provided."
+        else:
+            self.pref_label = pref_label
+        self.pref_default_state = pref_state
+        self.pref_desc = pref_desc
+        self.pref_cbox = None
+        # actions
+        self.btn_ok = QtWidgets.QPushButton("Ok")
+        self.btn_cancel = QtWidgets.QPushButton("Cancel")
+        # create window
+        self.setWindowTitle(title)
+        self.create_layout()
+        self.set_slots()
+
+    @property
+    def selection(self):
+        """Return the user selection
+        """
+        return self.__selection
+
+    def pref_checked(self):
+        """Return state of the checkbox for preferences, if preferences are used
+        """
+        if self.has_pref:
+            return self.pref_cbox.isChecked()
+
+    def create_layout(self):
+        """Creates the window layout
+        """
+        layout = QtWidgets.QVBoxLayout()
+        # menu
+        for option in self.options:
+            self.menu_cbox.addItem(option)
+        menu_label = QtWidgets.QLabel(self.options_label)
+        menu_layout = QtWidgets.QHBoxLayout()
+        menu_layout.addWidget(menu_label)
+        menu_layout.addWidget(self.menu_cbox)
+        layout.addLayout(menu_layout)
+
+        # preferences
+        if self.has_pref:
+            pref_layout = QtWidgets.QHBoxLayout()
+            pref_label, self.pref_cbox = pyani.core.ui.build_checkbox(
+                self.pref_label,
+                self.pref_default_state,
+                self.pref_desc
+            )
+            pref_layout.addWidget(self.pref_cbox)
+            pref_layout.addWidget(pref_label)
+            layout.addLayout(pref_layout)
+
+        # ok and cancel buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.addStretch(1)
+        btn_layout.addWidget(self.btn_ok)
+        btn_layout.addWidget(self.btn_cancel)
+        layout.addLayout(btn_layout)
+
+        self.setLayout(layout)
+
+    def set_slots(self):
+        """Button actions when pressed
+        """
+        self.btn_ok.clicked.connect(self.ok)
+        self.btn_cancel.clicked.connect(self.cancel)
+
+    def ok(self):
+        """Saves the current selected text in the menu
+        """
+        self.__selection = self.menu_cbox.currentText()
+        self.close()
+
+    def cancel(self):
+        """Closes the window
+        """
+        self.close()
+
+
 class QtWindowUtil:
     """
     Class of utility functions common to all qt windows
@@ -449,6 +717,87 @@ class QtWindowUtil:
         icon = QtGui.QIcon()
         icon.addPixmap(QtGui.QPixmap(_fromUtf8(img)), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         self.__win.setWindowIcon(icon)
+
+
+class ImageButton(QtWidgets.QAbstractButton):
+    """
+    Creates a pyqt button that uses images (a png, jpeg, gif or other supported Qt format) and
+    has 3 states - reset, hover, pressed
+    All images are absolute file paths
+    :param image: image when mouse is not over the button
+    :param image_hover: image when mouse is over the button
+    :param image_pressed: image when button pressed
+    :param size: size of the images as a tuple (width, height)
+    :param parent: parent widget, defaults to none
+    """
+    def __init__(self, image, image_hover, image_pressed, size=(32, 32), parent=None):
+        super(ImageButton, self).__init__(parent)
+        self.pixmap = QtGui.QPixmap(image)
+        self.pixmap_hover = QtGui.QPixmap(image_hover)
+        self.pixmap_pressed = QtGui.QPixmap(image_pressed)
+        self.size = size
+        self.set_slots()
+
+    def set_slots(self):
+        self.pressed.connect(self.update)
+        self.released.connect(self.update)
+
+    def paintEvent(self, event):
+        pix = self.pixmap_hover if self.underMouse() else self.pixmap
+        if self.isDown():
+            pix = self.pixmap_pressed
+        painter = QtGui.QPainter(self)
+        painter.drawPixmap(event.rect(), pix)
+
+    def set_image(self, state, image):
+        """
+        set the image for the specified state - off, hover, pressed
+        :param state:
+        :param image:
+        :return:
+        """
+        if state == "pressed":
+            self.pixmap_pressed = QtGui.QPixmap(image)
+        elif state == "hover":
+            self.pixmap_hover = QtGui.QPixmap(image)
+        else:
+            self.pixmap = QtGui.QPixmap(image)
+
+    def enterEvent(self, event):
+        self.update()
+
+    def leaveEvent(self, event):
+        self.update()
+
+    def sizeHint(self):
+        return QtCore.QSize(self.size[0], self.size[1])
+
+
+class SliderWidget(QtWidgets.QSlider):
+    def mousePressEvent(self, event):
+        super(SliderWidget, self).mousePressEvent(event)
+        if event.button() == QtCore.Qt.LeftButton:
+            val = self.pixel_pos_to_range_value(event.pos())
+            self.setValue(val)
+
+    def pixel_pos_to_range_value(self, pos):
+        opt = QtWidgets.QStyleOptionSlider()
+        self.initStyleOption(opt)
+        gr = self.style().subControlRect(QtWidgets.QStyle.CC_Slider, opt, QtWidgets.QStyle.SC_SliderGroove, self)
+        sr = self.style().subControlRect(QtWidgets.QStyle.CC_Slider, opt, QtWidgets.QStyle.SC_SliderHandle, self)
+
+        if self.orientation() == QtCore.Qt.Horizontal:
+            sliderLength = sr.width()
+            sliderMin = gr.x()
+            sliderMax = gr.right() - sliderLength + 1
+        else:
+            sliderLength = sr.height()
+            sliderMin = gr.y()
+            sliderMax = gr.bottom() - sliderLength + 1
+        pr = pos - sr.center() + sr.topLeft()
+        p = pr.x() if self.orientation() == QtCore.Qt.Horizontal else pr.y()
+        return QtWidgets.QStyle.sliderValueFromPosition(self.minimum(), self.maximum(), p - sliderMin,
+                                                        sliderMax - sliderMin, opt.upsideDown)
 
 
 class CheckboxTreeWidgetItem(object):
@@ -598,7 +947,7 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
 
     def hide_items(self, item_list):
         """
-        Hides rows based off the list given
+        Hides rows based reset the list given
         :param item_list: a list of strings where the string is the tree's first column text
         """
         iterator = QtWidgets.QTreeWidgetItemIterator(self)
@@ -611,7 +960,7 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
 
     def show_items(self, item_list):
         """
-        Shows rows based off the list given
+        Shows rows based reset the list given
         :param item_list: a list of strings where the string is the tree's first column text
         """
         iterator = QtWidgets.QTreeWidgetItemIterator(self)

@@ -217,12 +217,6 @@ class AniImageSeq(list):
             else:
                 raise AniImageSeqError('Image {0} is not in this image sequence {1}'.format(image.path, self.path))
 
-    """
-    ------------------------------------------------------------
-    internal functions not belonging to api
-    ------------------------------------------------------------
-    """
-
     def _format_frames(self, frames):
         """
         converts frames as ints to padded frames as strings

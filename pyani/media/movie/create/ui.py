@@ -72,7 +72,10 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         self.movie_combine_cbox = None
         self.frame_hold_cbox = None
         self.show_movies_cbox = None
-        self.file_dialog_selection = None
+        self.image_file_selection = None
+
+        # set to allow drag and drop
+        self.setAcceptDrops(True)
 
         # layout the ui
         self.create_layout()
@@ -80,22 +83,6 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         self.set_slots()
 
         self.dialog_places = self._build_places()
-
-    def set_slots(self):
-        """Create the slots/actions that UI buttons / etc... do
-        """
-        # get selection which launches file dialog
-        self.files_button.clicked.connect(self.get_sequence)
-        # open dialog to select output path
-        self.movie_output_button.clicked.connect(self.save_movie)
-        # if state changes, update selection
-        self.movie_combine_cbox.stateChanged.connect(self.movie_combine_update)
-        # if state changes, update selection
-        self.frame_hold_cbox.stateChanged.connect(self.update_hold_frame)
-        # process options and create movie
-        self.create_button.clicked.connect(self.create_movie)
-        # call close built-in function
-        self.close_button.clicked.connect(self.close_and_cleanup)
 
     def create_layout(self):
         """Build the layout of the UI
@@ -242,13 +229,38 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
 
         self.add_layout_to_win()
 
+    def set_slots(self):
+        """Create the slots/actions that UI buttons / etc... do
+        """
+        # get selection which launches file dialog
+        self.files_button.clicked.connect(self.load_file_dialog)
+        # open dialog to select output path
+        self.movie_output_button.clicked.connect(self.save_movie)
+        # if state changes, update selection
+        self.movie_combine_cbox.stateChanged.connect(self.movie_combine_update)
+        # if state changes, update selection
+        self.frame_hold_cbox.stateChanged.connect(self.update_hold_frame)
+        # process options and create movie
+        self.create_button.clicked.connect(self.create_movie)
+        # call close built-in function
+        self.close_button.clicked.connect(self.close_and_cleanup)
+
+    def dropEvent(self, e):
+        """
+        called when the drop is completed when dragging and dropping,
+        calls wrapper which gets mime data and calls self.load passing mime data to it
+        generic use lets other windows use drag and drop with whatever function they need
+        :param e: event mime data
+        """
+        self.drop_event_wrapper(e, self.load_drag_drop)
+
     def close_and_cleanup(self):
         self.shoot.cleanup()
         self.close()
 
     def movie_combine_update(self):
         """
-        combines or separates sequences based off user input. Uses the pyani.movie.core.AniShoot class to combine
+        combines or separates sequences based reset user input. Uses the pyani.movie.core.AniShoot class to combine
         if a sequence doesn't exist yet, just saves state and when sequence is created it will see the state and
         combine the sequence
         :return: exits after error if unsuccessful
@@ -292,37 +304,44 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         """
         self.shoot.frame_hold = self.frame_hold_cbox.checkState()
 
+    def load_file_dialog(self):
+        dialog = FileDialog()
+        dialog.setSidebarUrls(self.dialog_places)
+        dialog.exec_()
+        self.image_file_selection = dialog.get_selection()
+        # only process selection if a selection was made
+        if self.image_file_selection:
+            self.get_sequence()
+
+    def load_drag_drop(self, file_names):
+        self.image_file_selection = sorted([os.path.normpath(file_name) for file_name in file_names])
+        if self.image_file_selection:
+            self.get_sequence()
+
     def get_sequence(self):
         """
         Gets the images and builds image sequence(s). Then validates the selection and updates gui
         with the selection information like frame range
         """
-        dialog = FileDialog()
-        dialog.setSidebarUrls(self.dialog_places)
-        dialog.exec_()
-        self.file_dialog_selection = dialog.get_selection()
+        error_msg = self.ui.process_input(self.image_file_selection, self.shoot)
+        if error_msg:
+            self.msg_win.show_error_msg("Invalid Selection", error_msg)
+            return
 
-        # only process selection if a selection was made
-        if self.file_dialog_selection:
-            error_msg = self.ui.process_input(self.file_dialog_selection, self.shoot)
-            if error_msg:
-                self.msg_win.show_error_msg("Invalid Selection", error_msg)
-                return
+        # validate sequences
+        msg = self.ui.validate_selection(self.shoot, int(self.steps_sbox.value()))
+        if msg:
+            self.msg_win.show_error_msg("Invalid Selection", msg)
+        else:
+            self.display_gui_info()
 
-            # validate sequences
-            msg = self.ui.validate_selection(self.shoot, int(self.steps_sbox.value()))
-            if msg:
-                self.msg_win.show_error_msg("Invalid Selection", msg)
-            else:
-                self.display_gui_info()
-
-            # check if frame range input should be locked, because there are multiple sequences
-            if self.frame_range_input.text() == "N/A":
-                # disable so user can't change
-                self._lock_gui_object(self.frame_range_input)
-            else:
-                # enable so user can change
-                self._unlock_gui_object(self.frame_range_input)
+        # check if frame range input should be locked, because there are multiple sequences
+        if self.frame_range_input.text() == "N/A":
+            # disable so user can't change
+            self._lock_gui_object(self.frame_range_input)
+        else:
+            # enable so user can change
+            self._unlock_gui_object(self.frame_range_input)
 
     def display_gui_info(self):
         """

@@ -124,7 +124,7 @@ class AniVars(object):
         :return the sequence list or error as string
         """
         try:
-            return self.seq_shot_list.keys()
+            return sorted(self.seq_shot_list.keys())
         except KeyError as e:
             error = "Error getting sequence list. Error is {0}".format(e)
             logging.exception(error)
@@ -137,7 +137,7 @@ class AniVars(object):
         """
         try:
             shot_list = self.seq_shot_list[self.seq_name]
-            return [shot["shot"] for shot in shot_list]
+            return sorted([shot["shot"] for shot in shot_list])
         except KeyError as e:
             error = "Error getting shot list. Error is {0}".format(e)
             logging.exception(error)
@@ -145,7 +145,7 @@ class AniVars(object):
 
     def update_using_shot_path(self, shot_path):
         """
-        Set ani vars based off a shot path that has seq### and shot### in it, like ...sequences/seq180/shot190/...
+        Set ani vars based reset a shot path that has seq### and shot### in it, like ...sequences/seq180/shot190/...
         :param shot_path: a valid path with the words seq followed by a seq num and shot followed by a shot num
         :return: error if encountered as string, none otherwise
         """
@@ -162,7 +162,7 @@ class AniVars(object):
 
     def update(self, seq_name, shot_name=None):
         """
-        sets ani vars based off a seq name and shot name
+        sets ani vars based reset a seq name and shot name
         :param seq_name: the words seq followed by a number, like seq180
         :param shot_name: the words shot followed by a number, like shot190
         :return: error if encountered as a string, otherwise None
@@ -185,7 +185,7 @@ class AniVars(object):
                 return error
 
     def _make_seq_vars(self):
-        """ Sets the sequence vars based off the sequence name stored - called by update and update_using_shot_path
+        """ Sets the sequence vars based reset the sequence name stored - called by update and update_using_shot_path
         """
         self.seq_lib = os.path.normpath("Z:\LongGong\lib\sequences\{0}".format(self.seq_name))
         # movie directories
@@ -198,7 +198,7 @@ class AniVars(object):
         self.templates_seq = os.path.normpath("{0}\\templates".format(self.seq_comp_lib))
 
     def _make_shot_vars(self):
-        """ Sets the shot vars based off the shot name stored - called by update and update_using_shot_path
+        """ Sets the shot vars based reset the shot name stored - called by update and update_using_shot_path
         """
         # shot directories in shot
         self.shot_dir = os.path.normpath("Z:\LongGong\sequences\{0}\{1}".format(self.seq_name, self.shot_name))

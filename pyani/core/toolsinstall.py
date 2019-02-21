@@ -1,8 +1,8 @@
 import mmap
 import logging
 import os
+import sys
 import datetime
-import tempfile
 import zipfile
 from subprocess import Popen, PIPE
 import pyani.core.ui
@@ -71,7 +71,7 @@ class AniToolsSetup:
     def call_ext_py_api(self, command):
         """
         Run a python script
-        :param command: External python file to run with any arguments, leave off python interpretor,
+        :param command: External python file to run with any arguments, leave reset python interpretor,
         ie just script.py arguments, not python.exe script.py arguments. Must be a list,:
         ["script.py", "arg1", ...., "arg n"]
         :return: the output from the script, any errors encountered. If no errors returns None
@@ -96,9 +96,10 @@ class AniToolsSetup:
             return output
         return None
 
-    def download_updates(self):
+    def download_updates(self, skip_update_check=False):
         """
-        Downloads the files from the server. If it fails records failed attempt. After 3 failed attempts informs user
+        Downloads the files from the server.
+        :param skip_update_check: whether to only download the update if its newer.
         :returns: True if downloaded, False if no updates to download, error if encountered.
         """
         # download json file
@@ -125,7 +126,7 @@ class AniToolsSetup:
         if not isinstance(client_data, dict):
             return self.log_error(client_data)
 
-        if self.updates_exist(server_data, client_data):
+        if self.updates_exist(server_data, client_data) or skip_update_check:
             # download the file
             py_script = os.path.join(self.cgt_bridge_api_path, "cgt_download.py")
             dl_command = [
@@ -146,13 +147,10 @@ class AniToolsSetup:
                 src = os.path.join(self.app_vars.cgt_download_path, self.app_vars.tools_package)
                 dest = os.path.join(self.app_vars.download_temp_dir, self.app_vars.tools_package)
                 # check if directory exists
-                if os.path.exists(self.app_vars.download_temp_dir):
-                    error = pyani.core.util.rm_dir(self.app_vars.download_temp_dir)
+                if not os.path.exists(self.app_vars.download_temp_dir):
+                    error = pyani.core.util.make_dir(self.app_vars.download_temp_dir)
                     if error:
                         return self.log_error(error)
-                pyani.core.util.make_dir(self.app_vars.download_temp_dir)
-                if error:
-                    return self.log_error(error)
                 error = pyani.core.util.move_file(src, dest)
                 if error:
                     return self.log_error(error)
@@ -203,6 +201,7 @@ class AniToolsSetup:
             "evan0510"
         ]
         error = self.call_ext_py_api(dl_command)
+
         if error:
             logging.error(error)
             return self.log_error(error)
@@ -221,7 +220,7 @@ class AniToolsSetup:
                 return self.log_error(error), False
             # no error, created successfully
             else:
-                logging.info("Created {0}".format(self.app_vars.tools_dir))
+                logging.info("Step: Created {0}".format(self.app_vars.tools_dir))
                 return None, True
         # already exists
         return None, False
@@ -236,12 +235,12 @@ class AniToolsSetup:
             error = pyani.core.util.rm_dir(self.app_vars.app_data_dir)
             if error:
                 return self.log_error(error)
-            logging.info("Removed: {0}".format(self.app_vars.app_data_dir))
+            logging.info("Step: Removed: {0}".format(self.app_vars.app_data_dir))
         # update app data
         error = pyani.core.util.move_file(self.app_vars.setup_app_data_path, self.app_vars.tools_dir)
         if error:
             return self.log_error(error)
-        logging.info("Moving: {0} to {1}".format(self.app_vars.setup_app_data_path, self.app_vars.tools_dir))
+        logging.info("Step: Moving: {0} to {1}".format(self.app_vars.setup_app_data_path, self.app_vars.tools_dir))
         return None
 
     def update_packages(self):
@@ -254,40 +253,31 @@ class AniToolsSetup:
             error = pyani.core.util.rm_dir(self.app_vars.packages_dir)
             if error:
                 return self.log_error(error)
-            logging.info("Removed: {0}".format( self.app_vars.packages_dir))
+            logging.info("Step: Removed: {0}".format( self.app_vars.packages_dir))
         # update packages
         error = pyani.core.util.move_file(self.app_vars.setup_packages_path, self.app_vars.packages_dir)
         if error:
             return self.log_error(error)
-        logging.info("Moving: {0} to {1}".format(self.app_vars.setup_packages_path, self.app_vars.packages_dir))
+        logging.info("Step: Moving: {0} to {1}".format(self.app_vars.setup_packages_path, self.app_vars.packages_dir))
 
         return None
 
-    def first_time_setup(self):
+    def add_all_apps(self):
         """
-        Copies apps from the downloaded zip to tools directory install_apps folder.
-        Does not update/replace any of the existing apps. That is handled by app_manager program - see appmanager.py
-        :return: error as a formatted string using log_error function or None, also returns a bool indicating if
-        shortcuts were made or they already exist and skip copying
+        Copies everything in installed folder from the downloaded zip to tools directory install_apps folder.
+        Includes apps, shortcuts to apps, and 3rd party support programs
+        :return: error as a formatted string using log_error function or None
         """
         error = pyani.core.util.move_file(self.app_vars.setup_installed_path, self.app_vars.apps_dir)
         if error:
             return self.log_error(error), False
-        logging.info("Moving: {0} to {1}".format(self.app_vars.setup_installed_path, self.app_vars.app_data_dir))
-
-        # copy folder shortcut
-        if not os.path.exists(os.path.join(self.app_vars.user_desktop, "PyAniTools.lnk")):
-            error = pyani.core.util.move_file(self.app_vars.apps_dir + "\\PyAniTools.lnk", self.app_vars.user_desktop)
-            if error:
-                return self.log_error(error), False
-            logging.info("Moving: {0} to {1}".format(self.app_vars.apps_dir + "\\PyAniTools.lnk", self.app_vars.user_desktop))
-            return None, True
-        return None, False
+        logging.info("Step: Moving: {0} to {1}".format(self.app_vars.setup_installed_path, self.app_vars.app_data_dir))
+        return None
 
     def add_new_apps(self):
         """
-        installs new apps as become available.
-        Does not update/replace any of the existing apps. That is handled by app_manager program - see appmanager.py
+        installs new apps as become available. Does not update/replace any of the existing apps. That is handled by
+        app_manager program - see appmanager.py
         :return: error as a formatted string using log_error function or None, also returns list of new apps installed
         """
         # installed, but new apps to install_apps that user doesn't have
@@ -305,7 +295,7 @@ class AniToolsSetup:
                     # install_apps in directory - C:\PyAniTools\installed\appname
                     src = os.path.join(self.app_vars.setup_installed_path, app)
                     error = pyani.core.util.move_file(src, self.app_vars.apps_dir)
-                    logging.info("Moving: {0} to {1}".format(src, self.app_vars.apps_dir))
+                    logging.info("Step: Moving: {0} to {1}".format(src, self.app_vars.apps_dir))
                     if error:
                         return self.log_error(error), None
 
@@ -313,12 +303,20 @@ class AniToolsSetup:
             error = pyani.core.util.rm_dir(self.app_vars.app_mngr_path)
             if error:
                 return self.log_error(error), None
-            logging.info("Removed: {0}".format(self.app_vars.app_mngr_path))
-            self.app_vars.app_mngr_path = os.path.join(self.app_vars.setup_dir, "PyAniTools\\installed\\PyAppMngr")
-            error = pyani.core.util.move_file(self.app_vars.app_mngr_path, self.app_vars.apps_dir)
-            if error:
-                return self.log_error(error), None
-            logging.info("Moving: {0} to {1}".format(self.app_vars.app_mngr_path, self.app_vars.apps_dir))
+            logging.info("Step: Removed: {0}".format(self.app_vars.app_mngr_path))
+            app_mngr_path_from_zip = os.path.join(self.app_vars.setup_dir, "PyAniTools\\installed\\PyAppMngr")
+            # check if app manager folder exists, could be a re-install, which has issues removing the folder. The
+            # folder contents get removed, but C:\\PyAniTools\\installed\\PyAppMngr doesn't. If the folder is there,
+            # move the folder contents not the folder
+            if os.path.exists(self.app_vars.app_mngr_path):
+                for app_mngr_file in os.listdir(app_mngr_path_from_zip):
+                    file_to_move = os.path.join(app_mngr_path_from_zip, app_mngr_file)
+                    pyani.core.util.move_file(file_to_move, self.app_vars.app_mngr_path)
+            else:
+                error = pyani.core.util.move_file(app_mngr_path_from_zip, self.app_vars.apps_dir)
+                if error:
+                    return self.log_error(error), None
+                logging.info("Step: Moving: {0} to {1}".format(app_mngr_path_from_zip, self.app_vars.apps_dir))
             # copy its shortcut
             self.install_app_shortcut("PyAppMngr")
             # no errors, return any missing apps
@@ -339,7 +337,7 @@ class AniToolsSetup:
             if error:
                 return self.log_error(error), False
             # no error, created both
-            logging.info("made dir: {0}".format(self.ani_vars.nuke_user_dir))
+            logging.info("Step: made dir: {0}".format(self.ani_vars.nuke_user_dir))
             return None, True
         # no error but didn't create
         return None, False
@@ -356,7 +354,7 @@ class AniToolsSetup:
                 return self.log_error(error), False
             # no error, but created
             else:
-                logging.info("made dir: {0}".format(self.ani_vars.nuke_custom_dir))
+                logging.info("Step: made dir: {0}".format(self.ani_vars.nuke_custom_dir))
                 return None, True
         # no error but didn't create
         return None, False
@@ -373,7 +371,7 @@ class AniToolsSetup:
         error = pyani.core.util.copy_files(self.app_vars.setup_nuke_scripts_path, self.ani_vars.nuke_custom_dir)
         if error:
             return self.log_error(error)
-        logging.info("copied nuke scripts to custom folder: {0}".format(self.ani_vars.nuke_custom_dir))
+        logging.info("Step: copied nuke scripts to custom folder: {0}".format(self.ani_vars.nuke_custom_dir))
         return None
 
     def add_custom_nuke_path_to_init(self):
@@ -387,7 +385,7 @@ class AniToolsSetup:
                 with open(self.app_vars.nuke_init_file_path, "w") as init_file:
                     init_file.write("\n" + self.app_vars.custom_plugin_path + "\n")
                     init_file.close()
-                    logging.info("added custom path to .nuke\init.py")
+                    logging.info("Step: added custom path to .nuke\init.py")
                     return None, True
             else:
                 with open(self.app_vars.nuke_init_file_path, "a+") as init_file:
@@ -397,7 +395,7 @@ class AniToolsSetup:
                     if file_in_mem.find(self.app_vars.custom_plugin_path) == -1:
                         init_file.write("\n" + self.app_vars.custom_plugin_path + "\n")
                         init_file.close()
-                        logging.info("added custom path to .nuke\init.py")
+                        logging.info("Step: added custom path to .nuke\init.py")
                         return None, True
                     return None, False
         except (IOError, OSError, ValueError) as e:
@@ -412,10 +410,12 @@ class AniToolsSetup:
         :param app_name: the app name
         :return error if encountered or None
         """
-        src = os.path.join(self.app_vars.apps_shortcut_dir, "{0}.lnk".format(app_name))
-        if not os.path.exists(self.app_vars.app_mngr_shortcut):
-            error = pyani.core.util.move_file(src, self.app_vars.app_mngr_shortcut)
-            logging.info("Moving: {0} to {1}".format(src, self.app_vars.app_mngr_shortcut))
+        # move shortcut from setup dir to tools dir
+        shortcut_to_move = os.path.join(self.app_vars.setup_apps_shortcut_dir, "{0}.lnk".format(app_name))
+        existing_shortcut = os.path.join(self.app_vars.apps_shortcut_dir, "{0}.lnk".format(app_name))
+        if not os.path.exists(existing_shortcut):
+            error = pyani.core.util.move_file(shortcut_to_move, self.app_vars.apps_shortcut_dir)
+            logging.info("Step: Moving: {0} to {1}".format(shortcut_to_move, self.app_vars.apps_shortcut_dir))
             if error:
                 return self.log_error(error)
         return None
@@ -452,10 +452,11 @@ class AniToolsSetupGui(QtWidgets.QDialog):
     a windows scheduling task to download future updates
     :param run_type : "setup" or "update"
     :param error_logging : error log (pyani.core.error_logging.ErrorLogging object) from trying
+    :param close_on_success: close after a successful install or update, defaults to false
     to create logging in main program
     """
 
-    def __init__(self, run_type, error_logging):
+    def __init__(self, run_type, error_logging, close_on_success=False):
         super(AniToolsSetupGui, self).__init__()
 
         # functionality to install_apps and update tools
@@ -465,6 +466,7 @@ class AniToolsSetupGui(QtWidgets.QDialog):
             "pyanitools_update", os.path.join(self.tools_setup.app_vars.apps_dir, "PyAniToolsUpdate.exe")
         )
         self.run_type = run_type
+        self.close_on_success = close_on_success
 
         self.win_utils = pyani.core.ui.QtWindowUtil(self)
         self.setWindowTitle('Py Ani Tools Setup')
@@ -531,46 +533,89 @@ class AniToolsSetupGui(QtWidgets.QDialog):
     def set_slots(self):
         self.close_btn.clicked.connect(self.close)
 
-    def run(self):
+    def run(self, force_update=False):
+        """
+        starts the install or update process. exits on a successful installation or update if the flag
+        'close_on_success was passed'. Otherwise shows report of the install or update
+        :param force_update: optional flag to force an update regardless of user version
+        """
         # determine if this is an install_apps or update
         if self.run_type == "setup":
             self.run_install()
         else:
-            self.run_update()
-        self.report_txt.show()
-        self.report_txt.setHtml("<p>".join(self.log))
+            self.run_update(force_update=force_update)
+        # check if the flag was passed to close after a successful install or update
+        if self.close_on_success:
+            sys.exit()
+        # no flag passed to close, so show report
+        else:
+            self.report_txt.show()
+            self.report_txt.setHtml("<p>".join(self.log))
 
     def run_install(self):
+        """
+        Does the complete installation of the tools
+        :return: exits early if error scheduling task
+        """
+        install_successful = False
+
         # schedule tools update to run, if it is already scheduled skips. If scheduling errors then informs user
         # and doesn't install_apps
         error = self.task_scheduler.setup_task(schedule_type="daily", start_time="14:00")
         if error:
             self.log.append(error)
             self.log.append("Skipping Installation, Can't Setup Windows Task Scheduler.")
+            self.progress_label.setText("Incomplete Installation")
+            self.progress.setValue(100)
             return
 
         # install_apps
+        #
+        # set the directory the exe file is in
+        path = pyani.core.util.get_script_dir()
+        self.tools_setup.app_vars.update_setup_dir(path)
+        logger.info("setup_dir is {0}".format(path))
+
         progress_steps = 100.0 / float(len(self.install_list))
         log = self.install(progress_steps)
-        self.log.extend(log)
+        # if its a list its the success log, otherwise its an error
+        if isinstance(log, list):
+            self.log.extend(log)
+            install_successful = True
+        else:
+            self.log.append(log)
 
         # update install_apps date
-        error = self.tools_setup.set_install_date()
-        if error:
-            self.log.append(self.tools_setup.log_error(error))
+        if install_successful:
+            error = self.tools_setup.set_install_date()
+            if error:
+                self.log.append(self.tools_setup.log_error(error))
+            else:
+                self.log.append(
+                    "<font color={0}>Installation Completed Successfully!</font>".format(pyani.core.ui.GREEN)
+                )
 
         # FINISH -----------------------------------------------------------------------
-        self.progress_label.setText("Updating Complete")
+        self.progress_label.setText("Installation Complete")
         self.progress.setValue(100)
         QtWidgets.QApplication.processEvents()
 
-    def run_update(self):
+    def run_update(self, force_update=False):
+        """
+        Runs the update process
+        :param force_update: optional flag to force an update regardless of user version
+        :return: exits early if can't download the tools from cgt or the sequence / shot list from cgt
+        """
         # number of install_apps steps is the installation of files plus 2
         # (update seq shot list, download zip)
         progress_steps = 100.0 / float(len(self.install_list)+2)
 
+        # set the directory the exe file is in
+        path = pyani.core.util.get_script_dir()
+        self.tools_setup.app_vars.update_setup_dir(path)
+
         # indicates if there is an update to install
-        updates_exist = False
+        download_successful = False
         # what installed, self.log logs errors
         success_log = []
 
@@ -580,22 +625,24 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         self.progress.setValue(self.progress.value() + progress_steps)
         QtWidgets.QApplication.processEvents()
         # update
-        error = self.tools_setup.download_updates()
+        error = self.tools_setup.download_updates(skip_update_check=force_update)
         # not true or false, so an error occurred
         if not isinstance(error, bool):
             self.log.append(error)
             self.log.append("Skipping Installation, Tools Update Failed.")
+            self.progress_label.setText("Incomplete Update")
+            self.progress.setValue(100)
             return
         # returned True, means downloaded
         elif error:
-            updates_exist = True
+            download_successful = True
             logging.info("App Download ran with success.")
         else:
             success_log.append("No updates to download.")
             logging.info("No updates to download.")
 
         # set the install_apps path
-        if updates_exist:
+        if download_successful:
             # install_apps, log is what successfully installed
             success_log.extend(self.install(progress_steps))
             # update install_apps date
@@ -614,15 +661,20 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         if error:
             self.log.append(error)
             self.log.append("Sequence List Update Failed.")
+            self.progress_label.setText("Incomplete Update")
+            self.progress.setValue(100)
             return
         else:
             logging.info("Sequence update ran with success")
 
-        # see if we have any error so far, if not, close app, otherwise show
+        # see if we have any errors so far, if not, close app, otherwise show
         if not self.log:
             logging.info("-----------> Completed Update.")
             # show what was successfully installed
             self.log.extend(success_log)
+            self.log.append(
+                "<font color={0}>Update Process Completed Successfully!</font>".format(pyani.core.ui.GREEN)
+            )
         else:
             # some errors, so show errors and what was installed
             self.log.extend(success_log)
@@ -634,10 +686,16 @@ class AniToolsSetupGui(QtWidgets.QDialog):
 
     def install(self, progress_steps):
         """Installs apps from the setup directory where the unzipped files are to the application directory
-        Installs new apps if not installed, always updates app data, packages, .nuke/pyanitools folder and app
-        Exist early if error encountered
+        Installs new apps if not installed, always updates app data, packages, app mngr, install update assistant,
+        pyanitools lib for nuke. Handles 3 types of installs:
+        1. First time install
+        2. Re-install
+        3. Installing core files only - means updating everything but the apps, but will install new apps. Call
+           this install type 'updating' since it is only installing core data files that handle app management
+        Exits early if errors are encountered, otherwise returns a log of the steps installed.
         :param progress_steps : the number of steps in the installation
-        :return: a self.log of the activity including errors and success
+        :return: if an error encountered, returns a string of the error. if no errors returns a list of the install
+                 steps that ran
         """
         install_steps = 0
 
@@ -688,20 +746,114 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         install_steps = install_steps + 1
         self.progress_label.setText(self.install_list[install_steps])
 
-        # first install_apps
+        # ----> make sure shortcut link is on desktop, if not copy
+        if not os.path.exists(self.tools_setup.app_vars.tools_shortcuts):
+            shortcut_to_move = os.path.join(self.tools_setup.app_vars.setup_installed_path, "PyAniTools.lnk")
+            logging.info(
+                "Step: Moving: {0} to {1}".format(self.tools_setup.app_vars.setup_installed_path + "\\PyAniTools.lnk",
+                                                  self.tools_setup.app_vars.user_desktop)
+            )
+            error = pyani.core.util.move_file(shortcut_to_move, self.tools_setup.app_vars.user_desktop)
+            if error:
+                return self.tools_setup.log_error(error)
+
+        # first time tools installed
         if not os.path.exists(self.tools_setup.app_vars.apps_dir):
-            error, created_shortcuts = self.tools_setup.first_time_setup()
+            error = self.tools_setup.add_all_apps()
             if error:
                 return error
             else:
                 log_success.append("Installed Apps To {0}".format(self.tools_setup.app_vars.apps_dir))
-                if created_shortcuts:
-                    log_success.append(
-                        "Created Shortcut On Desktop {0}".format(self.tools_setup.app_vars.user_desktop + "\PyAniTools")
-                    )
-        # already installed
+        # already installed, doing a re-installation or update of core files
         else:
-            # returns either a list or none for new_apps
+            # REINSTALL ONLY SECTION --------------------------------------------------------------------------------
+            # if run type is setup, and we are here, then its a re-install. fresh installs don't get here since the
+            # apps dir wouldn't exist. Due to windows resource management, the app mananger, which initiates the
+            # re-install, can't delete the folder containing the app mngr exe. This leaves
+            # C:\PyAniTools\installed\PyAppMngr\ around. A new install sees an app folder exists, and comes here instead
+            # of the first install section above.
+            # copies ffmpeg, icons, apps, and shortcuts, and tools updater
+            if self.run_type == "setup":
+                # ----> create shortcuts folder - add new apps will add the actual shortcut
+                error = pyani.core.util.make_dir(self.tools_setup.app_vars.apps_shortcut_dir)
+                logging.info("Creating shortcut directory: {0}".format(self.tools_setup.app_vars.apps_shortcut_dir))
+                if error:
+                    return self.tools_setup.log_error(error)
+                else:
+                    log_success.append(
+                        "Created shortcuts folder: {0}".format(self.tools_setup.app_vars.apps_shortcut_dir)
+                    )
+
+                # ----> move icons
+                if not os.path.exists(os.path.join(self.tools_setup.app_vars.apps_dir, "icons")):
+                    # move the icons since don't exist
+                    dir_to_move = os.path.join(self.tools_setup.app_vars.setup_installed_path, "icons")
+                    logger.info(
+                        "Step: Moving icons from {0} to {1}".format(dir_to_move, self.tools_setup.app_vars.apps_dir)
+                    )
+                    error = pyani.core.util.move_file(dir_to_move, self.tools_setup.app_vars.apps_dir)
+                    if error:
+                        return error
+                    else:
+                        log_success.append("Added Icons folder")
+
+                # ----> copy ffmpeg
+                if not os.path.exists(os.path.join(self.tools_setup.app_vars.apps_dir, "ffmpeg")):
+                    # move ffmpeg since it doesn't exist
+                    dir_to_move = os.path.join(self.tools_setup.app_vars.setup_installed_path, "ffmpeg")
+                    logger.info(
+                        "Step: Moving ffmpeg from {0} to {1}".format(dir_to_move, self.tools_setup.app_vars.apps_dir)
+                    )
+                    error = pyani.core.util.move_file(dir_to_move, self.tools_setup.app_vars.apps_dir)
+                    if error:
+                        return error
+                    else:
+                        log_success.append("Added ffmpeg")
+            # END REINSTALL ONLY SECTION -----------------------------------------------------------------------------
+
+            # REINSTALL AND UPDATE SECTION ---------------------------------------------------------------------------
+            # ----> move the install update assistant
+            file_to_move = os.path.join(
+                self.tools_setup.app_vars.setup_installed_path, self.tools_setup.app_vars.iu_assist_exe
+            )
+            logger.info(
+                "Step: Moving update / install assist exe from {0} to {1}".format(
+                    file_to_move, self.tools_setup.app_vars.apps_dir
+                )
+            )
+            # check if iuassist.exe exists, if so remove from tools dir
+            if os.path.exists(self.tools_setup.app_vars.iu_assist_path):
+                error = pyani.core.util.delete_file(self.tools_setup.app_vars.iu_assist_path)
+                if error:
+                    return error
+            # move iuassist.exe from newly downloaded tools in temp dir to existing tools dir
+            error = pyani.core.util.move_file(file_to_move, self.tools_setup.app_vars.apps_dir)
+            if error:
+                return error
+            else:
+                log_success.append("Updated Install Update Assistant")
+
+            # ----> update the updater, only happens if update tool exe doesn't exist in tools installed folder.
+            #        Happens during a re-install or update of core files from app manager. Doesn't happen during
+            #        automated updates
+            existing_update_tool_path = os.path.join(
+                self.tools_setup.app_vars.apps_dir,
+                self.tools_setup.app_vars.update_exe
+            )
+            if not os.path.exists(existing_update_tool_path):
+                file_to_move = os.path.join(
+                    self.tools_setup.app_vars.setup_installed_path, self.tools_setup.app_vars.update_exe
+                )
+                logger.info(
+                    "Step: Moving update exe from {0} to {1}".format(file_to_move, self.tools_setup.app_vars.apps_dir)
+                )
+                error = pyani.core.util.move_file(file_to_move, self.tools_setup.app_vars.apps_dir)
+                if error:
+                    return error
+                else:
+                    log_success.append("Updated Tools Updater")
+
+            # ----> move missing apps - returns either a list or none for new_apps
             error, new_apps = self.tools_setup.add_new_apps()
             if error:
                 return error
@@ -726,8 +878,6 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         else:
             if created:
                 log_success.append("Created {0}".format(self.ani_vars.nuke_user_dir))
-
-        print self.ani_vars.nuke_custom_dir, self.tools_setup.app_vars.setup_nuke_scripts_path
 
         # check for custom nuke folder in C:PyAniTools\
         error, created = self.tools_setup.make_custom_nuke_dir()

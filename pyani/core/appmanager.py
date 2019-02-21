@@ -1,11 +1,12 @@
 import zipfile
 import os
 import signal
-import psutil
 import pyani.core.util
+import subprocess
 import logging
 import pyani.core.ui
 import pyani.core.anivars
+import pyani.core.appvars
 from pyani.core.toolsinstall import AniToolsSetup
 
 # set the environment variable to use a specific wrapper
@@ -209,28 +210,6 @@ class AniAppMngr(object):
             return exc
         return None
 
-    @staticmethod
-    def find_processes_by_name(name):
-        """
-        Find a list of processes matching 'name'.
-        :param name: the name of the process to find
-        :return: the list of process ids
-        """
-        assert name, name
-        process_list = []
-        for process in psutil.process_iter():
-            name_, exe, cmdline = "", "", []
-            try:
-                name_ = process.name()
-                exe = process.exe()
-            except (psutil.AccessDenied, psutil.ZombieProcess):
-                pass
-            except psutil.NoSuchProcess:
-                continue
-            if name == name_ or os.path.basename(exe) == name:
-                process_list.append(process.pid)
-        return process_list
-
     def is_latest(self):
         """Checks if user has the latest version
         :return False if there is a new version, True if on the latest version. Returns None if the app data isn't
@@ -251,13 +230,14 @@ class AniAppMngr(object):
         self.__user_data = pyani.core.util.load_json(self.user_config)
         self.__user_version = self.__user_data["version"]
 
-    def download_update(self):
+    def download_update(self, skip_update_check=False):
         """
         Downloads the files from cgt.
+        :param skip_update_check: whether to only download the update if its newer.
         :return True if downloaded, False if no updates to download, error if encountered.
         """
         # update
-        return self.tools_setup.download_updates()
+        return self.tools_setup.download_updates(skip_update_check=skip_update_check)
 
     def install_update(self):
         """
@@ -282,7 +262,7 @@ class AniAppMngr(object):
         # SETUP APPS ---------------------------------------------------------------
         # first install_apps
         if not os.path.exists(self.tools_setup.app_vars.apps_dir):
-            error, created_shortcuts = self.tools_setup.first_time_setup()
+            error, created_shortcuts = self.tools_setup.add_all_apps()
             if error:
                 return error
         # already installed
@@ -362,6 +342,9 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
             os.path.join(self.app_mngr.tools_install_dir, "PyAniToolsUpdate.exe")
         )
 
+        # app vars
+        self.app_vars = pyani.core.appvars.AppVars()
+
         # list of apps
         app_list_json_path = "C:\\PyAniTools\\app_data\\Shared\\app_list.json"
         self.app_names = pyani.core.util.load_json(app_list_json_path)
@@ -387,7 +370,8 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         self.btn_update = QtWidgets.QPushButton("Update App")
         self.btn_install = QtWidgets.QPushButton("Install / Update App(s)")
         self.btn_launch = QtWidgets.QPushButton("Launch App(s)")
-        self.btn_manual_update = QtWidgets.QPushButton("Get Updates From Server Now")
+        self.btn_manual_update = QtWidgets.QPushButton("Update Core Data Only")
+        self.btn_clean_install = QtWidgets.QPushButton("Re-Install Tools To Latest Version")
         self.auto_dl_label = QtWidgets.QLabel("")
         self.menu_toggle_auto_dl = QtWidgets.QComboBox()
         self.menu_toggle_auto_dl.addItem("-------")
@@ -408,14 +392,13 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         header_label.setFont(self.titles)
         g_layout_header.addWidget(header_label, 0, 0)
         g_layout_header.addItem(self.empty_space, 0, 1)
-        self.btn_launch.setMinimumSize(150, 30)
-        g_layout_header.addWidget(self.btn_launch, 0, 2)
         self.btn_install.setStyleSheet("background-color:{0};".format(pyani.core.ui.GREEN))
-        self.btn_install.setMinimumSize(150, 30)
-        g_layout_header.addWidget(self.btn_install, 0, 3)
-        g_layout_header.addItem(self.empty_space, 0, 4)
+        self.btn_install.setMinimumSize(175, 30)
+        g_layout_header.addWidget(self.btn_install, 0, 2)
+        self.btn_launch.setMinimumSize(175, 30)
+        self.btn_launch.setStyleSheet("background-color:{0};".format(pyani.core.ui.CYAN))
+        g_layout_header.addWidget(self.btn_launch, 0, 3)
         g_layout_header.setColumnStretch(1, 2)
-        g_layout_header.setColumnStretch(4, 2)
         self.main_layout.addLayout(g_layout_header)
         self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
 
@@ -426,19 +409,21 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
 
         # MANUAL DOWNLOAD OPTIONS
         g_layout_options = QtWidgets.QGridLayout()
-        options_label = QtWidgets.QLabel("Update Options")
+        options_label = QtWidgets.QLabel("Tools Update Options")
         options_label.setFont(self.titles)
         g_layout_options.addWidget(options_label, 0, 0)
         g_layout_options.addItem(self.empty_space, 0, 1)
-        self.btn_manual_update.setMinimumSize(150, 30)
         g_layout_options.addWidget(self.btn_manual_update, 0, 2)
         self.btn_manual_update.setStyleSheet("background-color:{0};".format(pyani.core.ui.GREEN))
-        self.btn_manual_update.setMinimumSize(150, 30)
-        g_layout_options.addItem(self.empty_space, 0, 3)
+        self.btn_manual_update.setMinimumSize(175, 30)
+        g_layout_options.addWidget(self.btn_clean_install, 0, 3)
+        self.btn_clean_install.setStyleSheet("background-color:{0};".format(pyani.core.ui.GOLD))
+        self.btn_clean_install.setMinimumSize(175, 30)
+        g_layout_options.addItem(self.empty_space, 0, 4)
         g_layout_options.setColumnStretch(1, 2)
         self.main_layout.addLayout(g_layout_options)
         self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
-        # set initial state of auto download based off whether
+        # set initial state of auto download based reset whether
         state = self.task_scheduler.is_task_enabled()
         if not isinstance(state, bool):
             self.msg_win.show_warning_msg(
@@ -469,7 +454,8 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         self.btn_install.clicked.connect(self.install_apps)
         self.btn_launch.clicked.connect(self.launch)
         self.menu_toggle_auto_dl.currentIndexChanged.connect(self.update_auto_dl_state)
-        self.btn_manual_update.clicked.connect(self.download_and_update)
+        self.btn_manual_update.clicked.connect(self.update_core_files)
+        self.btn_clean_install.clicked.connect(self.reinstall)
 
     def update_auto_dl_state(self):
         """
@@ -497,49 +483,195 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                     "Auto-download of updates from server <i>(Currently: {0})</i>".format(state)
                 )
 
-    def download_and_update(self):
+    def reinstall(self):
         """
-        Calls tools setup class to download server tools package and update the local tools. If an error is
-        encountered informs user.
+        Removes the existing PyAniTools installation - shortcuts, nuke modifications, and main tools dir. Then
+        downloads the tools from the CG Teamworks, and re-installs. Uses the Install Update Assistant
+        (PyAniToolsIUAssist.exe) to launch PyAniToolsSetup.exe and close this app so it can get re=installed.
+        See toolsinstallassist.py in pyani package for more details
         """
-        # indicates if there is an update to install
-        updates_exist = False
 
-        self.progress_win.show_msg("Update in Progress", "Downloading Updates from Server. This file is several "
-                                   "hundred megabytes (mb), please be patient.")
-        QtWidgets.QApplication.processEvents()
-        error = self.app_mngr.download_update()
+        # let user know windows will open and to close all existing tools, display process, and ask if they want
+        # to continue
+        response = self.msg_win.show_question_msg(
+            "Continue Re-install Prompt",
+            "<i>WARNING: This removes all existing tools and re-installs with the latest version.</i><br><br>"
+            "<b>Please close any PyAniTool Apps besides this one and any Windows Explorer "
+            "windows that show folders/files from C:\PyAniTools (a windows resource bug)</b><br><br> "
+            "The re-installation will error if: <br><br>"
+            "(a) any tools are running.<br>"
+            "(b) windows explorer is showing files/folders from any folder in C:\PyAniTools. This includes "
+            "the shortcuts window.<br><br>"
+            "<b>Re-installation Process</b>:<br> "
+            "A new window will open, and the app manager will close. The new window stages files for installation and "
+            "opens the tool setup app. Once the tool setup finishes, hit close and the app manager will re-open."
+        )
+        # if the user selected 'yes' (True), proceed
+        if response:
+            # remove temp dir if exists
+            if os.path.exists(self.app_vars.download_temp_dir):
+                error = pyani.core.util.rm_dir(self.app_vars.download_temp_dir)
+                if error:
+                    self.msg_win.show_error_msg("Install Staging Error", error)
+                    return
 
-        # not true or false, so an error occurred
-        if not isinstance(error, bool):
+            # setup directories that need to be removed, exe files to run, stage files in temp dir
+            #
+            # this is the exe (absolute path) to execute the setup tool in the iu assistant
+            app_to_run = os.path.join(self.app_vars.download_temp_dir, self.app_vars.setup_exe)
+            # exe (absolute path) calling assistant
+            calling_app = self.app_vars.app_mngr_exe
+            # path in temp dir of the assistant
+            iu_assistant_app_in_temp = os.path.join(self.app_vars.download_temp_dir, self.app_vars.iu_assist_exe)
+            # path of the assistant in tools dir
+            iu_assistant_app_in_tools = self.app_vars.iu_assist_path
+            # what to remove
+            files_and_dirs_to_remove = [
+                self.app_vars.tools_dir,
+                self.app_vars.tools_shortcuts,
+                self.app_mngr.ani_vars.nuke_user_dir
+            ]
+
+            # download latest from cgt - will unzip to temp dir
+            #
+            self.progress_win.show_msg("Install in Progress", "Downloading Updates from Server. This file is several "
+                                       "hundred megabytes (mb), please be patient.")
+            QtWidgets.QApplication.processEvents()
+            error = self.app_mngr.download_update(skip_update_check=True)
             # done loading hide window
             self.progress_win.hide()
-            QtWidgets.QApplication.processEvents()
-            self.msg_win.show_error_msg("Update Failed", "Could not download update. Error is :{0}.".format(error))
-            return
-        # returned True, means downloaded
-        elif error:
-            updates_exist = True
-            logging.info("App Download ran with success.")
-
-        if updates_exist:
-            self.progress_win.show_msg("Update in Progress", "Installing Updates from Server.")
-            QtWidgets.QApplication.processEvents()
-            error = self.app_mngr.install_update()
-            if error:
-                self.progress_win.hide()
+            # not true or false, so an error occurred
+            if not isinstance(error, bool):
                 QtWidgets.QApplication.processEvents()
-                self.msg_win.show_error_msg("Update Failed",
-                                            "Could not install_apps update. Error is :{0}.".format(error))
+                self.msg_win.show_error_msg("Update Failed", "Could not download update. Error is :{0}.".format(error))
+                return
 
-            self.progress_win.hide()
-            QtWidgets.QApplication.processEvents()
-            self.msg_win.show_info_msg("Update Complete", "Update completed successfully!")
-        else:
-            self.progress_win.hide()
-            QtWidgets.QApplication.processEvents()
-            self.msg_win.show_info_msg("Update Complete", "No updates to download.")
-            logging.info("No updates to download.")
+            # copy assistant program to temp - can't run it out of C:PyAniTools since that will get removed
+            if not os.path.exists(self.app_vars.download_temp_dir):
+                error = pyani.core.util.make_dir(self.app_vars.download_temp_dir)
+                if error:
+                    msg_append = "Problem staging install file. " + error
+                    self.msg_win.show_error_msg("Install Staging Error", msg_append)
+                    return
+            error = pyani.core.util.copy_file(iu_assistant_app_in_tools, self.app_vars.download_temp_dir)
+            if error:
+                msg_append = "Problem staging install file. " + error
+                self.msg_win.show_error_msg("Install Staging Error", msg_append)
+                return
+
+            # open assistant passing:
+            #       path to assistant in temp dir,
+            #       assist type - update core or re-install
+            #       the calling app,
+            #       app to run,
+            #       the directories/files to remove
+            #
+            # assist type - update or re-install
+            args = ["reinstall"]
+            # the exe calling this app
+            args.append(calling_app)
+            # app to run - tools setup
+            args.append(app_to_run)
+            # files and directories to remove - a list so extend current list
+            args.extend(files_and_dirs_to_remove)
+            # launch assistant with the parameters
+            error = pyani.core.util.launch_app(iu_assistant_app_in_temp, args, open_as_new_process=True)
+            if error:
+                self.msg_win.show_error_msg("Install Error", error)
+
+    def update_core_files(self):
+        """
+        Update the existing PyAniTools core app files - the lib files used by nuke and cgt bridge, app packages,
+        app data, Install Update assistant (PyAniToolsIUAssist.exe ) and Tools Updater (PyAniToolsUpdate.exe),
+        and app manager.
+
+        Uses the Install Update Assistant(PyAniToolsIUAssist.exe) to launch PyAniToolsUpdate.exe, which downloads the
+        latest tools from the server, runs the update, then returns here. See toolsinstallassist.py in pyani package
+        for more details
+        """
+        # let user know windows will open and to close all existing tools, display process, and ask if they want
+        # to continue
+        response = self.msg_win.show_question_msg(
+            "Continue Update Prompt",
+            "<i>This will not update the apps, only the core tool data. It will get the latest app packages and you"
+            "can update using app manager once this completes.</i><br><br>"
+            "<b>Please close any PyAniTool Apps besides this one and any Windows Explorer "
+            "windows that show folders/files from C:\PyAniTools (a windows resource bug)</b><br><br> "
+            "The update will error if: <br><br>"
+            "(a) any tools are running.<br>"
+            "(b) windows explorer is showing files/folders from any folder in C:\PyAniTools. This includes "
+            "the shortcuts window.<br><br>"
+            "<b>Update Process</b>:<br> "
+            "A new window will open, and the app manager will close. The new window stages files for update and "
+            "opens the tool update app. Once the tool update finishes, hit close and the app manager will re-open."
+        )
+        # if user pressed 'yes' (True) then proceed
+        if response:
+            # remove temp dir if exists
+            if os.path.exists(self.app_vars.download_temp_dir):
+                error = pyani.core.util.rm_dir(self.app_vars.download_temp_dir)
+                if error:
+                    self.msg_win.show_error_msg("Update Staging Error", error)
+                    return
+
+            # setup directories that need to be removed, exe files to run, stage files in temp dir
+            #
+            # exe (absolute path) calling assistant
+            calling_app = self.app_vars.app_mngr_exe
+
+            # copy install / update assist tool
+            #
+            # copy assistant program to temp - can't run it out of C:PyAniTools since that will get removed
+            if not os.path.exists(self.app_vars.download_temp_dir):
+                error = pyani.core.util.make_dir(self.app_vars.download_temp_dir)
+                if error:
+                    msg_append = "Problem staging update file. " + error
+                    self.msg_win.show_error_msg("Update Staging Error", msg_append)
+                    return
+
+            # path in temp dir of the assistant
+            iu_assistant_app_in_temp = os.path.join(self.app_vars.download_temp_dir, self.app_vars.iu_assist_exe)
+            # path of the assistant in tools dir
+            iu_assistant_app_in_tools = self.app_vars.iu_assist_path
+            error = pyani.core.util.move_file(iu_assistant_app_in_tools, self.app_vars.download_temp_dir)
+            if error:
+                msg_append = "Problem staging update file. " + error
+                self.msg_win.show_error_msg("Update Staging Error", msg_append)
+                return
+
+            # copy update tool
+            #
+            # path in temp dir of the tool
+            update_tool_in_temp = os.path.join(self.app_vars.download_temp_dir, self.app_vars.update_exe)
+            # path of the tool in tools dir
+            update_tool_in_tools = os.path.join(self.app_vars.apps_dir, self.app_vars.update_exe)
+            error = pyani.core.util.move_file(update_tool_in_tools, update_tool_in_temp)
+            if error:
+                msg_append = "Problem staging update file. " + error
+                self.msg_win.show_error_msg("Update Staging Error", msg_append)
+                return
+
+            app_to_run = update_tool_in_temp
+
+            # open assistant passing:
+            #       path to assistant in temp dir,
+            #       assist type - update core or re-install
+            #       the calling app,
+            #       app to run,
+            #       the directories/files to remove
+            #
+            # assist type - update or re-install
+            args = ["update"]
+            # the exe calling this app
+            args.append(calling_app)
+            # app to run - tools setup
+            args.append(app_to_run)
+            # files and directories to remove - a list so extend current list
+            args.extend([])
+            # launch assistant with the parameters
+            error = pyani.core.util.launch_app(iu_assistant_app_in_temp, args, open_as_new_process=True)
+            if error:
+                self.msg_win.show_error_msg("Update Staging Error", error)
 
     def install_apps(self):
         """Installs the app(s) and updates ui info. Displays install_apps errors to user.

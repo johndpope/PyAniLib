@@ -384,10 +384,12 @@ class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
         if os.path.exists(self.nuke_mngr.ani_vars.plugin_seq):
             if os.listdir(self.nuke_mngr.ani_vars.plugin_seq):
                 self.copy_gizmos_cbox.setEnabled(False)
+                self.copy_gizmos_cbox.setChecked(False)
                 self.copy_gizmos_cbox_label.setStyleSheet("color: gray;")
         if os.path.exists(self.nuke_mngr.ani_vars.templates_seq):
             if os.listdir(self.nuke_mngr.ani_vars.templates_seq):
                 self.copy_template_cbox.setEnabled(False)
+                self.copy_template_cbox.setChecked(False)
                 self.copy_template_cbox_label.setStyleSheet("color: gray;")
         # check if shots setup, ie have the comp nk file
         shots_setup = False
@@ -400,6 +402,7 @@ class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
                 break
         if shots_setup:
             self.create_shot_nuke_scripts_cbox.setEnabled(False)
+            self.create_shot_nuke_scripts_cbox.setChecked(False)
             self.create_shot_nuke_scripts_cbox_label.setStyleSheet("color: gray;")
         if not self.copy_gizmos_cbox.isEnabled() and not self.copy_template_cbox.isEnabled() \
                 and not self.create_shot_nuke_scripts_cbox.isEnabled():
@@ -622,7 +625,6 @@ class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
         shows error if can't load the sequence or shot json version information
         """
         tree_items = []
-
         json_path = os.path.join(self.nuke_mngr.ani_vars.plugin_seq, self.nuke_mngr.plugins_json_name)
         seq_versions = pyani.core.util.load_json(json_path)
 
@@ -692,11 +694,11 @@ class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
                     tree_item = {"root": pyani.core.ui.CheckboxTreeWidgetItem([shot])}
                 tree_items.append(tree_item)
             self.shot_update_tree.build_checkbox_tree(tree_items, 3)
-            # call to hide or show only localized shots based off default checkbox state
+            # call to hide or show only localized shots based reset default checkbox state
             self.set_shot_tree_display_mode()
 
     def set_shot_tree_display_mode(self):
-        """Shows all shots or just localized shots based off user selection. Displays message if no localized shots
+        """Shows all shots or just localized shots based reset user selection. Displays message if no localized shots
         """
         seq = self.nuke_mngr.ani_vars.seq_name
         if self.nuke_mngr.ani_vars.is_valid_seq(seq):

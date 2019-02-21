@@ -27,11 +27,20 @@ class AppVars:
         self.app_data_dir = self.tools_dir + "\\app_data"
         self.packages_dir = self.tools_dir + "\\packages"
         self.apps_dir = self.tools_dir + "\\installed"
+        self.setup_exe = "PyAniToolsSetup.exe"
+        self.update_exe = "PyAniToolsUpdate.exe"
+        self.update_path = os.path.join(self.apps_dir, self.update_exe)
+        self.iu_assist_exe = "PyAniToolsIUAssist.exe"
+        self.iu_assist_path = os.path.join(self.apps_dir, self.iu_assist_exe)
         self.apps_shortcut_dir = self.apps_dir + "\\shortcuts"
         self.install_scripts_dir = self.tools_dir + "\\install_scripts"
-        self.user_desktop = os.path.join("C:\\" + os.environ["HOMEPATH"], "Desktop")
         self.app_mngr_path = os.path.join(self.apps_dir, "PyAppMngr")
+        self.app_mngr_exe = os.path.join(self.app_mngr_path, "PyAppMngr.exe")
         self.app_mngr_shortcut = os.path.normpath("C:\PyAniTools\installed\shortcuts\PyAppMngr.lnk")
+        # shortcut link on desktop
+        homepath = os.path.join("C:", os.environ["HOMEPATH"])
+        self.user_desktop = os.path.join(homepath, "Desktop")
+        self.tools_shortcuts = os.path.join(self.user_desktop, "PyAniTools.lnk")
         # the code to add to init.py
         self.custom_plugin_path = "nuke.pluginAddPath(\"C:\\PyAniTools\\lib\")"
         # path to .nuke/init.py

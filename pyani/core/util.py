@@ -1,10 +1,13 @@
 import re
 import shutil
 import os
+import sys
 import time
+import inspect
 import json
 from scandir import scandir
-from subprocess import Popen, PIPE
+import subprocess
+from bisect import bisect_left
 import logging
 import Queue
 import threading
@@ -60,7 +63,7 @@ class WinTaskScheduler:
             return error
 
         if not is_scheduled:
-            p = Popen(
+            p = subprocess.Popen(
                 [
                     "schtasks",
                     "/Create",
@@ -69,8 +72,8 @@ class WinTaskScheduler:
                     "/tr", self.task_command,
                     "/st", start_time
                 ],
-                stdout=PIPE,
-                stderr=PIPE
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
             )
             output, error = p.communicate()
             if p.returncode != 0:
@@ -90,7 +93,7 @@ class WinTaskScheduler:
         schtasks /query which returns a table format.
         :returns: True if scheduled, False if not. Also returns error if encountered any, otherwise None
         """
-        p = Popen(["schtasks", "/Query"], stdout=PIPE, stderr=PIPE)
+        p = subprocess.Popen(["schtasks", "/Query"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         output, error = p.communicate()
         if p.returncode != 0:
             error = "Problem querying task {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
@@ -117,10 +120,10 @@ class WinTaskScheduler:
             return error
         # only attempt to disable or enable if the task exists
         if is_scheduled:
-            p = Popen(
+            p = subprocess.Popen(
                 ["schtasks", "/Query", "/tn", self.task_name, "/v", "/fo", "list"],
-                stdout=PIPE,
-                stderr=PIPE
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
             )
             output, error = p.communicate()
             logging.info("task query is: {0}".format(output))
@@ -158,10 +161,10 @@ class WinTaskScheduler:
                 state = "/Enable"
             else:
                 state = "/Disable"
-            p = Popen(
+            p = subprocess.Popen(
                 ["schtasks", "/Change", "/tn", self.task_name, state],
-                stdout=PIPE,
-                stderr=PIPE
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
             )
             output, error = p.communicate()
             if p.returncode != 0:
@@ -299,6 +302,7 @@ def move_file(src, dest):
         error_msg = "Could not move {0} to {1}. Received error {2}".format(src, dest, e)
         logger.error(error_msg)
         return error_msg
+
 
 def delete_file(file_path):
     """
@@ -468,22 +472,27 @@ def write_json(json_path, user_data, indent=0):
         return error_msg
 
 
-def launch_app(app, args, open_shell=False, wait_to_complete=False):
+def launch_app(app, args, open_shell=False, wait_to_complete=False, open_as_new_process=False):
     """
     Launch an external application
     :param app: the path to the program to execute
-    :param args: any arguments to pass to the program as a list
+    :param args: any arguments to pass to the program as a list, if none pass None
     :param open_shell: optional, defaults to false, if true opens command prompt
-    :param wait_to_complete, defaults to False, waits for process to finish - this will freeze app calling
+    :param wait_to_complete: defaults to False, waits for process to finish - this will freeze app launching subprocess
+    :param open_as_new_process: opens as a new process not tied to app launching subprocess
     :return: None if no errors, otherwise return error as string
     """
+
     cmd = [app]
     for arg in args:
         cmd.append(arg)
 
     try:
-        if wait_to_complete:
-            p = Popen(cmd, stdout=PIPE, stderr=PIPE)
+        if wait_to_complete and open_as_new_process:
+            p = subprocess.Popen(cmd,
+                                 creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE)
             output, error = p.communicate()
             if p.returncode != 0:
                 error = "Problem executing command {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
@@ -495,14 +504,53 @@ def launch_app(app, args, open_shell=False, wait_to_complete=False):
                 logger.error(error)
                 return error
             else:
-                return output
+                return None
+        elif wait_to_complete and not open_as_new_process:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            output, error = p.communicate()
+            if p.returncode != 0:
+                error = "Problem executing command {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
+                    cmd,
+                    p.returncode,
+                    output,
+                    error
+                )
+                logger.error(error)
+                return error
+            else:
+                return None
+        elif open_as_new_process and not wait_to_complete:
+            subprocess.Popen(cmd,
+                             creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP,
+                             close_fds=True
+                             )
         else:
-            Popen(cmd, shell=open_shell)
+            subprocess.Popen(cmd, shell=open_shell)
     except Exception as e:
         error_msg = "App Open Failed for {0}. Error: {1}".format(cmd, e)
         logger.error(error_msg)
         return error_msg
     return None
+
+
+def get_script_dir(follow_symlinks=True):
+    """
+    Find the directory a script is running out of. orks on CPython, Jython, Pypy. It works if the script is executed
+    using execfile() (sys.argv[0] and __file__ -based solutions would fail here). It works if the script is inside
+    an executable zip file (/an egg). It works if the script is "imported" (PYTHONPATH=/path/to/library.zip python
+    -mscript_to_run) from a zip file; it returns the archive path in this case. It works if the script is compiled
+    into a standalone executable (sys.frozen). It works for symlinks (realpath eliminates symbolic links). It works
+    in an interactive interpreter; it returns the current working directory in this case
+    :param follow_symlinks: defaults to True
+    :return: the directory of the the path
+    """
+    if getattr(sys, 'frozen', False): # py2exe, PyInstaller, cx_Freeze
+        path = os.path.abspath(sys.executable)
+    else:
+        path = inspect.getabsfile(get_script_dir)
+    if follow_symlinks:
+        path = os.path.realpath(path)
+    return os.path.dirname(path)
 
 
 def get_images_from_dir(dir_path):
@@ -525,6 +573,39 @@ def get_images_from_dir(dir_path):
     return images
 
 
+def find_closest_number(list_numbers, number_to_find, use_smallest=False):
+    """
+    Assumes list_numbers is sorted. Returns the closest number in the list to number_to_find.  If two numbers are
+    equally close, return the smaller of the two numbers, unless use_smallest=True. When use_smallest is True, it always
+    returns the smaller number, even if it isn't the closest. Useful for finding the closest previous frame in
+    image sequences.
+    :param list_numbers: a list of numeric values
+    :param number_to_find: the number to find
+    :param use_smallest: whether to always return the closest smallest number
+    :return: the closest number
+    """
+    # get the position the number_to_find would have in the list of numbers
+    pos = bisect_left(list_numbers, number_to_find)
+    # at start / first element
+    if pos == 0:
+        return list_numbers[0]
+    # at end / last element
+    if pos == len(list_numbers):
+        return list_numbers[-1]
+    # number before the number provided
+    before = list_numbers[pos - 1]
+    # number after the number we provided
+    after = list_numbers[pos]
+    # check if the smaller number should be returned
+    if use_smallest:
+        return before
+    # returns the closer of the two numbers, unless they are equally far away, then returns smaller number
+    if after - number_to_find < number_to_find - before:
+        return after
+    else:
+        return before
+
+
 def convert_to_sRGB(red, green, blue):
     """
     Convert linear to sRGB
@@ -544,6 +625,7 @@ def convert_to_sRGB(red, green, blue):
             return (v * 12.92) * 255.0
         else:
             return (1.055 * (v ** (1.0 / 2.2)) - 0.055) * 255.0
+
     rgb_size = range(len(red))
     for i in rgb_size:
         red[i] = encode_to_sRGB(red[i])
