@@ -599,11 +599,15 @@ class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
             try:
                 # get show version
                 show_vers = show_lib_json[lib_item]["version"]
-                # set seq version to show version
-                seq_lib_json[lib_item]["version"] = show_vers
             except KeyError as e:
                 errors.append("Invalid json format. Error is {0}".format(e))
                 logging.exception(e)
+            # set seq version to show version if key exists, otherwise copy entire entry from show
+            if lib_item in seq_lib_json:
+                seq_lib_json[lib_item]["version"] = show_vers
+            else:
+                seq_lib_json[lib_item] = show_lib_json[lib_item]
+
         if errors:
             return errors
 

@@ -698,6 +698,8 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         apps = self._get_selection()
         error_log = []
         for app in apps:
+            # set directory, so that app runs from where the exe is, in case it uses relative paths to find resources
+            os.chdir(app.app_install_path)
             exe_path = os.path.join(app.app_install_path, app.app_name)
             # pass application path and arguments, in this case none
             error = pyani.core.util.launch_app("{0}.exe".format(exe_path), [])

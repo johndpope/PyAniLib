@@ -216,39 +216,39 @@ class AniImageSeqPlaybackController(QtWidgets.QWidget):
 
         # buttons
         self.btn_play = pyani.core.ui.ImageButton(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\play_off.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\play_on.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\play_on.png"
+            "images\play_off.png",
+            "images\play_on.png",
+            "images\play_on.png"
         )
         self.btn_stop = pyani.core.ui.ImageButton(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\stop_off.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\stop_on.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\stop_on.png"
+            "images\stop_off.png",
+            "images\stop_on.png",
+            "images\stop_on.png"
         )
         self.btn_pause = pyani.core.ui.ImageButton(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\pause_off.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\pause_on.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\pause_on.png"
+            "images\pause_off.png",
+            "images\pause_on.png",
+            "images\pause_on.png"
         )
         self.btn_step_fwd = pyani.core.ui.ImageButton(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\step_fwd_off.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\step_fwd_on.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\step_fwd_on.png"
+            "images\step_fwd_off.png",
+            "images\step_fwd_on.png",
+            "images\step_fwd_on.png"
         )
         self.btn_step_back = pyani.core.ui.ImageButton(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\step_back_off.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\step_back_on.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\step_back_on.png"
+            "images\step_back_off.png",
+            "images\step_back_on.png",
+            "images\step_back_on.png"
         )
         self.btn_loop = pyani.core.ui.ImageButton(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\loop_off.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\loop_on.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\loop_on.png"
+            "images\loop_off.png",
+            "images\loop_on.png",
+            "images\loop_on.png"
         )
         self.loop_disabled_img = \
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\loop_disabled.png"
+            "images\loop_disabled.png"
         self.loop_enabled_img = \
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\loop_off.png"
+            "images\loop_off.png"
 
         self.build_widget()
         # set signal/slots
@@ -502,7 +502,7 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
         # pass win title, icon path, app manager, width and height
         super(AniExrViewerGui, self).__init__(
             "Py Exr Viewer",
-            "Resources\\pyexrviewer.ico",
+            "images\pyexrviewer.ico",
             self.app_mngr,
             1920,
             1000,
@@ -539,31 +539,31 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
         self.btn_image_select = QtWidgets.QPushButton("Select Image")
         self.image_file_path = QtWidgets.QLineEdit("")
         self.btn_next = pyani.core.ui.ImageButton(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\layer_next_off.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\layer_next_on.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\layer_next_off.png",
+            "images\layer_next_off.png",
+            "images\layer_next_on.png",
+            "images\layer_next_off.png",
             size=(45, 32)
         )
         self.btn_prev = pyani.core.ui.ImageButton(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\layer_prev_off.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\layer_prev_on.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\layer_prev_off.png",
+            "images\layer_prev_off.png",
+            "images\layer_prev_on.png",
+            "images\layer_prev_off.png",
             size=(45, 32)
         )
         self.btn_info = pyani.core.ui.ImageButton(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\info_off.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\info_on.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\info_on.png"
+            "images\info_off.png",
+            "images\info_on.png",
+            "images\info_on.png"
         )
         self.btn_zoom_in = pyani.core.ui.ImageButton(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\zoom_plus_off.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\zoom_plus_on.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\zoom_plus_on.png"
+            "images\zoom_plus_off.png",
+            "images\zoom_plus_on.png",
+            "images\zoom_plus_on.png"
         )
         self.btn_zoom_out = pyani.core.ui.ImageButton(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\zoom_minus_off.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\zoom_minus_on.png",
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\PyExrViewer\\venv\Resources\zoom_minus_on.png"
+            "images\zoom_minus_off.png",
+            "images\zoom_minus_on.png",
+            "images\zoom_minus_on.png"
         )
         # for popup window displaying exr metadata
         self.metadata_popup_win = None
