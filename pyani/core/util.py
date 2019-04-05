@@ -11,6 +11,8 @@ from bisect import bisect_left
 import logging
 import Queue
 import threading
+import operator
+from functools import reduce # python 3 compatibility
 
 
 logger = logging.getLogger()
@@ -632,3 +634,122 @@ def convert_to_sRGB(red, green, blue):
         green[i] = encode_to_sRGB(green[i])
         blue[i] = encode_to_sRGB(blue[i])
     return red, green, blue
+
+
+def find_val_in_nested_dict(dictionary, key_path):
+    """
+    Finds a value in a nested dictionary provided a list of keys
+    :param dictionary: the dictionary to look through
+    :param key_path: a list of the keys
+    :return: the value or None if not found
+    """
+    try:
+        return reduce(operator.getitem, key_path, dictionary)
+    except KeyError:
+        return None
+
+
+def get_shot_name_from_string(string_containing_shot):
+    """
+    Finds the shot name from a file path. Looks for Shot### or shot###. Shot number is 2 or more digits
+    :param string_containing_shot: the absolute file path
+    :return: the shot name as Shot### or shot### or None if no shot found
+    """
+    pattern = "[a-zA-Z]{4}\d{2,}"
+    # make sure the string is valid
+    if string_containing_shot:
+        # check if we get a result, if so return it
+        if re.search(pattern, string_containing_shot):
+            return re.search(pattern, string_containing_shot).group()
+        else:
+            return None
+    else:
+        return None
+
+
+def get_sequence_name_from_string(string_containing_sequence):
+    """
+    Finds the sequence name from a file path. Looks for Seq### or seq###. Sequence number is 2 or more digits
+    :param string_containing_sequence: the absolute file path
+    :return: the seq name as Seq### or seq### or None if no seq found
+    """
+    pattern = "[a-zA-Z]{3}\d{2,}"
+    # make sure the string is valid
+    if string_containing_sequence:
+        # check if we get a result, if so return it
+        if re.search(pattern, string_containing_sequence):
+            return re.search(pattern, string_containing_sequence).group()
+        else:
+            return None
+    else:
+        return None
+
+
+def is_valid_shot_name(shot_name):
+    """
+    Checks if the string is a valid shot. Looks for Shot### or shot###. Shot number is 2 or more digits
+    :param shot_name: the shot name as a string
+    :return: True if it is a valid shot name, False if not
+    """
+    shot_name_no_case = shot_name.lower()
+    pattern = "shot\d{2,}"
+    # make sure the string is valid
+    if shot_name_no_case:
+        # check if we get a result, if so return it
+        if re.search(pattern, shot_name_no_case):
+            return True
+        else:
+            return False
+    else:
+        return False
+
+
+def is_valid_seq_name(seq_name):
+    """
+    Checks if the string is a valid sequence. Looks for Seq### or seq###. Sequence number is 2 or more digits
+    :param seq_name: the sequence name as a string
+    :return: True if it is a valid shot name, False if not
+    """
+    seq_name_no_case = seq_name.lower()
+    pattern = "seq\d{2,}"
+    # make sure the string is valid
+    if seq_name_no_case:
+        # check if we get a result, if so return it
+        if re.search(pattern, seq_name_no_case):
+            return True
+        else:
+            return False
+    else:
+        return False
+
+
+def is_valid_frame(string_containing_frame):
+    """
+    Checks if the string is a valid frame, i.e. '1001'
+    :param string_containing_frame: a string with a frame number
+    :return: true if a frame, false if not
+    """
+    pattern = "^\d{4}$"
+    # make sure the string is valid
+    if string_containing_frame:
+        # check if we get a result, if so return it
+        if re.search(pattern, string_containing_frame):
+            return True
+        else:
+            return False
+    else:
+        return False
+
+
+def is_number(string_var):
+    """
+    checks if the string is a number
+    :param string_var: the string to check
+    :return: returns True if it is a number, otherwise False
+    """
+    try:
+        float(string_var)
+    except ValueError:
+        return False
+    else:
+        return True

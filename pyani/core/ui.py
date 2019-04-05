@@ -1,8 +1,11 @@
 import os
 import sys
 import logging
+import pyqtgraph as pg
+import numpy as np
 import pyani.core.util
 import pyani.core.error_logging
+
 
 logger = logging.getLogger()
 
@@ -32,6 +35,357 @@ try:
 except AttributeError:
     def _fromUtf8(s):
         return s
+
+
+class BarGraph(pg.GraphicsView):
+    """
+    Class that provides a single and stacked bar graph implementation based on pyqtgraph's graphics view and
+    pyqtgraph's bar graph item (a subclass of graphics item)
+
+    To use, create an instance of the bar graph. If you need to update or change the graph, call update_graph().
+    create_graph() is called once to initialize the pyqt graph object - Technical note: pyqtgraph doesn't seem to like
+    using a setOpts() if no bars have had values set before greater than 0. That's why we have a create_graph and
+    update_graph functions.
+
+    - Allows interaction via mouse clicks. Clicking a bar will emit a single that passes the x value for the bar
+    clicked. To use create an instance of this class, and connect your slot / function to its signal.
+
+        Ex:
+        bar_graph = BarGraph(options here)
+        bar_graph.graph_update_signal.connect(your function)
+
+        The function declaration should be: your_func(x_axis_value) where x_axis_value is the QString passed from
+        this class. This class emits the signal in the onClick function.
+
+    - Allows custom labeling for x values. This can be useful for un-even intervals such as 5, 10, 12.5, 15, 19, 20.
+    To use just pass a list of strings or numbers where each string or number is the x axis value you want displayed.
+
+    To create a single bar graph, pass a list of numbers in for y_data. To create a stacked bar graph pass a dict
+    in the format:
+        {
+            'total': [list of numbers],
+            'components': [ [component #1 list of numbers], ..., [component #n list of numbers] ]
+        }
+
+    - Allows custom colors. Colors are specified as:
+      For a single bar graph:
+            a single pyqt QColor
+
+      For a stacked bar graph:
+            {
+                'total': pyqt QColor
+                'components': [ [component #1 color as a pyqt QColor], [component #n color as a pyqt QColor] ]
+            }
+
+    """
+    # signal emitted when graph requires an update
+    graph_update_signal = pyqtSignal(QtCore.QString)
+
+    def __init__(
+            self,
+            x_data=None,
+            y_data=None,
+            x_axis_label="",
+            y_axis_label="",
+            width=1.0,
+            color=QtGui.QColor(150, 150, 150)
+    ):
+        """
+        Creates the initial bar graph
+        :param x_data: the x axis data
+        :param y_data: the y axis data
+        :param x_axis_label: the label for the x axis
+        :param y_axis_label: the label for the y axis
+        :param width: the width of the bars
+        :param color: the color of the bars
+        """
+        super(BarGraph, self).__init__()
+
+        # --------- options -----------
+        # WIDTH OF BARS
+        self.bar_width = width
+        # COLORS
+        self.color = color
+        # DATA
+        # x axis - allows un-even intervals - stores in private variable __x_axis_mapping as a dict
+        # maps as {0: 'label1', 2: 'label2', ...}
+        self.x_data = x_data
+        # y axis - can be a dict for a stacked bar graph or list of numbers for a single bar graph
+        self.y_data = y_data
+        # AXIS LABELS
+        self.x_axis_label = x_axis_label
+        self.y_axis_label = y_axis_label
+
+        # store options - only ones that user gives, otherwise keep current values
+        if x_data is not None:
+            self.x_data = x_data
+        else:
+            self.x_data = [0.0]
+        if y_data is not None:
+            self.y_data = y_data
+        else:
+            self.y_data = [0.0]
+
+        # the bar graph
+        self.__plot_item = pg.PlotItem(labels={'left': self.y_axis_label, 'bottom': self.x_axis_label})
+        self.setCentralWidget(self.__plot_item)
+        self.bar_graph_item_list = self.create_graph()
+
+        # save the view box
+        self.__view_box = self.__plot_item.vb
+        self.__view_box.setMouseEnabled(x=True, y=False)
+        self.__view_box.enableAutoRange(axis=self.__view_box.XAxis, enable=True)
+
+        self.update_x_axis()
+
+        self.set_slots()
+
+    @property
+    def x_axis_label(self):
+        """ Get the label for the x axis
+        """
+        return self.__x_axis_label
+
+    @x_axis_label.setter
+    def x_axis_label(self, x_axis_label):
+        """ Set the x axis label
+        """
+        self.__x_axis_label = x_axis_label
+
+    @property
+    def y_axis_label(self):
+        """ Get the label for the y axis
+        """
+        return self.__y_axis_label
+
+    @y_axis_label.setter
+    def y_axis_label(self, y_axis_label):
+        """ Set the y axis label
+        """
+        self.__y_axis_label = y_axis_label
+
+    @property
+    def x_data(self):
+        """ Get the mapping of x axis labels to actual values
+        """
+        return self.__x_data
+
+    @x_data.setter
+    def x_data(self, mapping):
+        """ Set the x axis labels, can be any string list, maps as {0: 'label1', 2: 'label2', ...}
+        """
+        self.__x_data = dict(enumerate(mapping))
+
+    @property
+    def y_data(self):
+        """ Get the y axis data
+        """
+        return self.__y_data
+
+    @y_data.setter
+    def y_data(self, data):
+        """ Set the y data
+        """
+        self.__y_data = data
+
+    @property
+    def bar_width(self):
+        """ Get the width of the bars
+        """
+        return self.__bar_width
+
+    @bar_width.setter
+    def bar_width(self, width):
+        """ Set the width of the bars, where width is an integer or float
+        """
+        self.__bar_width = width
+
+    def set_slots(self):
+        self.scene().sigMouseClicked.connect(self.onClick)
+        self.scene().sigMouseMoved.connect(self.onMove)
+
+    def onClick(self, event):
+        """
+        process mouse clicks by getting the x axis value and emitting a custom signal called graph_update_signal.
+        the class that created this bar graph object can listen for this signal.
+        :param event: the mouse event
+        """
+        pos = QtCore.QPointF(event.scenePos())
+        mouse_point = self.__view_box.mapSceneToView(pos)
+        key = round(mouse_point.x())
+        if key in self.x_data:
+            self.graph_update_signal.emit(str(self.x_data[key]))
+
+    def onMove(self, pos):
+        # TODO: implement
+        pass
+        """
+        pos = QtCore.QPointF(pos)
+        mouse_point = self.__view_box.mapSceneToView(pos)
+        key = round(mouse_point.y())
+        """
+
+    def create_graph(self):
+        """
+        Creates the bar graph, whether its single or stacked.
+        :return: a list of the bar graph items (BarGraphItem objects from the pyqtgraph lib). These are essentially
+        the bar data across the x axis.
+        """
+        bar_graph_item_list = []
+        # stacked bar graph
+        if isinstance(self.y_data, dict):
+            # the color for the total, put in a list because we will be adding the other bar colors
+            colors = [self.color['total']]
+            # add the component colors to the list
+            colors.extend(self.color['components'])
+            # this puts the data into the format pyqtgraph wants
+            bar_graph_rows = self._format_stacked_bar_data()
+            # now make the actual stacked bars
+            for row_index in xrange(0, len(bar_graph_rows)):
+                bar_graph_item = pg.BarGraphItem(
+                    x=self.x_data.keys(),
+                    height=bar_graph_rows[row_index],
+                    width=self.bar_width,
+                    brush=colors[row_index]
+                )
+                bar_graph_item_list.append(bar_graph_item)
+                self.__plot_item.addItem(bar_graph_item)
+        # single bar graph
+        else:
+            bar_graph_item_list.append(
+                pg.BarGraphItem(
+                    x=self.x_data.keys(), height=self.y_data, width=self.bar_width, brush=self.color
+                )
+            )
+            self.__plot_item.addItem(self.bar_graph_item_list[0])
+
+        return bar_graph_item_list
+
+    def update_graph(
+            self,
+            x_data=None,
+            y_data=None,
+            x_axis_label=None,
+            y_axis_label=None,
+            width=None,
+            color=None
+    ):
+        """
+        Updates the bar graph with new data. Pyqt graph works best with using the setOpts method to update the bars,
+        opposed to deleting or clearing and recreating (doesn't refresh properly). If a value is not passed for a
+        parameter, then the current value is used.
+        :param x_data: the new x axis data
+        :param y_data: the new y axis data
+        :param x_axis_label: the new label for the x axis
+        :param y_axis_label: the new label for the y axis
+        :param width: the width of the bars
+        :param color: the color of the bars
+        """
+        # store options - only ones that user gives, otherwise keep current values
+        if width is not None:
+            self.bar_width = width
+        if color is not None:
+            self.color = color
+        if x_data is not None:
+            self.x_data = x_data
+        if y_data is not None:
+            self.y_data = y_data
+        if x_axis_label is not None:
+            self.x_axis_label = x_axis_label
+        if y_axis_label is not None:
+            self.y_axis_label = y_axis_label
+
+        # number of bars needed is the total (which is 1 bar) + the number of components or sub bars. Note if its not
+        # a stacked bar graph component length will be zero
+        num_bars_needed = 1 + len(self.y_data['components'][0])
+
+        # check if need to create more bars
+        if len(self.bar_graph_item_list) < num_bars_needed:
+            bars_to_create = num_bars_needed - len(self.bar_graph_item_list)
+            for i in xrange(0, bars_to_create):
+                bar_graph_item = pg.BarGraphItem(
+                    x=[0.0],
+                    height=[0.0],
+                    width=1.0,
+                )
+                self.bar_graph_item_list.append(bar_graph_item)
+                self.__plot_item.addItem(bar_graph_item)
+
+        # the color for the total, put in a list because we will be adding the other bar colors
+        colors = [self.color['total']]
+        # add the component colors to the list
+        colors.extend(self.color['components'])
+
+        # reset bars to a height of zero
+        for bar in self.bar_graph_item_list:
+            bar.setOpts(
+                x=[0.0],
+                height=[0.0]
+            )
+        # set data for single and stacked bar graphs
+        if isinstance(self.y_data, dict):
+            # stacked bar graph data formatted
+            bar_graph_rows = self._format_stacked_bar_data()
+            # now make the actual stacked bars
+            for bar_index in xrange(0, len(bar_graph_rows)):
+                self.bar_graph_item_list[bar_index].setOpts(
+                    x=self.x_data.keys(),
+                    height=bar_graph_rows[bar_index],
+                    width=self.bar_width,
+                    brush=colors[bar_index]
+                )
+        # single bar graph
+        else:
+            self.bar_graph_item_list[0].setOpts(
+                x=self.x_data.keys(),
+                height=self.y_data,
+                width=self.bar_width,
+                brush=self.color[0]
+            )
+        # update the labels
+        self.__plot_item.setLabel('left', text=self.y_axis_label)
+        self.__plot_item.setLabel('bottom', text=self.x_axis_label)
+        # update the x axis mapping
+        self.update_x_axis()
+
+    def update_x_axis(self):
+        """
+        Updates the x axis with the latest x axis mapping
+        """
+        x_axis = self.__plot_item.getAxis('bottom')
+        x_axis.setTicks([self.x_data.items()])
+
+    def _format_stacked_bar_data(self):
+        """
+        Formats the data for stacked bar graphs
+        :return: a 2D list of data that the pyqtgraph bar graph class will accept. Format:
+        [ python list that is the size of the number of sequences, shots or frames] each element of
+        the list is a bar that is [is the size of the number of stacked bars or total + number of components]
+        """
+        bar_graph_rows = []
+        # stacked bar graph
+        if isinstance(self.y_data, dict):
+            # total is the overall height of the bar
+            total = self.y_data['total']
+            # convert the components to a numpy array - easier to add - we switch the axis so that in the 2d array
+            # rows become cols, cols become rows. Makes it so that the rows can be fed to the bar graph
+            components_rows = np.stack(self.y_data['components'], axis=1)
+
+            # the data to send to the bar graph class, where each index is a row of bar graph data. Start with total,
+            # its the largest number. If the components don't add up to the total, the unknown amount will shade the
+            # color specified for total, otherwise you won't see the total at all.
+            bar_graph_rows = [total]
+
+            # loop through and add up the components so that each component sits on top of the other (no overlap)
+            # The idea is to build a list or array of the bars so that bar2 sits on bar1, bar3 sits on bar2 and so on.
+            for i in xrange(0, len(components_rows)):
+                # this is the size of the x axis
+                summed_rows = np.array([0.0] * len(total))
+                # we loop through the components, adding up
+                for j in xrange(i, len(components_rows)):
+                    summed_rows += components_rows[j]
+                bar_graph_rows.append(np.ndarray.tolist(summed_rows))
+        return bar_graph_rows
 
 
 class TranslucentWidgetSignals(QtCore.QObject):
@@ -998,3 +1352,16 @@ def center(win):
     center_point = QtWidgets.QApplication.desktop().screenGeometry(screen).center()
     frame_gm.moveCenter(center_point)
     win.move(frame_gm.topLeft())
+
+
+def clear_layout(layout):
+    """
+    clears a layout. we use a while loop because when you are removing children from the layout,
+    you are modifying the index # of each child item in the layout. That's why you'll run into problems using a
+    for i in range() loop. One option is to reverse loop, but a while is more straightforward
+    :param layout: the layout
+    """
+    while layout.count():
+        child = layout.takeAt(0)
+        if child.widget():
+            child.widget().deleteLater()

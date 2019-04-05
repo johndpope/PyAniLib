@@ -102,7 +102,7 @@ class AniVars(object):
         :param shot: a string with the word seq followed by a seq number, like seq180
         :return: True if valid, False if not
         """
-        if self._get_sequence_name_from_string(seq):
+        if pyani.core.util.get_sequence_name_from_string(seq):
             return True
         else:
             return False
@@ -113,7 +113,7 @@ class AniVars(object):
         :param shot: a string with the word shot followed by a shot number, like shot190
         :return: True if valid, False if not
         """
-        if self._get_shot_name_from_string(shot):
+        if pyani.core.util.get_shot_name_from_string(shot):
             return True
         else:
             return False
@@ -150,8 +150,8 @@ class AniVars(object):
         :return: error if encountered as string, none otherwise
         """
 
-        self.seq_name = self._get_sequence_name_from_string(shot_path)
-        self.shot_name = self._get_shot_name_from_string(shot_path)
+        self.seq_name = pyani.core.util.get_sequence_name_from_string(shot_path)
+        self.shot_name = pyani.core.util.get_shot_name_from_string(shot_path)
         if not self.seq_name or not self.shot_name:
             error = "Error setting ani vars from shot path: {0}. Path should have seq#### and shot####" \
                     "in it. Found seq {1} and shot {2}".format(shot_path, self.seq_name, self.shot_name)
@@ -227,39 +227,3 @@ class AniVars(object):
                 self.last_frame = shot["last_frame"]
                 self.frame_range = "{0}-{1}".format(str(self.first_frame), str(self.last_frame))
                 break
-
-    @staticmethod
-    def _get_sequence_name_from_string(string_containing_sequence):
-        """
-        Finds the sequence name from a file path. Looks for Seq### or seq###. Sequence number is 2 or more digits
-        :param string_containing_sequence: the absolute file path
-        :return: the seq name as Seq### or seq### or None if no seq found
-        """
-        pattern = "[a-zA-Z]{3}\d{2,}"
-        # make sure the string is valid
-        if string_containing_sequence:
-            # check if we get a result, if so return it
-            if re.search(pattern, string_containing_sequence):
-                return re.search(pattern, string_containing_sequence).group()
-            else:
-                return None
-        else:
-            return None
-
-    @staticmethod
-    def _get_shot_name_from_string(string_containing_shot):
-        """
-        Finds the shot name from a file path. Looks for Shot### or seq###. Shot number is 2 or more digits
-        :param string_containing_shot: the absolute file path
-        :return: the shot name as Shot### or shot### or None if no shot found
-        """
-        pattern = "[a-zA-Z]{4}\d{2,}"
-        # make sure the string is valid
-        if string_containing_shot:
-            # check if we get a result, if so return it
-            if re.search(pattern, string_containing_shot):
-                return re.search(pattern, string_containing_shot).group()
-            else:
-                return None
-        else:
-            return None
