@@ -106,21 +106,18 @@ class BarGraph(pg.GraphicsView):
         self.bar_width = width
         # COLORS
         self.color = color
-        # DATA
-        # x axis - allows un-even intervals - stores in private variable __x_axis_mapping as a dict
-        # maps as {0: 'label1', 2: 'label2', ...}
-        self.x_data = x_data
-        # y axis - can be a dict for a stacked bar graph or list of numbers for a single bar graph
-        self.y_data = y_data
         # AXIS LABELS
         self.x_axis_label = x_axis_label
         self.y_axis_label = y_axis_label
 
-        # store options - only ones that user gives, otherwise keep current values
+        # store options
+        # x axis - allows un-even intervals - stores in private variable __x_axis_mapping as a dict
+        # maps as {0: 'label1', 2: 'label2', ...}
         if x_data is not None:
             self.x_data = x_data
         else:
             self.x_data = [0.0]
+        # y axis - can be a dict for a stacked bar graph or list of numbers for a single bar graph
         if y_data is not None:
             self.y_data = y_data
         else:
@@ -174,7 +171,8 @@ class BarGraph(pg.GraphicsView):
     def x_data(self, mapping):
         """ Set the x axis labels, can be any string list, maps as {0: 'label1', 2: 'label2', ...}
         """
-        self.__x_data = dict(enumerate(mapping))
+        if mapping:
+            self.__x_data = dict(enumerate(mapping))
 
     @property
     def y_data(self):
@@ -232,6 +230,7 @@ class BarGraph(pg.GraphicsView):
         the bar data across the x axis.
         """
         bar_graph_item_list = []
+
         # stacked bar graph
         if isinstance(self.y_data, dict):
             # the color for the total, put in a list because we will be adding the other bar colors
@@ -257,7 +256,7 @@ class BarGraph(pg.GraphicsView):
                     x=self.x_data.keys(), height=self.y_data, width=self.bar_width, brush=self.color
                 )
             )
-            self.__plot_item.addItem(self.bar_graph_item_list[0])
+            self.__plot_item.addItem(bar_graph_item_list[0])
 
         return bar_graph_item_list
 

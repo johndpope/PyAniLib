@@ -509,8 +509,8 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         # if the user selected 'yes' (True), proceed
         if response:
             # remove temp dir if exists
-            if os.path.exists(self.app_vars.download_temp_dir):
-                error = pyani.core.util.rm_dir(self.app_vars.download_temp_dir)
+            if os.path.exists(self.app_vars.download_path_pyanitools):
+                error = pyani.core.util.rm_dir(self.app_vars.download_path_pyanitools)
                 if error:
                     self.msg_win.show_error_msg("Install Staging Error", error)
                     return
@@ -518,11 +518,11 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
             # setup directories that need to be removed, exe files to run, stage files in temp dir
             #
             # this is the exe (absolute path) to execute the setup tool in the iu assistant
-            app_to_run = os.path.join(self.app_vars.download_temp_dir, self.app_vars.setup_exe)
+            app_to_run = os.path.join(self.app_vars.download_path_pyanitools, self.app_vars.setup_exe)
             # exe (absolute path) calling assistant
             calling_app = self.app_vars.app_mngr_exe
             # path in temp dir of the assistant
-            iu_assistant_app_in_temp = os.path.join(self.app_vars.download_temp_dir, self.app_vars.iu_assist_exe)
+            iu_assistant_app_in_temp = os.path.join(self.app_vars.download_path_pyanitools, self.app_vars.iu_assist_exe)
             # path of the assistant in tools dir
             iu_assistant_app_in_tools = self.app_vars.iu_assist_path
             # what to remove
@@ -547,13 +547,13 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                 return
 
             # copy assistant program to temp - can't run it out of C:PyAniTools since that will get removed
-            if not os.path.exists(self.app_vars.download_temp_dir):
-                error = pyani.core.util.make_dir(self.app_vars.download_temp_dir)
+            if not os.path.exists(self.app_vars.download_path_pyanitools):
+                error = pyani.core.util.make_dir(self.app_vars.download_path_pyanitools)
                 if error:
                     msg_append = "Problem staging install file. " + error
                     self.msg_win.show_error_msg("Install Staging Error", msg_append)
                     return
-            error = pyani.core.util.copy_file(iu_assistant_app_in_tools, self.app_vars.download_temp_dir)
+            error = pyani.core.util.copy_file(iu_assistant_app_in_tools, self.app_vars.download_path_pyanitools)
             if error:
                 msg_append = "Problem staging install file. " + error
                 self.msg_win.show_error_msg("Install Staging Error", msg_append)
@@ -608,8 +608,8 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         # if user pressed 'yes' (True) then proceed
         if response:
             # remove temp dir if exists
-            if os.path.exists(self.app_vars.download_temp_dir):
-                error = pyani.core.util.rm_dir(self.app_vars.download_temp_dir)
+            if os.path.exists(self.app_vars.download_path_pyanitools):
+                error = pyani.core.util.rm_dir(self.app_vars.download_path_pyanitools)
                 if error:
                     self.msg_win.show_error_msg("Update Staging Error", error)
                     return
@@ -622,18 +622,18 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
             # copy install / update assist tool
             #
             # copy assistant program to temp - can't run it out of C:PyAniTools since that will get removed
-            if not os.path.exists(self.app_vars.download_temp_dir):
-                error = pyani.core.util.make_dir(self.app_vars.download_temp_dir)
+            if not os.path.exists(self.app_vars.download_path_pyanitools):
+                error = pyani.core.util.make_dir(self.app_vars.download_path_pyanitools)
                 if error:
                     msg_append = "Problem staging update file. " + error
                     self.msg_win.show_error_msg("Update Staging Error", msg_append)
                     return
 
             # path in temp dir of the assistant
-            iu_assistant_app_in_temp = os.path.join(self.app_vars.download_temp_dir, self.app_vars.iu_assist_exe)
+            iu_assistant_app_in_temp = os.path.join(self.app_vars.download_path_pyanitools, self.app_vars.iu_assist_exe)
             # path of the assistant in tools dir
             iu_assistant_app_in_tools = self.app_vars.iu_assist_path
-            error = pyani.core.util.move_file(iu_assistant_app_in_tools, self.app_vars.download_temp_dir)
+            error = pyani.core.util.move_file(iu_assistant_app_in_tools, self.app_vars.download_path_pyanitools)
             if error:
                 msg_append = "Problem staging update file. " + error
                 self.msg_win.show_error_msg("Update Staging Error", msg_append)
@@ -642,7 +642,7 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
             # copy update tool
             #
             # path in temp dir of the tool
-            update_tool_in_temp = os.path.join(self.app_vars.download_temp_dir, self.app_vars.update_exe)
+            update_tool_in_temp = os.path.join(self.app_vars.download_path_pyanitools, self.app_vars.update_exe)
             # path of the tool in tools dir
             update_tool_in_tools = os.path.join(self.app_vars.apps_dir, self.app_vars.update_exe)
             error = pyani.core.util.move_file(update_tool_in_tools, update_tool_in_temp)

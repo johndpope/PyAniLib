@@ -46,13 +46,21 @@ class AppVars:
         # path to .nuke/init.py
         self.nuke_init_file_path = os.path.join(self.ani_vars.nuke_user_dir, "init.py")
 
+        # cgt paths
+        # TODO : remove ->
+        self._cgt_download_path = "Z:\\LongGong\\common\\tools"
+
+        self.cgt_tools_online_path = "/LongGong/tools/"
+        self.download_path_cgt = os.path.join(os.path.normpath(tempfile.gettempdir()), "CGT")
+        self.cgt_path_pyanitools = os.path.join(self.cgt_tools_online_path, self.tools_package)
+
         # download vars
         self.client_install_data_json = os.path.join(self.app_data_dir, "Shared\\install_data.json")
         self.sequence_list_json = os.path.join(self.app_data_dir, "Shared\\sequences.json")
-        self.cgt_download_path = "Z:\\LongGong\\common\\tools"
         self.server_update_json_name = "last_update.json"
-        self.server_update_json_path = os.path.join(self.cgt_download_path, self.server_update_json_name)
-        self.download_temp_dir = os.path.join(os.path.normpath(tempfile.gettempdir()), "PyAniTools")
+        self.server_update_json_path = os.path.join(self.cgt_tools_online_path, self.server_update_json_name)
+        self.server_update_json_download_path = os.path.join(self.download_path_cgt, self.server_update_json_name)
+        self.download_path_pyanitools = os.path.join(os.path.normpath(tempfile.gettempdir()), "PyAniTools")
 
     # produce better output
     def __str__(self):

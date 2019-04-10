@@ -1,5 +1,6 @@
 import os
 import json
+import numbers
 import pyani.core.anivars
 import pyani.core.util as util
 
@@ -132,6 +133,13 @@ class AniRenderData:
         self.__dept = dept
 
     @property
+    def raw_stat_data(self):
+        """a dict of all stats stored for show in raw format. Every frame stores the same stats.
+         See class doc string for format.
+        """
+        return self.__raw_stat_data
+
+    @property
     def stat_data(self):
         """a dict of all stats stored for show. Every frame stores the same stats. See class doc string for format.
         """
@@ -171,6 +179,49 @@ class AniRenderData:
         """
         self.__stats_map = mapping
 
+    def set_custom_data(self, stat_files, user_seq, user_shot, stat="frame time"):
+        """
+        Sets the data to user defined data
+        :param stat_files: the user defined data as a list of json files (absolute path) on disk
+        :param user_seq: the seq associated with the user data
+        :param user_shot: the shot associated with the user data
+        :param stat: the stat to show, defaults to frame time
+        :return None if successful, otherwise an error string
+        """
+        # make in format that shots follow - see class docstring for more info under raw format
+        combined_stats = {
+            user_seq: {
+                user_shot: {
+                    "1": {}
+                }
+            }
+        }
+        # go through each stat file, get the stats and add to the combined file.
+        for stat_file in stat_files:
+            json_data = pyani.core.util.load_json(stat_file)
+            if not json_data:
+                return json_data
+            # get frame number, should be the second to last element, before .json
+            frame_num = stat_file.split(".")[-2]
+            # get the data and save under the frame number
+            combined_stats[user_seq][user_shot]['1'][frame_num] = json_data['render 0000']
+
+        self.__raw_stat_data = combined_stats
+        self.stat_data = {}
+        self.process_data(stat)
+
+        return None
+
+    def clear_custom_data(self, stat="frame time"):
+        """
+        Removes user data and reloads the show data
+        :param stat: the stat to load, defaults to frame time if no stat provided
+        """
+        self.__raw_stat_data = {}
+        self.stat_data = {}
+        self.read_stats()
+        self.process_data(stat)
+
     def get_stat_type(self, stat):
         """
         returns the format the stat is in, ie seconds, gigabytes, percent
@@ -179,7 +230,7 @@ class AniRenderData:
         """
         stat_type = self.stats_map[stat]['type']
         if stat_type is 'microseconds':
-            return 'sec'
+            return 'min'
         elif stat_type is 'bytes':
             return 'gb'
         else:
@@ -232,7 +283,7 @@ class AniRenderData:
             elif stat_type == "percent":
                 stat_total = util.find_val_in_nested_dict(self.__raw_stat_data, key_path)
             else:
-                stat_total = self._microsec_to_sec(util.find_val_in_nested_dict(self.__raw_stat_data, key_path))
+                stat_total = self._microsec_to_min(util.find_val_in_nested_dict(self.__raw_stat_data, key_path))
 
             # if no total, return 0.0. Note return a list for compatibility with return value of actual data which
             # is a list
@@ -258,7 +309,7 @@ class AniRenderData:
                         component_amounts.append(util.find_val_in_nested_dict(self.__raw_stat_data, key_path))
                     else:
                         component_amounts.append(
-                            self._microsec_to_sec(util.find_val_in_nested_dict(self.__raw_stat_data, key_path))
+                            self._microsec_to_min(util.find_val_in_nested_dict(self.__raw_stat_data, key_path))
                         )
             # return the time
             return [stat_total] + component_amounts
@@ -593,23 +644,19 @@ class AniRenderData:
         return []
 
     @staticmethod
-    def _microsec_to_sec(microseconds):
+    def _microsec_to_min(microseconds):
         """
-        Convert microseconds to seconds
+        Convert microseconds to minutes
         :param microseconds: the microseconds as a float to convert
-        :return: the seconds as a float. If the microseconds is not a float returns None
+        :return: the minutes as a float.
         """
-        if not isinstance(microseconds, (float, int)):
-            return None
-        return float(microseconds) / 1000000.0
+        return float(microseconds) / 60000000.0
 
     @staticmethod
     def _bytes_to_gb(bytes_num):
         """
         Convert bytes to gigabytes
         :param bytes_num: the bytes as a float to convert
-        :return: the gb as a float. If the bytes is not a float returns None
+        :return: the gb as a float.
         """
-        if not isinstance(bytes_num, (float, int)):
-            return None
         return float(bytes_num) / 1000000000.0

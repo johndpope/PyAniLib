@@ -1,5 +1,6 @@
 import logging
 import os
+import tempfile
 import pyani.core.util
 import pyani.core.appmanager
 import pyani.core.ui
@@ -27,7 +28,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             "Py Render Data Viewer",
             "images\pyrenderdataviewer.png",
             self.app_mngr,
-            1200,
+            1800,
             1000,
             error_logging
         )
@@ -41,6 +42,9 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             )
 
         self.render_data = pyani.render.log.data.AniRenderData(dept="lighting")
+
+        # indicate sif show data is present locally
+        self.show_data = True
 
         error = self.render_data.ani_vars.load_seq_shot_list()
         if error:
@@ -68,6 +72,14 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self.font_family = "Century Gothic"
             self.font_size_menus = 10
             self.font_size_nav_crumbs = 11
+
+            # load user data option
+            self.load_data_btn = QtWidgets.QPushButton("Load Data")
+            self.clear_data_btn = QtWidgets.QPushButton("Clear Data")
+            # disable button, no data loaded
+            self.clear_data_btn.setDisabled(True)
+            self.user_seq = "Seq000"
+            self.user_shot = "Shot000"
 
             # tracks the where we are at - show (displays sequences), sequence (display shots) or shot
             # (displays frames)
@@ -102,11 +114,24 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             # averages side bar widgets created dynamically, just store layout
             self.averages_layout = QtWidgets.QVBoxLayout()
 
-            x_axis_labels, graph_data, colors = self.build_graph_data()
+            # make sure data was found
+            if self.render_data.stat_data:
+                x_axis_labels, graph_data, colors = self.build_graph_data()
 
-            self.bar_graph = pyani.core.ui.BarGraph(
-                x_axis_labels, graph_data, self.levels[self.current_level], self.selected_stat, width=.95, color=colors
-            )
+                self.bar_graph = pyani.core.ui.BarGraph(
+                    x_axis_labels,
+                    graph_data,
+                    self.levels[self.current_level],
+                    self.selected_stat,
+                    width=.95,
+                    color=colors
+                )
+            else:
+                self.bar_graph = pyani.core.ui.BarGraph()
+                self.msg_win.show_warning_msg("No Data Found", "No render data was found on disk. This is only a "
+                                                               "warning. You can use the load data button to load "
+                                                               "your own render stats.")
+                self.show_data = False
             # override any custom qt style, which breaks the text spacing for the bar graph on axis labels
             self.bar_graph.setStyle(QtWidgets.QCommonStyle())
 
@@ -121,6 +146,16 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         graph_header_layout = QtWidgets.QHBoxLayout()
         graph_header_layout.addWidget(self.nav_crumbs)
         graph_header_layout.addStretch(1)
+
+        user_data_label = QtWidgets.QLabel(
+            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>User Specified Data</span>".format(
+                self.font_size_menus, self.font_family
+            )
+        )
+        graph_header_layout.addWidget(user_data_label)
+        graph_header_layout.addWidget(self.load_data_btn)
+        graph_header_layout.addWidget(self.clear_data_btn)
+        graph_header_layout.addItem(QtWidgets.QSpacerItem(50, 0))
 
         history_label = QtWidgets.QLabel(
             "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>History</span>".format(
@@ -143,8 +178,9 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         # space between graph and sidebar
         main_layout.addItem(QtWidgets.QSpacerItem(20, 0))
 
-        # side bar gui
-        self.build_averages_sidebar()
+        # side bar gui - only build if there is data
+        if self.show_data:
+            self.build_averages_sidebar()
         main_layout.addLayout(self.averages_layout)
         # space between side bar and edge window
         main_layout.addItem(QtWidgets.QSpacerItem(20, 0))
@@ -157,6 +193,70 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         self.history_menu.currentIndexChanged.connect(self.update_displayed_history)
         self.stats_menu.currentIndexChanged.connect(self.update_displayed_stat)
         self.bar_graph.graph_update_signal.connect(self.update_from_graph)
+        self.load_data_btn.clicked.connect(self.load_user_data)
+        self.clear_data_btn.clicked.connect(self.clear_user_data)
+
+    def load_user_data(self):
+        """
+        Shows render data not in the render data location on disk.
+        """
+        files = [
+            str(filename) for filename in pyani.core.ui.FileDialog.getOpenFileNames() if str(filename).endswith("json")
+        ]
+        if files:
+            # set the custom data in the render data object
+            error = self.render_data.set_custom_data(files, self.user_seq, self.user_shot, stat=self.selected_stat)
+            if error:
+                self.msg_win.show_error_msg("Error Formatting Custom Data", error)
+
+            # update the ui:
+            #
+            # set the nav link
+            nav_str = "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>" \
+                      "<b>User Custom Data</b></span></font>".format(self.font_size_nav_crumbs, self.font_family)
+            self.nav_crumbs.setText(nav_str)
+            # set vars
+            #
+            # want to be at the shot level view, so set current level to 2
+            self.current_level = 2
+            # These are fake seq and shot names
+            self.seq = self.user_seq
+            self.shot = self.user_shot
+            # only show one history, no concept of history with user data
+            self.history = "1"
+            # rebuild history to clear and existing history
+            self._build_history_menu()
+            # show the custom data
+            self.update_ui()
+
+            # enable button, data loaded. only enable though if there is show data, otherwise doesn't make
+            # sense to clear data
+            if self.show_data:
+                self.clear_data_btn.setDisabled(False)
+
+    def clear_user_data(self):
+        """
+        Clears the user data that was loaded and resets view to show level
+        """
+        # don't reset/clear if no user data was loaded. Always know user data loaded if Seq is Seq000
+        if self.seq == self.user_seq:
+            # set vars
+            self.current_level = 0
+            self.seq = ""
+            self.shot = ""
+            self.history = "1"
+
+            # clear the custom data so render data can show sequences again
+            self.render_data.clear_custom_data(self.selected_stat)
+
+            # set the nav crumbs link
+            self.set_nav_link()
+
+            # show the custom data
+            self.update_ui()
+
+            # disable button, no data loaded
+            self.clear_data_btn.setDisabled(True)
 
     def set_nav_link(self):
         """
@@ -259,7 +359,6 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             width=0.95,
             color=colors
         )
-
         # rebuild sidebar averages ui
         self.build_averages_sidebar()
 
@@ -306,7 +405,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                 graph_data['components'].append(
                     self.render_data.stat_data[self.seq][self.shot][self.history][frame][self.selected_stat]['components'])
 
-        if self.render_data.get_stat_type(self.selected_stat) == "sec":
+        if self.render_data.get_stat_type(self.selected_stat) == "min":
             colors_to_use = self.color_set_cool
         elif self.render_data.get_stat_type(self.selected_stat) == 'gb':
             colors_to_use = self.color_set_warm
@@ -394,12 +493,12 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
 
     def _build_history_menu(self):
         """Makes the history menu based off the current seq and shot. If no seq or shot is set, defaults to
-        "1"
+        "1". Also defaults to "1" if user data is loaded (the sequence is set to the user_seq member var
         """
         self.history_menu.blockSignals(True)
         self.history_menu.clear()
 
-        if self.seq and self.shot:
+        if (self.seq and self.shot) and (not self.seq == self.user_seq):
             for history in self.render_data.get_history(self.seq, self.shot):
                 self.history_menu.addItem(history)
         else:

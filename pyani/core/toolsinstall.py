@@ -31,6 +31,10 @@ class AniToolsSetup:
         self.external_python_path = os.path.normpath("C:\cgteamwork\python\python.exe")
         self.cgt_bridge_api_path = os.path.normpath("C:\PyAniTools\lib\cgt")
 
+        self.cgt_user = "Patrick"
+        self.cgt_pass = "longgong19"
+        self.cgt_ip = "172.18.100.246"
+
     @staticmethod
     def updates_exist(server_data, client_data):
         """
@@ -80,6 +84,7 @@ class AniToolsSetup:
             return "Invalid command format for cgt_api, should be a list."
         py_command = [self.external_python_path]
         py_command.extend(command)
+        logger.info("Command is: {0}".format(' '.join(py_command)))
         p = Popen(py_command, stdout=PIPE, stderr=PIPE)
         output, error = p.communicate()
         if p.returncode != 0:
@@ -106,19 +111,19 @@ class AniToolsSetup:
         py_script = os.path.join(self.cgt_bridge_api_path, "cgt_download.py")
         dl_command = [
             py_script,
-            "Sequence_Tools",
-            self.app_vars.server_update_json_name,
-            "172.18.100.246",
-            "Patrick",
-            "evan0510"
+            self.app_vars.server_update_json_path,
+            self.app_vars.download_path_cgt,
+            self.cgt_ip,
+            self.cgt_user,
+            self.cgt_pass
         ]
         error = self.call_ext_py_api(dl_command)
         if error:
             logging.error(error)
             return self.log_error(error)
 
-        # open json file server json
-        server_data = pyani.core.util.load_json(self.app_vars.server_update_json_path)
+        # open json file downloaded from the server
+        server_data = pyani.core.util.load_json(self.app_vars.server_update_json_download_path)
         if not isinstance(server_data, dict):
             return self.log_error(server_data)
         # open client json
@@ -131,11 +136,11 @@ class AniToolsSetup:
             py_script = os.path.join(self.cgt_bridge_api_path, "cgt_download.py")
             dl_command = [
                 py_script,
-                "Sequence_Tools",
-                self.app_vars.tools_package,
-                "172.18.100.246",
-                "Patrick",
-                "evan0510"
+                self.app_vars.cgt_path_pyanitools,
+                self.app_vars.download_path_cgt,
+                self.cgt_ip,
+                self.cgt_user,
+                self.cgt_pass
             ]
             error = self.call_ext_py_api(dl_command)
             if error:
@@ -144,11 +149,11 @@ class AniToolsSetup:
             # downloaded
             else:
                 # move file to tempdir
-                src = os.path.join(self.app_vars.cgt_download_path, self.app_vars.tools_package)
-                dest = os.path.join(self.app_vars.download_temp_dir, self.app_vars.tools_package)
+                src = os.path.join(self.app_vars.download_path_cgt, self.app_vars.tools_package)
+                dest = os.path.join(self.app_vars.download_path_pyanitools, self.app_vars.tools_package)
                 # check if directory exists
-                if not os.path.exists(self.app_vars.download_temp_dir):
-                    error = pyani.core.util.make_dir(self.app_vars.download_temp_dir)
+                if not os.path.exists(self.app_vars.download_path_pyanitools):
+                    error = pyani.core.util.make_dir(self.app_vars.download_path_pyanitools)
                     if error:
                         return self.log_error(error)
                 error = pyani.core.util.move_file(src, dest)
@@ -157,13 +162,13 @@ class AniToolsSetup:
                 # try unzipping
                 try:
                     with zipfile.ZipFile(file=dest) as zipped:
-                        zipped.extractall(path=self.app_vars.download_temp_dir)
+                        zipped.extractall(path=self.app_vars.download_path_pyanitools)
                 except (zipfile.BadZipfile, zipfile.LargeZipFile, IOError, OSError) as e:
                     error = "{0} update file is corrupt. Error is {1}".format(dest, e)
                     logger.exception(error)
                     return self.log_error(error)
                 # set the install_apps path
-                self.app_vars.update_setup_dir(self.app_vars.download_temp_dir)
+                self.app_vars.update_setup_dir(self.app_vars.download_path_pyanitools)
             return True
         return False
 
@@ -196,9 +201,9 @@ class AniToolsSetup:
         dl_command = [
             py_script,
             self.app_vars.sequence_list_json,
-            "172.18.100.246",
-            "Patrick",
-            "evan0510"
+            self.cgt_ip,
+            self.cgt_user,
+            self.cgt_pass
         ]
         error = self.call_ext_py_api(dl_command)
 
