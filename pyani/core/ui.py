@@ -536,7 +536,27 @@ class AniQMainWindow(QtWidgets.QMainWindow):
     Provides the main layout for the window - self.main_layout which is a QVBoxlayout
     Adds two ui elements, version as a Qlabel and a help link to documentation as a Qlabel at the top of the window
     Handles version management displaying a message when updates are available
-    Drag and drop support
+    Drag and drop support - also supports drag and drop into tabs with custom widgets. To use this functionality:
+        1. create a method as usual that is given to the drop_event_wrapper in this class
+        2. In that wrapper call the tabs class (pyani.core.ui.TabsWidgets) drag_and_drop method
+        3. In the tabs class it will pass along the dropped data to the custom widget which needs a drag_and_drop
+        method that receives the data
+        EX:
+        I create a gui subclassing this class:
+            class AniTestWindow(pyani.core.ui.AniQMainWindow) and add the methods:
+                   def dropEvent(self, e):
+                        self.drop_event_wrapper(e, self.tabs_drag_and_drop)
+                   def tabs_drag_and_drop(self, file_names):
+                        self.tabs.drag_and_drop(file_names, TestWidget)
+
+            - self.tabs is an instance of pyani.core.ui.TabsWidgets
+            - TestWidget is the custom widget class name. Not the instance, but the actual type
+
+        I create a custom widget called class TestWidget(QtWidgets.QWidget) and add the method:
+        def drag_and_drop(self, data)
+            # process the data in some way....
+
+
     Creates a msg window class variable which allows apps to display pop up dialog warnings,
     errors, info, etc.. - uses pyani.core.ui.QtMsgWindow class
     Provides some spacing and font widgets:
@@ -551,10 +571,11 @@ class AniQMainWindow(QtWidgets.QMainWindow):
     :param app_mngr : an AniAppMngr class object for managing applications
     :param width : optional width of the window
     :param height: optional height of the window
+    :param has_tabs: optional parameter enabling tab support
     :param error_logging : optional error log (pyani.core.error_logging.ErrorLogging object) from trying
            to create logging in main program
     """
-    def __init__(self, win_title, win_icon, app_mngr, width=600, height=600, error_logging=None):
+    def __init__(self, win_title, win_icon, app_mngr, width=600, height=600, has_tabs=False, error_logging=None):
         super(AniQMainWindow, self).__init__()
 
         # if no error logging object, create a dummy object to grab the root log dir. Don't need a real app name
@@ -586,13 +607,15 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(win_title)
         self.win_utils.set_win_icon(win_icon)
 
+        # tab support
+        self.has_tabs = has_tabs
+
         # main widget for window
         self.main_win = QtWidgets.QWidget()
 
         # pop-up windows
         self.msg_win = QtMsgWindow(self)
         self.progress_win = QtMsgWindow(self)
-
 
         logging.info(
             "User version: {0}, Latest Version {1}".format(
@@ -1323,6 +1346,211 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
                 if tree_item.text(0) == item:
                     tree_item.setHidden(False)
             iterator += 1
+
+
+class TabContentWidget(QtWidgets.QWidget):
+    """
+    The content that goes in a tab. Used with the TabWidget class.
+
+    Takes the following parameters:
+        - name : name of the tab, shows at top of tab
+        - layout : the content of the tab, pass the layout containing all the widgets
+    """
+    def __init__(self, layout=None, default_name="New"):
+        super(TabContentWidget, self).__init__()
+        # name is shown in the tab, at the top
+        self.name = default_name
+        if layout:
+            self.setLayout(layout)
+
+    @property
+    def name(self):
+        """Return the name of the tab
+        """
+        return self.__name
+
+    @name.setter
+    def name(self, name):
+        """Set the name of the tab
+        """
+        self.__name = name
+
+    def update_content(self, layout):
+        """
+        Updates the tab content
+        :param layout: a pyqt layout object containing the content/widgets
+        """
+        self.setLayout(layout)
+
+
+class TabBarWidget(QtWidgets.QTabBar):
+    """
+    Tab bar that has a plus button floating to the right of the tabs. Subclasses the built in QTabBar and adds
+    a plus button so the user can create tabs
+    """
+
+    # the user clicked the plus to create a new tab
+    plus_clicked_signal = pyqtSignal()
+
+    def __init__(self, parent):
+        super(TabBarWidget, self).__init__()
+        self.setParent(parent)
+
+        # plus button
+        self.plus_button_size = 20
+        self.plus_button = QtWidgets.QPushButton("+")
+        self.plus_button.setParent(self)
+        self.plus_button.setMaximumSize(self.plus_button_size, self.plus_button_size)
+        self.plus_button.setMinimumSize(self.plus_button_size, self.plus_button_size)
+        # Move to the correct location - the right of the last tab created
+        self.move_plus_button()
+
+        self.set_slots()
+
+    def set_slots(self):
+        self.plus_button.clicked.connect(self.plus_clicked_signal.emit)
+
+    def sizeHint(self):
+        """Return the size of the TabBar with increased width for the plus button.
+        """
+        size_hint = QtWidgets.QTabBar.sizeHint(self)
+        width = size_hint.width()
+        height = size_hint.height()
+        # add the size of the button plus a small buffer to account for the plus button at the end of the tab bar
+        return QtCore.QSize(width + (self.plus_button_size + 5), height)
+
+    def resizeEvent(self, event):
+        """Resize the widget and make sure the plus button is in the correct location.
+        """
+        super(TabBarWidget, self).resizeEvent(event)
+        self.move_plus_button()
+
+    def tabLayoutChange(self):
+        """This virtual handler is called whenever the tab layout changes.
+        If anything changes make sure the plus button is in the correct location.
+        """
+        super(TabBarWidget, self).tabLayoutChange()
+        self.move_plus_button()
+
+    def move_plus_button(self):
+        """Move the plus button to the correct location - after the last existing tab
+        """
+        # Find the width of all of the tabs
+        total_width_tabs = 0
+        for i in range(self.count()):
+            total_width_tabs += self.tabRect(i).width()
+
+        # Set the plus button location in a visible area
+        tab_bar_height = self.geometry().top()
+        tab_bar_width = self.width()
+        # check for scroll buttons when there are more tabs to show than the window size.
+        # if there are more tabs than can be displayed, show just to the left of the scroll buttons
+        if total_width_tabs > tab_bar_width:
+            self.plus_button.move(tab_bar_width - 54, tab_bar_height)
+        else:
+            self.plus_button.move(total_width_tabs, tab_bar_height)
+
+
+class TabsWidget(QtWidgets.QTabWidget):
+    """
+    A tabs widget class that supports multiple tabs, and the ability to create tabs dynamically
+
+    Usage: Create an instance of the TabsWidget class:
+    tabs = TabsWidget() or tabs = TabsWidget(dynamic_tab_bar=True)
+
+    Takes:
+    :param dynamic_tab_bar: defaults to False, when True displays a plus button to the right of the tab(s) to create
+    more tabs
+    """
+
+    def __init__(self, dynamic_tab_bar=False):
+        super(TabsWidget, self).__init__()
+
+        self.setMinimumSize(800,400)
+
+        # set tabs properties
+        #
+        self.setMovable(True)
+        # Tab Bar - allows you to create tabs by pressing a button. enable by passing dynamic_tab_bar = True.
+        # otherwise user can't create tabs
+        self.is_dynamic_tab_bar = dynamic_tab_bar
+        if self.is_dynamic_tab_bar:
+            self.tab = TabBarWidget(self)
+            self.setTabBar(self.tab)
+
+        # create the initial tab
+        self.add_tab()
+        self.create_layout()
+        self.set_slots()
+
+    def create_layout(self):
+        layout = QtWidgets.QVBoxLayout()
+        self.setLayout(layout)
+
+    def set_slots(self):
+        if self.is_dynamic_tab_bar:
+            self.tab.plus_clicked_signal.connect(self.add_tab)
+            self.tab.tabMoved.connect(self.tab.move_plus_button)
+        self.tabCloseRequested.connect(self.removeTab)
+
+    def drag_and_drop(self, dropped_data, custom_widget):
+        """
+        Adds drag and drop support for tabs containing custom widgets. This just checks the layout for the class type
+        of the custom widget, and if found, sends it the data.
+
+        ****** NOTE ******
+        The custom widget must implement a method named drag_and_drop that takes a parameter that will be the data that
+        was dragged and dropped
+
+        :param dropped_data: the data being dragged and dropped into the window
+        :param custom_widget: a class type, for example if I have: class TestWidget(QtWidgets.QWidget), i would pass
+        TestWidget. Notice no parenthesis are used, this is not an instance but the type
+        :return: True if passed the data, false if not
+        """
+        # number of widgets in the layout
+        index = self.currentWidget().layout().count()
+        while index >= 0:
+            # get the current widget, use itemAt, which can then call widget() to get the widget
+            current_layout_item = self.currentWidget().layout().itemAt(index)
+            if current_layout_item:
+                current_widget = current_layout_item.widget()
+                if isinstance(current_widget, custom_widget):
+                    current_widget.drag_and_drop(dropped_data)
+                    return True
+            index -= 1
+        return False
+
+    def add_tab(self, layout=None):
+        """
+        Adds a tab page.
+        :param layout: the layout for the tab page containing the content
+        """
+        if self.count() > 0:
+            self.setTabsClosable(True)
+        else:
+            self.setTabsClosable(False)
+
+        # this is the tab content page. Holds whatever content/widgets that are part of the layout passed in.
+        widget = TabContentWidget(layout=layout)
+        self.addTab(widget, widget.name)
+
+    def removeTab(self, p_int):
+        """
+        Removes a tab page as long as there are 2 or more tabs. Ensures at least one tab exists
+        :param p_int: the tab number (can get with self.currentIndex())
+        """
+        super(TabsWidget, self).removeTab(p_int)
+        if self.count() > 1:
+            self.setTabsClosable(True)
+        else:
+            self.setTabsClosable(False)
+
+    def update_tab(self, layout):
+        """
+        Updates the tab content for the active tab
+        :param layout: the new layout containing the new content/widgets
+        """
+        self.currentWidget().update_content(layout)
 
 
 def build_checkbox(label, state, directions):

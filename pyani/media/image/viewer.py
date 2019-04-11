@@ -28,6 +28,7 @@ class AniImageViewer(QtWidgets.QGraphicsView):
         - pan using right mouse button
         - reset to zoom level 0 with keyboard 'R' key
     """
+
     def __init__(self, parent):
         super(AniImageViewer, self).__init__(parent)
         # zoom level
@@ -135,7 +136,7 @@ class AniImageViewer(QtWidgets.QGraphicsView):
         :param event: the qt event, in this case mouse scrolling ie QEvent.Wheel
         """
         if self.has_image():
-            # the delat is the number if notches scrolled
+            # the delta is the number if notches scrolled
             # pyqt 5 is event.angleDelta().y()
             if event.delta() > 0:
                 factor = self.zoom_in()
@@ -186,6 +187,7 @@ class AniImageSeqPlaybackController(QtWidgets.QWidget):
     :param loop: optional loop_playback play of image sequence, defaults to True
     :param reset_zoom : optional, whether to maintain zoom or to reset when ever hit playback buttons
     """
+
     def __init__(self, viewer, fps=30.0, loop=True, reset_zoom=False):
         super(AniImageSeqPlaybackController, self).__init__()
         # the __timer for how long to hold a frame (give it a parent, self, so that it can make use of Qt's
@@ -956,7 +958,7 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
             # get channel name
             channel_names = self.exr_image_list[0].layer_channel_names(layer)
             # subtract one since starting at 0
-            num_jobs = len(self.exr_image_list)-1
+            num_jobs = len(self.exr_image_list) - 1
 
             p = multiprocessing.Pool()
             errors = []
@@ -971,11 +973,11 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
 
             '''
             The way we hold  missing frames is described via an example:
-            
+
             EX:
             we have a frame range 1-5, with frames 1,3, 5 given. 2 and 4 are missing.
             Our list variable, frame_exists, is [True, False, True, False, True]. 
-            
+
             When multi-proc runs, it returns 3 PIL objects for frames 1, 3, 5. These are converted to pixmaps 
             for QT, so lets refer to these as pixmaps. We get these back in order. We start with frame 2 
             (since frame 1 always exists). That's why current_index starts at 1. current_index is our list index and 
@@ -1023,16 +1025,16 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
                     # loop until an existing frame is found - current index will be set to that existing frame at
                     # that point
                     while not frame_exists[current_index]:
-                            pixmaps.append(pix)
-                            current_index += 1
+                        pixmaps.append(pix)
+                        current_index += 1
 
-                progress = float(i)/float(num_jobs)*100.0
+                progress = float(i) / float(num_jobs) * 100.0
                 self.progress_bar.setLabelText("Loading Image Sequence")
                 self.progress_bar.setValue(int(progress))
 
                 # while loading, update the viewer - note we subtract one because current index is ahead of
                 # what is stored by 1, its on the next existing frame, while we are on the last missing frame
-                self.imageChanged.emit(pixmaps[current_index-1])
+                self.imageChanged.emit(pixmaps[current_index - 1])
 
                 # advance index to the next frame. We are on the next existing frame - see while loop above.
                 # The next for loop iteration will load the existing frame and add it. We want our index to be 1 past

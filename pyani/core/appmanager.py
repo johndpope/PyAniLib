@@ -2,7 +2,6 @@ import zipfile
 import os
 import signal
 import pyani.core.util
-import subprocess
 import logging
 import pyani.core.ui
 import pyani.core.anivars

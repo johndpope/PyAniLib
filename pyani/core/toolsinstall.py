@@ -35,6 +35,22 @@ class AniToolsSetup:
         self.cgt_pass = "longgong19"
         self.cgt_ip = "172.18.100.246"
 
+    def cleanup(self):
+        """
+        Removes files and directories created during updating in the tmep directory
+        :return: None if removed without errors, or an error as a string if an error occurs
+        """
+        # clean up any temp files related to downloading of files from cgt
+        if os.path.exists(self.app_vars.download_path_cgt):
+            error = pyani.core.util.rm_dir(self.app_vars.download_path_cgt)
+            if error:
+                return error
+        # clean up any temp files from updating pyanitools
+        if os.path.exists(self.app_vars.download_path_pyanitools):
+            error = pyani.core.util.rm_dir(self.app_vars.download_path_pyanitools)
+            if error:
+                return error
+
     @staticmethod
     def updates_exist(server_data, client_data):
         """
@@ -556,6 +572,9 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         else:
             self.report_txt.show()
             self.report_txt.setHtml("<p>".join(self.log))
+
+        # remove temp files
+        self.tools_setup.cleanup()
 
     def run_install(self):
         """
