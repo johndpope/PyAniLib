@@ -4,11 +4,11 @@ import os
 import sys
 import datetime
 import zipfile
-from subprocess import Popen, PIPE
 import pyani.core.ui
 import pyani.core.anivars
 import pyani.core.appvars
 import pyani.core.util
+import pyani.core.mayapluginsmngr
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -16,8 +16,7 @@ import pyani.core.util
 os.environ['QT_API'] = 'pyqt'
 # import from QtPy instead of doing it directly
 # note that QtPy always uses PyQt5 API
-from qtpy import QtGui, QtWidgets, QtCore
-
+from qtpy import QtWidgets, QtCore, QtGui
 
 logger = logging.getLogger()
 
@@ -27,13 +26,6 @@ class AniToolsSetup:
         self.app_vars = pyani.core.appvars.AppVars()
         # just using show vars, no sequence or shot vars
         self.ani_vars = pyani.core.anivars.AniVars()
-
-        self.external_python_path = os.path.normpath("C:\cgteamwork\python\python.exe")
-        self.cgt_bridge_api_path = os.path.normpath("C:\PyAniTools\lib\cgt")
-
-        self.cgt_user = "Patrick"
-        self.cgt_pass = "longgong19"
-        self.cgt_ip = "172.18.100.246"
 
     def cleanup(self):
         """
@@ -88,35 +80,6 @@ class AniToolsSetup:
         else:
             return False
 
-    def call_ext_py_api(self, command):
-        """
-        Run a python script
-        :param command: External python file to run with any arguments, leave reset python interpretor,
-        ie just script.py arguments, not python.exe script.py arguments. Must be a list,:
-        ["script.py", "arg1", ...., "arg n"]
-        :return: the output from the script, any errors encountered. If no errors returns None
-        """
-        if not isinstance(command, list):
-            return "Invalid command format for cgt_api, should be a list."
-        py_command = [self.external_python_path]
-        py_command.extend(command)
-        logger.info("Command is: {0}".format(' '.join(py_command)))
-        p = Popen(py_command, stdout=PIPE, stderr=PIPE)
-        output, error = p.communicate()
-        if p.returncode != 0:
-            error = "Problem executing command {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
-                command,
-                p.returncode,
-                output,
-                error
-            )
-            logger.error(error)
-            return error
-        # look for None or an empty string
-        if "None" not in output and not "".join(output.split()) == "":
-            return output
-        return None
-
     def download_updates(self, skip_update_check=False):
         """
         Downloads the files from the server.
@@ -124,16 +87,16 @@ class AniToolsSetup:
         :returns: True if downloaded, False if no updates to download, error if encountered.
         """
         # download json file
-        py_script = os.path.join(self.cgt_bridge_api_path, "cgt_download.py")
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
         dl_command = [
             py_script,
             self.app_vars.server_update_json_path,
             self.app_vars.download_path_cgt,
-            self.cgt_ip,
-            self.cgt_user,
-            self.cgt_pass
+            self.app_vars.cgt_ip,
+            self.app_vars.cgt_user,
+            self.app_vars.cgt_pass
         ]
-        error = self.call_ext_py_api(dl_command)
+        output, error = pyani.core.util.call_ext_py_api(dl_command)
         if error:
             logging.error(error)
             return self.log_error(error)
@@ -149,16 +112,16 @@ class AniToolsSetup:
 
         if self.updates_exist(server_data, client_data) or skip_update_check:
             # download the file
-            py_script = os.path.join(self.cgt_bridge_api_path, "cgt_download.py")
+            py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
             dl_command = [
                 py_script,
                 self.app_vars.cgt_path_pyanitools,
                 self.app_vars.download_path_cgt,
-                self.cgt_ip,
-                self.cgt_user,
-                self.cgt_pass
+                self.app_vars.cgt_ip,
+                self.app_vars.cgt_user,
+                self.app_vars.cgt_pass
             ]
-            error = self.call_ext_py_api(dl_command)
+            output, error = pyani.core.util.call_ext_py_api(dl_command)
             if error:
                 logging.error(error)
                 return self.log_error(error)
@@ -213,15 +176,15 @@ class AniToolsSetup:
         :return: error if encountered, otherwise None
         """
         # download the file
-        py_script = os.path.join(self.cgt_bridge_api_path, "cgt_show_info.py")
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_show_info.py")
         dl_command = [
             py_script,
             self.app_vars.sequence_list_json,
-            self.cgt_ip,
-            self.cgt_user,
-            self.cgt_pass
+            self.app_vars.cgt_ip,
+            self.app_vars.cgt_user,
+            self.app_vars.cgt_pass
         ]
-        error = self.call_ext_py_api(dl_command)
+        output, error = pyani.core.util.call_ext_py_api(dl_command)
 
         if error:
             logging.error(error)
@@ -274,7 +237,7 @@ class AniToolsSetup:
             error = pyani.core.util.rm_dir(self.app_vars.packages_dir)
             if error:
                 return self.log_error(error)
-            logging.info("Step: Removed: {0}".format( self.app_vars.packages_dir))
+            logging.info("Step: Removed: {0}".format(self.app_vars.packages_dir))
         # update packages
         error = pyani.core.util.move_file(self.app_vars.setup_packages_path, self.app_vars.packages_dir)
         if error:
@@ -447,14 +410,17 @@ class AniToolsSetup:
         loding the apps list
         """
         app_list_json = os.path.join(self.app_vars.app_data_dir, "Shared\\app_list.json")
-        app_list = pyani.core.util.load_json(app_list_json)
+        app_list_json_data = pyani.core.util.load_json(app_list_json)
         # see if we read the json data
-        if not isinstance(app_list, list):
-            return app_list
+        if not isinstance(app_list_json_data, dict):
+            return app_list_json_data
+        app_list = app_list_json_data['pyanitools']
         # list of installed apps
         installed_list = os.listdir(self.app_vars.apps_dir)
         # look for each app and see if it is installed
         missing_apps = [app for app in app_list if app not in installed_list]
+        if missing_apps:
+            logging.info("missing apps are: {0}".format(', '.join(missing_apps)))
         return missing_apps
 
     @staticmethod
@@ -480,8 +446,11 @@ class AniToolsSetupGui(QtWidgets.QDialog):
     def __init__(self, run_type, error_logging, close_on_success=False):
         super(AniToolsSetupGui, self).__init__()
 
-        # functionality to install_apps and update tools
+        # functionality to install apps and update tools
         self.tools_setup = AniToolsSetup()
+        # functionality to install maya plugins
+        self.maya_plugins = pyani.core.mayapluginsmngr.AniMayaPlugins()
+
         # create a task scheduler object
         self.task_scheduler = pyani.core.util.WinTaskScheduler(
             "pyanitools_update", os.path.join(self.tools_setup.app_vars.apps_dir, "PyAniToolsUpdate.exe")
@@ -500,7 +469,7 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         # gui vars
         self.ani_vars = pyani.core.anivars.AniVars()
         self.install_list = ["Creating Directories", "Copying Application Data", "Copying Packages", "Installing Apps",
-                             "Install Complete"]
+                             "Installing Maya Plugins", "Install Complete"]
 
         self.progress_label = QtWidgets.QLabel("Starting Install")
         self.progress = QtWidgets.QProgressBar(self)
@@ -605,9 +574,27 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         # if its a list its the success log, otherwise its an error
         if isinstance(log, list):
             self.log.extend(log)
-            install_successful = True
         else:
             self.log.append(log)
+
+        # run maya plugins install
+        self.progress_label.setText("Adding Maya Tools  ")
+        self.progress.setValue(90)
+        # run this here, because we need the app data installed first. plugin data is in app_data/shared/app_list.json
+        error = self.maya_plugins.build_plugin_data()
+        if error:
+            self.log.append(error)
+        else:
+            errors = self.maya_plugins.download_plugins(self.maya_plugins.get_plugins())
+            if errors:
+                self.log.extend(errors)
+            else:
+                install_successful = True
+                plugins_list = self.maya_plugins.get_plugins()
+                if isinstance(plugins_list, list):
+                    plugins_list = ','.join(plugins_list)
+                logging.info("Installed maya plugins: {0}".format(plugins_list))
+                self.log.append("Installed Maya plugins.")
 
         # update install_apps date
         if install_successful:
@@ -632,7 +619,7 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         """
         # number of install_apps steps is the installation of files plus 2
         # (update seq shot list, download zip)
-        progress_steps = 100.0 / float(len(self.install_list)+2)
+        progress_steps = 100.0 / float(len(self.install_list) + 2)
 
         # set the directory the exe file is in
         path = pyani.core.util.get_script_dir()
@@ -691,7 +678,27 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         else:
             logging.info("Sequence update ran with success")
 
-        # see if we have any errors so far, if not, close app, otherwise show
+        # run maya plugins install
+        self.progress_label.setText("Updating Maya Plugins To Latest")
+        self.progress.setValue(90)
+        self.maya_plugins.build_plugin_data()
+        # move current version to restore folder before downloading
+        for plugin in self.maya_plugins.get_plugins():
+            error = self.maya_plugins.create_restore_point(plugin)
+            if error:
+                logger.error(error)
+                self.log.append(error)
+                self.log.append("Could not create restore point for plugin {0}. Update continued but you will not "
+                                "be able to revert the plugin version.".format(plugin))
+
+        errors = self.maya_plugins.download_plugins(self.maya_plugins.get_plugins())
+        if errors:
+            self.log.extend(errors)
+        else:
+            logging.info("Maya plugins update ran with success")
+            success_log.append("Maya plugins are at the latest versions")
+
+        # show errors or success message
         if not self.log:
             logging.info("-----------> Completed Update.")
             # show what was successfully installed

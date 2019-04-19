@@ -15,7 +15,7 @@ class AppVars:
         self.ani_vars = pyani.core.anivars.AniVars()
         # the directory where the unzipped files are for installation
         self.tools_package = "PyAniToolsPackage.zip"
-        # to debug, unzip to downloads folder and set this to "C:\\Users\\Patrick\\Downloads\\PyANiToolsPackage"
+        # to debug, unzip to downloads folder and set this to "C:\\Users\\Patrick\\Downloads\\PyAniToolsPackage"
         self.setup_dir = ""
         self.setup_app_data_path = os.path.join(self.setup_dir, "PyAniTools\\app_data")
         self.setup_packages_path = os.path.join(self.setup_dir, "PyAniTools\\packages")
@@ -27,6 +27,7 @@ class AppVars:
         self.app_data_dir = self.tools_dir + "\\app_data"
         self.packages_dir = self.tools_dir + "\\packages"
         self.apps_dir = self.tools_dir + "\\installed"
+        self.tools_list = self.app_data_dir + "\\Shared\\app_list.json"
         self.setup_exe = "PyAniToolsSetup.exe"
         self.update_exe = "PyAniToolsUpdate.exe"
         self.update_path = os.path.join(self.apps_dir, self.update_exe)
@@ -46,13 +47,21 @@ class AppVars:
         # path to .nuke/init.py
         self.nuke_init_file_path = os.path.join(self.ani_vars.nuke_user_dir, "init.py")
 
-        # cgt paths
-        # TODO : remove ->
-        self._cgt_download_path = "Z:\\LongGong\\common\\tools"
+        # maya plugins
+        self.maya_plugins_local = os.path.join(homepath, "Documents\\maya\\plug-ins")
+        self.maya_plugins_server = "Z:\\LongGong\\tools\\maya\\scripts"
+        # json file name to find the plugin version, this file will be in the plugins directory
+        self.maya_plugins_vers_json_name = "plugin_version.json"
+        self.maya_plugins_restore_dir = "restore"
 
+        # cgt paths
         self.cgt_tools_online_path = "/LongGong/tools/"
         self.download_path_cgt = os.path.join(os.path.normpath(tempfile.gettempdir()), "CGT")
         self.cgt_path_pyanitools = os.path.join(self.cgt_tools_online_path, self.tools_package)
+        self.cgt_bridge_api_path = os.path.normpath("C:\PyAniTools\lib\cgt")
+        self.cgt_user = "Patrick"
+        self.cgt_pass = "longgong19"
+        self.cgt_ip = "172.18.100.246"
 
         # download vars
         self.client_install_data_json = os.path.join(self.app_data_dir, "Shared\\install_data.json")

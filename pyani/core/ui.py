@@ -79,7 +79,7 @@ class BarGraph(pg.GraphicsView):
 
     """
     # signal emitted when graph requires an update
-    graph_update_signal = pyqtSignal(QtCore.QString)
+    graph_update_signal = pyqtSignal(object)
 
     def __init__(
             self,
@@ -745,7 +745,6 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         """Launch default browser and load application doc page
         """
         link = QtCore.QUrl(self.app_manager.app_doc_page)
-
         QtGui.QDesktopServices.openUrl(link)
 
     def _build_ui(self):
@@ -898,7 +897,7 @@ class QtMsgWindow(QtWidgets.QMessageBox):
     def __init__(self, main_win):
         super(QtMsgWindow, self).__init__()
         # create the window and tell it to parent to the main window
-        self.msg_box = QtWidgets.QMessageBox(main_win)
+        self.msg_box = QtWidgets.QMessageBox(parent=main_win)
 
     def hide(self):
         """Hide the msg box
@@ -1356,12 +1355,14 @@ class TabContentWidget(QtWidgets.QWidget):
         - name : name of the tab, shows at top of tab
         - layout : the content of the tab, pass the layout containing all the widgets
     """
-    def __init__(self, layout=None, default_name="New"):
+    def __init__(self, layout=None, name=""):
         super(TabContentWidget, self).__init__()
         # name is shown in the tab, at the top
-        self.name = default_name
+        self.name = name
         if layout:
             self.setLayout(layout)
+        else:
+            self.setLayout(QtWidgets.QVBoxLayout())
 
     @property
     def name(self):
@@ -1375,12 +1376,16 @@ class TabContentWidget(QtWidgets.QWidget):
         """
         self.__name = name
 
-    def update_content(self, layout):
+    def update_content(self, new_layout):
         """
         Updates the tab content
-        :param layout: a pyqt layout object containing the content/widgets
+        :param new_layout: a pyqt layout object containing the content/widgets
         """
-        self.setLayout(layout)
+        # to change the layout we need to temporarily assign the current layout or get an error, QT will then delete
+        # the widget with our current layout since its scope is this function. Then we assign the new layout.
+        current_layout = self.layout()
+        QtWidgets.QWidget().setLayout(current_layout)
+        self.setLayout(new_layout)
 
 
 class TabBarWidget(QtWidgets.QTabBar):
@@ -1461,16 +1466,22 @@ class TabsWidget(QtWidgets.QTabWidget):
     Takes:
     :param dynamic_tab_bar: defaults to False, when True displays a plus button to the right of the tab(s) to create
     more tabs
+    :param tab_name: name of the first tab, defaults to blank
+    :param tabs_can_close: whether tabs can be closed, defaults to True
     """
 
-    def __init__(self, dynamic_tab_bar=False):
+    tab_created_signal = pyqtSignal(object)
+
+    def __init__(self, dynamic_tab_bar=False, tab_name="", tabs_can_close=True):
         super(TabsWidget, self).__init__()
 
-        self.setMinimumSize(800,400)
+        self.setMinimumSize(800, 400)
 
         # set tabs properties
         #
         self.setMovable(True)
+        self.tabs_can_close = tabs_can_close
+
         # Tab Bar - allows you to create tabs by pressing a button. enable by passing dynamic_tab_bar = True.
         # otherwise user can't create tabs
         self.is_dynamic_tab_bar = dynamic_tab_bar
@@ -1479,7 +1490,7 @@ class TabsWidget(QtWidgets.QTabWidget):
             self.setTabBar(self.tab)
 
         # create the initial tab
-        self.add_tab()
+        self.add_tab(tab_name)
         self.create_layout()
         self.set_slots()
 
@@ -1507,32 +1518,50 @@ class TabsWidget(QtWidgets.QTabWidget):
         TestWidget. Notice no parenthesis are used, this is not an instance but the type
         :return: True if passed the data, false if not
         """
-        # number of widgets in the layout
-        index = self.currentWidget().layout().count()
-        while index >= 0:
-            # get the current widget, use itemAt, which can then call widget() to get the widget
-            current_layout_item = self.currentWidget().layout().itemAt(index)
-            if current_layout_item:
-                current_widget = current_layout_item.widget()
-                if isinstance(current_widget, custom_widget):
-                    current_widget.drag_and_drop(dropped_data)
-                    return True
-            index -= 1
-        return False
+        current_widget = self._find_widget(custom_widget)
+        if current_widget:
+            current_widget.drag_and_drop(dropped_data)
+            return True
+        else:
+            return False
 
-    def add_tab(self, layout=None):
+    def key_input(self, key, custom_widget):
+        """
+        Adds key input support for tabs containing custom widgets. This just checks the layout for the class type
+        of the custom widget, and if found, sends it the key.
+
+        ****** NOTE ******
+        The custom widget must implement a method named key_input that takes a parameter that will be the key that
+        the user pressed
+
+        :param key: the key pressed by the user as a Pyqt key binding (ex: QtCore.Qt.Key_I)
+        :param custom_widget: a class type, for example if I have: class TestWidget(QtWidgets.QWidget), i would pass
+        TestWidget. Notice no parenthesis are used, this is not an instance but the type
+        :return: True if passed the key, false if not
+        """
+        current_widget = self._find_widget(custom_widget)
+        if current_widget:
+            current_widget.key_input(key)
+            return True
+        else:
+            return False
+
+    def add_tab(self, tab_name="", layout=None):
         """
         Adds a tab page.
+        :param tab_name: the name to show at the top of the tab page
         :param layout: the layout for the tab page containing the content
         """
-        if self.count() > 0:
+        if self.count() > 0 and self.tabs_can_close:
             self.setTabsClosable(True)
         else:
             self.setTabsClosable(False)
 
         # this is the tab content page. Holds whatever content/widgets that are part of the layout passed in.
-        widget = TabContentWidget(layout=layout)
+        widget = TabContentWidget(name=tab_name, layout=layout)
         self.addTab(widget, widget.name)
+        # lets main window know a tab was created and passes the tab index, always the last one
+        self.tab_created_signal.emit(self.count() - 1)
 
     def removeTab(self, p_int):
         """
@@ -1540,10 +1569,17 @@ class TabsWidget(QtWidgets.QTabWidget):
         :param p_int: the tab number (can get with self.currentIndex())
         """
         super(TabsWidget, self).removeTab(p_int)
-        if self.count() > 1:
+        if self.count() > 1 and self.tabs_can_close:
             self.setTabsClosable(True)
         else:
             self.setTabsClosable(False)
+
+    def update_tab_name(self, name):
+        """
+        Updates the active tab's name
+        :param name: name as a string
+        """
+        self.setTabText(self.currentIndex(), name)
 
     def update_tab(self, layout):
         """
@@ -1551,6 +1587,24 @@ class TabsWidget(QtWidgets.QTabWidget):
         :param layout: the new layout containing the new content/widgets
         """
         self.currentWidget().update_content(layout)
+
+    def _find_widget(self, widget):
+        """
+        Finds the widget in the layout
+        :param widget: a widget class
+        :return: the widget if found, otherwise None
+        """
+        # number of widgets in the layout
+        index = self.currentWidget().layout().count()
+        while index >= 0:
+            # get the current widget, use itemAt, which can then call widget() to get the widget
+            current_layout_item = self.currentWidget().layout().itemAt(index)
+            if current_layout_item:
+                current_widget = current_layout_item.widget()
+                if isinstance(current_widget, widget):
+                    return current_widget
+            index -= 1
+        return None
 
 
 def build_checkbox(label, state, directions):
@@ -1588,7 +1642,8 @@ def clear_layout(layout):
     for i in range() loop. One option is to reverse loop, but a while is more straightforward
     :param layout: the layout
     """
-    while layout.count():
-        child = layout.takeAt(0)
-        if child.widget():
-            child.widget().deleteLater()
+    if layout:
+        while layout.count():
+            child = layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()

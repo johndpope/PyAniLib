@@ -306,6 +306,24 @@ def move_file(src, dest):
         return error_msg
 
 
+def move_files(src, dest):
+    """
+    moves files from src to dest (ie copies to new path and deletes from old path).
+    :param src: source dir or list of files
+    :param dest: destination directory
+    :except IOError, OSError: returns the file src and dest and error
+    :return: None if no errors, otherwise return error as string
+    """
+    try:
+        for file_path in src:
+            shutil.move(file_path, dest)
+        return None
+    except (IOError, OSError) as e:
+        error_msg = "Could not move {0} to {1}. Received error {2}".format(file_path, dest, e)
+        logger.error(error_msg)
+        return error_msg
+
+
 def delete_file(file_path):
     """
     Deletes file
@@ -533,6 +551,46 @@ def launch_app(app, args, open_shell=False, wait_to_complete=False, open_as_new_
         logger.error(error_msg)
         return error_msg
     return None
+
+
+def call_ext_py_api(command, interpreter=None):
+    """
+    Run a python script
+    :param command: External python file to run with any arguments, leave off python interpreter,
+    ie just script.py arguments, not python.exe script.py arguments. Must be a list:
+    ["script.py", "arg1", ...., "arg n"]
+    :param interpreter: the python interpreter, i.e. the full path to pyhton.exe.
+    if none defaults to cg teamworks python exe
+    :return: the output from the script and any errors encountered. If no output returns None and if no
+    errors returns None
+    """
+    if not interpreter:
+        interpreter = os.path.normpath("C:\cgteamwork\python\python.exe")
+
+    if not isinstance(command, list):
+        # no output, but an error
+        return None, "Invalid command format. Should be a list."
+    py_command = [interpreter]
+    py_command.extend(command)
+    logger.info("Command is: {0}".format(' '.join(py_command)))
+    p = subprocess.Popen(py_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, error = p.communicate()
+    if p.returncode != 0:
+        error = "Problem executing command {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
+            command,
+            p.returncode,
+            output,
+            error
+        )
+        logger.error(error)
+        # no output, but an error
+        return None, error
+    # look for None or an empty string or a callback
+    if "None" not in output and not "".join(output.split()) == "":
+        # output but no errors
+        return output, None
+    # no output and no errors
+    return None, None
 
 
 def get_script_dir(follow_symlinks=True):

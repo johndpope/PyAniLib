@@ -6,6 +6,7 @@ import logging
 import pyani.core.ui
 import pyani.core.anivars
 import pyani.core.appvars
+import pyani.core.mayapluginsmngr
 from pyani.core.toolsinstall import AniToolsSetup
 
 # set the environment variable to use a specific wrapper
@@ -336,6 +337,9 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         # save the setup class for error logging to use later
         self.error_logging = error_logging
 
+        # tabs class object
+        self.tabs = pyani.core.ui.TabsWidget(tab_name="PyAniTools", tabs_can_close=False)
+
         self.task_scheduler = pyani.core.util.WinTaskScheduler(
             "pyanitools_update",
             os.path.join(self.app_mngr.tools_install_dir, "PyAniToolsUpdate.exe")
@@ -344,28 +348,14 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         # app vars
         self.app_vars = pyani.core.appvars.AppVars()
 
-        # list of apps
-        app_list_json_path = "C:\\PyAniTools\\app_data\\Shared\\app_list.json"
-        self.app_names = pyani.core.util.load_json(app_list_json_path)
-        # list of app managers for each app
-        self.app_mngrs = []
-        if not isinstance(self.app_names, list):
-            error = "Critical error loading list of applications from {0}".format(app_list_json_path)
-            logger.error(error)
-            self.msg_win.show_error_msg("Critical Error", error)
-        else:
-            for name in self.app_names:
-                app_mngr = AniAppMngr(name)
-                if app_mngr.log:
-                    self.msg_win.show_warning_msg(
-                        "Warning",
-                        "Could not correctly load data for {0}. This application will not be available to update"
-                        "until the error is resolved. Error is {1}".format(name, ", ".join(app_mngr.log))
-                    )
-                else:
-                    self.app_mngrs.append(AniAppMngr(name))
+        # path to json file containing list of py ani tool apps and maya plugins
+        tools_list_json_path = self.app_vars.tools_list
 
-        # main ui elements - styling set in the create ui functions
+        # INIT FOR PYANITOOLS
+        # ---------------------------------------------------------------------
+        # list of apps and app mngrs
+        self.app_mngrs = self._create_app_mngrs(tools_list_json_path)
+        # main ui elements for pyanitools - styling set in the create ui functions
         self.btn_update = QtWidgets.QPushButton("Update App")
         self.btn_install = QtWidgets.QPushButton("Install / Update App(s)")
         self.btn_launch = QtWidgets.QPushButton("Launch App(s)")
@@ -379,10 +369,132 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         # tree app version information
         self.app_tree = pyani.core.ui.CheckboxTreeWidget(self._format_app_info(), 3)
 
+        # INIT FOR MAYA PLUGINS
+        # ---------------------------------------------------------------------
+        # list of maya plugins
+        self.maya_plugins = pyani.core.mayapluginsmngr.AniMayaPlugins()
+        self.maya_plugins.build_plugin_data()
+
         self.create_layout()
         self.set_slots()
 
     def create_layout(self):
+
+        self.main_layout.addWidget(self.tabs)
+
+        pyanitools_layout = self.create_layout_pyanitools()
+        self.tabs.update_tab(pyanitools_layout)
+
+        maya_plugins_layout = self.create_layout_and_slots_maya_plugins()
+        self.tabs.add_tab("Maya Plugins", layout=maya_plugins_layout)
+
+        self.add_layout_to_win()
+
+    def create_layout_and_slots_maya_plugins(self):
+        """
+        Create the layout for the maya plugins. Lets user know if plugin not found or version not found via ui.
+        :return: a pyqt layout object containing the maya plugins app management interface
+        """
+        maya_plugins_layout = QtWidgets.QVBoxLayout()
+
+        header_label = QtWidgets.QLabel("Plugins")
+        header_label.setFont(self.titles)
+        maya_plugins_layout.addWidget(header_label)
+        maya_plugins_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
+
+        # make the buttons and labels for each plugin
+        for plugin in sorted(self.maya_plugins.maya_plugin_data):
+            # common ui elements whether plugin exists locally or not
+            #
+            plugin_layout = QtWidgets.QHBoxLayout()
+            # add name of plugin - this is the user friendly display name
+            name_label = QtWidgets.QLabel(plugin)
+            plugin_layout.addWidget(name_label)
+            # space between name and vers or missing plugin label
+            plugin_layout.addItem(QtWidgets.QSpacerItem(50, 0))
+            # download plugin button
+            maya_plugins_dl_btn = pyani.core.ui.ImageButton(
+                "images\download_off.png",
+                "images\download_on.png",
+                "images\download_off.png",
+                size=(32, 32)
+            )
+            maya_plugins_dl_btn.setObjectName(
+                "dl_{0}".format(self.maya_plugins.maya_plugin_data[plugin]["name"]))
+            maya_plugins_dl_btn.clicked.connect(self.maya_plugins_download)
+            # get version_data
+            if self.maya_plugins.maya_plugin_data[plugin]["version data"]:
+                # first element is the latest version
+                version = self.maya_plugins.get_version(plugin, version="latest")
+            else:
+                version = "N/A"
+            vers_label = QtWidgets.QLabel(version)
+            plugin_layout.addWidget(vers_label)
+            # space between vers and buttons
+            plugin_layout.addItem(QtWidgets.QSpacerItem(150, 0))
+            plugin_layout.addWidget(maya_plugins_dl_btn)
+
+            # find where its located, local or server
+            loc = self.maya_plugins.get_plugin_location(plugin)
+
+            # check for existence
+            if not os.path.exists(os.path.join(loc, self.maya_plugins.maya_plugin_data[plugin]["name"])):
+                missing_label = QtWidgets.QLabel(
+                    "<font color={0}>( Plugin missing )</font>".format(pyani.core.ui.RED.name())
+                )
+                plugin_layout.addWidget(missing_label)
+
+            else:
+                maya_plugins_vers_btn = pyani.core.ui.ImageButton(
+                    "images\change_vers_off.png",
+                    "images\change_vers_on.png",
+                    "images\change_vers_off.png",
+                    size=(24, 24)
+                )
+                maya_plugins_vers_btn.setObjectName("vers_{0}".format(self.maya_plugins.maya_plugin_data[plugin]["name"]))
+                maya_plugins_vers_btn.clicked.connect(self.maya_plugins_change_version)
+
+                maya_plugins_notes_btn = pyani.core.ui.ImageButton(
+                    "images\\release_notes_off.png",
+                    "images\\release_notes_on.png",
+                    "images\\release_notes_off.png",
+                    size=(24, 24)
+                )
+                maya_plugins_notes_btn.setObjectName(
+                    "notes_{0}".format(self.maya_plugins.maya_plugin_data[plugin]["name"])
+                )
+                maya_plugins_notes_btn.clicked.connect(self.maya_plugins_view_release_notes)
+
+                maya_plugins_confluence_btn = pyani.core.ui.ImageButton(
+                    "images\\html_off.png",
+                    "images\\html_on.png",
+                    "images\\html_off.png",
+                    size=(24, 24)
+                )
+                maya_plugins_confluence_btn.setObjectName("confluence_{0}".format(
+                    self.maya_plugins.maya_plugin_data[plugin]["name"])
+                )
+                maya_plugins_confluence_btn.clicked.connect(self.maya_plugins_open_confluence_page)
+
+                plugin_layout.addWidget(maya_plugins_vers_btn)
+                plugin_layout.addWidget(maya_plugins_notes_btn)
+                plugin_layout.addWidget(maya_plugins_confluence_btn)
+
+            plugin_layout.addStretch(1)
+            maya_plugins_layout.addLayout(plugin_layout)
+            # space between rows of plugins
+            maya_plugins_layout.addItem(QtWidgets.QSpacerItem(0, 20))
+
+        maya_plugins_layout.addStretch(1)
+
+        return maya_plugins_layout
+
+    def create_layout_pyanitools(self):
+        """
+        Create the layout for the pyanitools
+        :return: a pyqt layout object containing the pyanitools app management interface
+        """
+        pyanitools_layout = QtWidgets.QVBoxLayout()
 
         # APP HEADER SETUP -----------------------------------
         # |    label    |   space    |     btn     |      btn       |     space    |
@@ -398,13 +510,13 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         self.btn_launch.setStyleSheet("background-color:{0};".format(pyani.core.ui.CYAN))
         g_layout_header.addWidget(self.btn_launch, 0, 3)
         g_layout_header.setColumnStretch(1, 2)
-        self.main_layout.addLayout(g_layout_header)
-        self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
+        pyanitools_layout.addLayout(g_layout_header)
+        pyanitools_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
 
         # APPS TREE  -----------------------------------
-        self.main_layout.addWidget(self.app_tree)
+        pyanitools_layout.addWidget(self.app_tree)
 
-        self.main_layout.addItem(self.v_spacer)
+        pyanitools_layout.addItem(self.v_spacer)
 
         # MANUAL DOWNLOAD OPTIONS
         g_layout_options = QtWidgets.QGridLayout()
@@ -420,8 +532,8 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         self.btn_clean_install.setMinimumSize(175, 30)
         g_layout_options.addItem(self.empty_space, 0, 4)
         g_layout_options.setColumnStretch(1, 2)
-        self.main_layout.addLayout(g_layout_options)
-        self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
+        pyanitools_layout.addLayout(g_layout_options)
+        pyanitools_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
         # set initial state of auto download based reset whether
         state = self.task_scheduler.is_task_enabled()
         if not isinstance(state, bool):
@@ -441,11 +553,10 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         h_options_layout.addWidget(self.auto_dl_label)
         h_options_layout.addWidget(self.menu_toggle_auto_dl)
         h_options_layout.addStretch(1)
-        self.main_layout.addLayout(h_options_layout)
-        self.main_layout.addItem(self.v_spacer)
+        pyanitools_layout.addLayout(h_options_layout)
+        pyanitools_layout.addItem(self.v_spacer)
 
-        # set main windows layout as the stacked layout
-        self.add_layout_to_win()
+        return pyanitools_layout
 
     def set_slots(self):
         """Create the slots/actions that UI buttons / etc... do
@@ -455,6 +566,122 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         self.menu_toggle_auto_dl.currentIndexChanged.connect(self.update_auto_dl_state)
         self.btn_manual_update.clicked.connect(self.update_core_files)
         self.btn_clean_install.clicked.connect(self.reinstall)
+
+    def maya_plugins_download(self):
+        """
+        Downloads the plugin based off the button pressed
+        """
+        # get the buttons' name
+        btn_pressed = self.sender().objectName()
+        # find which plugin to revert
+        plugin = self.get_maya_plugin_from_button_press(btn_pressed)
+        if plugin:
+            # move current version to restore folder before downloading
+            error = self.maya_plugins.create_restore_point(plugin)
+            if error:
+                self.msg_win.show_error_msg("Restore Point Error", "Could not create restore point for plugin {0}."
+                                                                   "Error is {1}".format(plugin, error))
+            # get the latest version
+            errors = self.maya_plugins.download_plugins(plugin)
+            if errors:
+                logger.error("Could not download plugin {0} from CGT. Error is: {1}".format(plugin, ', '.join(errors)))
+                self.msg_win.show_error_msg("Download Error", "Could not download plugin {0} from CGT".format(plugin))
+            else:
+                self.msg_win.show_info_msg(
+                    "Plugin Downloaded", "Successfully downloaded the plugin: {0}".format(plugin)
+                )
+            # refresh version info in gui, a bit overkill to rebuild ui, but lightweight enough doesn't matter
+            # and don't need to keep track of each plugins ui elements to update
+            maya_plugins_layout = self.create_layout_and_slots_maya_plugins()
+            self.tabs.update_tab(maya_plugins_layout)
+        # couldn't find plugin
+        else:
+            logger.error("Could not find plugin for button {0} to download".format(btn_pressed))
+            self.msg_win.show_error_msg("Critical Error", "Could not find plugin, see log for details")
+
+    def maya_plugins_change_version(self):
+        """
+        changes to a previous version. currently just support rolling back to the previous version. if previous version
+        not found returns returns without doing any actions. Also returns without action if user declines the change.
+        If the files can't be removed, or restored also returns but displays message to user.
+        """
+        # get the buttons' name
+        btn_pressed = self.sender().objectName()
+        # find which plugin to revert
+        plugin = self.get_maya_plugin_from_button_press(btn_pressed)
+        if plugin:
+            if not self.maya_plugins.retore_path_exists(plugin):
+                self.msg_win.show_error_msg(
+                    "Critical Error", "No restore point found for {0}.".format(plugin)
+                )
+                return
+            release_notes = self.maya_plugins.get_release_notes(plugin, version="1")
+            version = self.maya_plugins.get_version(plugin, version="1")
+            response = self.msg_win.show_question_msg(
+                "Version Change", "You are about to change versions to {0}. The release notes are: <br><br>{1}"
+                                  "<br>Click yes to continue."
+                                  .format(version, release_notes)
+            )
+            if response:
+                error = self.maya_plugins.change_version(plugin)
+                if error:
+                    self.msg_win.show_error_msg(
+                        "Critical Error", "Could not revert plugin to version {0}. Plugin may not function. Please "
+                                          "re-download the latest version. Error is: {1}".format(version, error)
+                    )
+                    return
+                # refresh version info in gui, a bit overkill to rebuild ui, but lightweight enough doesn't matter
+                # and don't need to keep track of each plugins ui elements to update
+                maya_plugins_layout = self.create_layout_and_slots_maya_plugins()
+                self.tabs.update_tab(maya_plugins_layout)
+            # user canceled version change
+            else:
+                return
+        # couldn't find plugin
+        else:
+            logger.error("Could not find plugin for button {0} to change version".format(btn_pressed))
+            self.msg_win.show_error_msg("Critical Error", "Could not find plugin, see log for details")
+
+    def get_maya_plugin_from_button_press(self, btn_pressed):
+        """
+        gets the plugin based off the button pressed
+        :param btn_pressed: the name of the button set via setObjectName when created
+        :return: the name of the plugin for that button, or None if can't be found
+        """
+        # find which plugin to revert
+        for plugin in self.maya_plugins.maya_plugin_data:
+            # find the plugin clicked
+            if self.maya_plugins.maya_plugin_data[plugin]["name"] in btn_pressed:
+                return plugin
+        return None
+
+    def maya_plugins_view_release_notes(self):
+        # get the buttons' name
+        btn_pressed = self.sender().objectName()
+        # find which plugin to revert
+        plugin = self.get_maya_plugin_from_button_press(btn_pressed)
+        if plugin:
+            release_notes = self.maya_plugins.get_release_notes(plugin)
+            # show release notes for prior version
+            self.msg_win.show_info_msg(
+                "Version Notes", "<b>Release Notes:</b><br><br> {0}".format(release_notes)
+            )
+        # couldn't find plugin
+        else:
+            logger.error("Could not find plugin for button {0} to view release notes".format(btn_pressed))
+            self.msg_win.show_error_msg("Critical Error", "Could not find plugin, see log for details")
+
+    def maya_plugins_open_confluence_page(self):
+        # get the buttons' name
+        btn_pressed = self.sender().objectName()
+        # find which plugin to revert
+        plugin = self.get_maya_plugin_from_button_press(btn_pressed)
+        if plugin:
+            self.maya_plugins.open_confluence_page(plugin)
+        # couldn't find plugin
+        else:
+            logger.error("Could not find plugin for button {0} to open confluence page".format(btn_pressed))
+            self.msg_win.show_error_msg("Critical Error", "Could not find plugin, see log for details")
 
     def update_auto_dl_state(self):
         """
@@ -707,6 +934,33 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                 continue
         if error_log:
             self.msg_win.show_error_msg("App Launch Error", (', '.join(error_log)))
+
+    def _create_app_mngrs(self, tools_list_json_path):
+        """
+        Creates the app managers for all py ani tool apps and makes a list of the app names
+        :param: the path to the json file that contains the lists of pyanitool apps
+        :return: a list of the app names, and a list of the app mngrs
+        """
+        # list of apps
+        app_names = pyani.core.util.load_json(tools_list_json_path)["pyanitools"]
+        # list of app managers for each app
+        app_mngrs = []
+        if not isinstance(app_names, list):
+            error = "Critical error loading list of applications from {0}".format(tools_list_json_path)
+            logger.error(error)
+            self.msg_win.show_error_msg("Critical Error", error)
+        else:
+            for name in app_names:
+                app_mngr = AniAppMngr(name)
+                if app_mngr.log:
+                    self.msg_win.show_warning_msg(
+                        "Warning",
+                        "Could not correctly load data for {0}. This application will not be available to update"
+                        "until the error is resolved. Error is {1}".format(name, ", ".join(app_mngr.log))
+                    )
+                else:
+                    app_mngrs.append(AniAppMngr(name))
+        return app_mngrs
 
     def _get_selection(self):
         """

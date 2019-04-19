@@ -479,10 +479,9 @@ class AniImageSeqPlaybackController(QtWidgets.QWidget):
             else:
                 self.__timer.stop()
 
-
-class AniExrViewerWidget(QtWidgets.QWidget):
+class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
     """
-    Widget to hold the exr viewer/player, allows multiple instances in gui.  Provides:
+    Class for a gui that displays exrs. Provides:
         - layer/channel viewing
         - drag and drop for file load
         - zoom in and out - preserves zoom level when switching exr layers, resets when load new image
@@ -491,15 +490,33 @@ class AniExrViewerWidget(QtWidgets.QWidget):
             - left and right arrow keys navigate exr layers
             - 'r' resets zoom level
             - 'i' toggles exr metadata window open and close
+    :param error_logging : error log (pyani.core.error_logging.ErrorLogging object) from trying
+    to create logging in main program
     """
 
     # the pyqt signal used to communicate with the viewer class object AniImageViewer when its in a thread
     imageChanged = pyqtSignal(QtGui.QPixmap)
 
-    def __init__(self):
-        super(AniExrViewerWidget, self).__init__()
-        # pop-up windows
-        self.msg_win = pyani.core.ui.QtMsgWindow(self)
+    def __init__(self, error_logging):
+        self.app_name = "PyExrViewer"
+        self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
+        # pass win title, icon path, app manager, width and height
+        super(AniExrViewerGui, self).__init__(
+            "Py Exr Viewer",
+            "images\pyexrviewer.ico",
+            self.app_mngr,
+            1920,
+            1000,
+            error_logging
+        )
+        # check if logging was setup correctly in main()
+        if error_logging.error_log_list:
+            errors = ', '.join(error_logging.error_log_list)
+            self.msg_win.show_warning_msg(
+                "Error Log Warning",
+                "Error logging could not be setup because {0}. You can continue, however "
+                "errors will not be logged.".format(errors)
+            )
 
         # exr object for single image
         self.exr_image = None
@@ -560,19 +577,13 @@ class AniExrViewerWidget(QtWidgets.QWidget):
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
 
-        self.top_layout = QtWidgets.QVBoxLayout()
+        # set to allow drag and drop
+        self.setAcceptDrops(True)
 
-        # set font size and style for title labels
-        self.titles = QtGui.QFont()
-        self.titles.setPointSize(14)
-        self.titles.setBold(True)
-        self.bold_font = QtGui.QFont()
-        self.bold_font.setBold(True)
-        # spacer to use between sections
-        self.v_spacer = QtWidgets.QSpacerItem(0, 35)
-        self.empty_space = QtWidgets.QSpacerItem(1, 1)
-        self.horizontal_spacer = QtWidgets.QSpacerItem(50, 0)
-        self.title_vert_spacer = QtWidgets.QSpacerItem(0, 15)
+        # keyboard shortcuts
+        self.set_keyboard_shortcuts()
+
+        self.tabs = pyani.core.ui.TabsWidget(dynamic_tab_bar=True)
 
         self.create_layout()
         self.set_slots()
@@ -580,6 +591,7 @@ class AniExrViewerWidget(QtWidgets.QWidget):
     def create_layout(self):
         """Creates all the widgets used by the UI and build layout
         """
+
         # HEADER
         # |    label    | file path --|-->       |     btn     |      space       |
         g_layout_header = QtWidgets.QGridLayout()
@@ -593,8 +605,8 @@ class AniExrViewerWidget(QtWidgets.QWidget):
         g_layout_header.addItem(self.empty_space, 0, 3)
         g_layout_header.setColumnStretch(1, 2)
         g_layout_header.setColumnStretch(3, 2)
-        self.top_layout.addLayout(g_layout_header)
-        self.top_layout.addItem(self.v_spacer)
+        self.main_layout.addLayout(g_layout_header)
+        self.main_layout.addItem(self.v_spacer)
         # OPTIONS
         # |  channel list  |   space   |   prev    |   next   |   space  |  exr info  |  space  | zoom | space  |
         g_layout_options = QtWidgets.QGridLayout()
@@ -633,14 +645,15 @@ class AniExrViewerWidget(QtWidgets.QWidget):
         g_layout_options.setColumnStretch(8, 2)
         g_layout_options.setColumnStretch(11, 2)
         g_layout_options.setColumnStretch(16, 4)
-        self.top_layout.addLayout(g_layout_options)
-        self.top_layout.addItem(self.v_spacer)
+        self.main_layout.addLayout(g_layout_options)
+        self.main_layout.addItem(self.v_spacer)
 
         # IMAGE
         self.viewer.setAlignment(QtCore.Qt.AlignCenter)
-        self.top_layout.addWidget(self.viewer)
-        self.top_layout.addWidget(self.playback_controller)
-        self.setLayout(self.top_layout)
+        self.main_layout.addWidget(self.viewer)
+        self.main_layout.addWidget(self.playback_controller)
+        # add the layout to the main app widget
+        self.add_layout_to_win()
 
     def set_slots(self):
         """Create the slots/actions that UI buttons / etc... do
@@ -654,26 +667,27 @@ class AniExrViewerWidget(QtWidgets.QWidget):
         self.btn_image_select.clicked.connect(self.open_file_browser)
         self.imageChanged.connect(self.viewer.set_image)
 
-    def drag_and_drop(self, file_names):
+    def set_keyboard_shortcuts(self):
+        """Set keyboard shortcuts for app
         """
-        Process drag and drop from main window
-        :param file_names: a list of file paths to images
-        """
-        self.load(file_names)
+        next_img_shortcut = QtWidgets.QShortcut(self)
+        next_img_shortcut.setKey(QtCore.Qt.Key_Right)
+        self.main_win.connect(next_img_shortcut, QtCore.SIGNAL("activated()"), self.next_layer_in_menu)
+        prev_img_shortcut = QtWidgets.QShortcut(self)
+        prev_img_shortcut.setKey(QtCore.Qt.Key_Left)
+        self.main_win.connect(prev_img_shortcut, QtCore.SIGNAL("activated()"), self.prev_layer_in_menu)
+        metadata_shortcut = QtWidgets.QShortcut(self)
+        metadata_shortcut.setKey(QtCore.Qt.Key_I)
+        self.main_win.connect(metadata_shortcut, QtCore.SIGNAL("activated()"), self.display_header_info)
 
-    def key_input(self, key):
+    def dropEvent(self, e):
         """
-        Process key input from main window
-        :param key: a Qt key binding
+        called when the drop is completed when dragging and dropping,
+        calls wrapper which gets mime data and calls self.load passing mime data to it
+        generic use lets other windows use drag and drop with whatever function they need
+        :param e: event mime data
         """
-        if key == QtCore.Qt.Key_Right:
-            self.next_layer_in_menu()
-        elif key == QtCore.Qt.Key_Left:
-            self.prev_layer_in_menu()
-        elif key == QtCore.Qt.Key_I:
-            self.display_header_info()
-        else:
-            pass
+        self.drop_event_wrapper(e, self.load)
 
     def reset(self):
         """Resets these ui elements when a new image is loaded:
@@ -722,17 +736,17 @@ class AniExrViewerWidget(QtWidgets.QWidget):
             button_color = (175, 175, 175, 255)
             font_color = "#ffffff"
             formatted_metadata = """
-             <head>
-                 <title>Metadata</title>
-                 <style>
-                 </style>
-             </head>
-             <body>
-                 <table width="100%" cellspacing="{0}" >
-                     <tr>
-                         <td><font size="5" color="#ffffff"><b>Exr Metadata:</b></font></td>
-                     </tr>
-             """.format(cell_spacing)
+            <head>
+                <title>Metadata</title>
+                <style>
+                </style>
+            </head>
+            <body>
+                <table width="100%" cellspacing="{0}" >
+                    <tr>
+                        <td><font size="5" color="#ffffff"><b>Exr Metadata:</b></font></td>
+                    </tr>
+            """.format(cell_spacing)
 
             # get header metatdata and format it as html
             try:
@@ -753,13 +767,13 @@ class AniExrViewerWidget(QtWidgets.QWidget):
                     final_metadata.extend(arnold_metadata)
                     for metadata in final_metadata:
                         formatted_metadata += """
-                                     <tr>
-                                         <td><font size={0} color="{3}">{1}</font></td>
-                                         <td><font size={0} color={3}>{2}</font></td>
-                                     </tr>
-                                     """.format(font_size, metadata[0], metadata[1], font_color)
+                                    <tr>
+                                        <td><font size={0} color="{3}">{1}</font></td>
+                                        <td><font size={0} color={3}>{2}</font></td>
+                                    </tr>
+                                    """.format(font_size, metadata[0], metadata[1], font_color)
                     formatted_metadata += "</table></body>"
-                    self.metadata_popup_win = pyani.core.ui.TranslucentWidget(self)
+                    self.metadata_popup_win = pyani.core.ui.TranslucentWidget(self.main_win)
                     self.metadata_popup_win.set_win_size(800, 600)
                     self.metadata_popup_win.set_colors(fill_color, border_color, button_color)
                     self.metadata_popup_win.move(0, 0)
@@ -1052,7 +1066,7 @@ class AniExrViewerWidget(QtWidgets.QWidget):
         self.playback_controller.play()
 
         # set focus to image
-        self.setFocus()
+        self.main_win.setFocus()
 
     def _load_exr_layers(self):
         """
@@ -1078,7 +1092,7 @@ class AniExrViewerWidget(QtWidgets.QWidget):
         # show the rgb of the image, pass True to tell it to reset view to fit image
         self.display_layer(True)
         # set focus to image
-        self.setFocus()
+        self.main_win.setFocus()
 
     def _build_layer_menu(self):
         """Populates the layer menu with the exr layers
@@ -1114,120 +1128,3 @@ class AniExrViewerWidget(QtWidgets.QWidget):
             error = "Problem converting PIL Image object to a pixmap. Error is {0}".format(e)
             logging.exception(error)
             return error
-
-
-class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
-    """
-    Class for a gui that displays exrs both single image and sequences.
-    Allows multiple tabs each with their own exr viewer. Each exr viewer provides:
-        - layer/channel viewing
-        - drag and drop for file load
-        - zoom in and out - preserves zoom level when switching exr layers, resets when load new image
-        - exr header meta data display in custom pop up
-        - keyboard shortcuts:
-            - left and right arrow keys navigate exr layers
-            - 'r' resets zoom level
-            - 'i' toggles exr metadata window open and close
-    :param error_logging : error log (pyani.core.error_logging.ErrorLogging object) from trying
-    to create logging in main program
-    """
-
-    def __init__(self, error_logging):
-        self.app_name = "PyExrViewer"
-        self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
-        # pass win title, icon path, app manager, width and height
-        super(AniExrViewerGui, self).__init__(
-            "Py Exr Viewer",
-            "images\pyexrviewer.ico",
-            self.app_mngr,
-            width=1920,
-            height=1000,
-            has_tabs=True,
-            error_logging=error_logging
-        )
-        # check if logging was setup correctly in main()
-        if error_logging.error_log_list:
-            errors = ', '.join(error_logging.error_log_list)
-            self.msg_win.show_warning_msg(
-                "Error Log Warning",
-                "Error logging could not be setup because {0}. You can continue, however "
-                "errors will not be logged.".format(errors)
-            )
-
-        # set to allow drag and drop
-        self.setAcceptDrops(True)
-
-        # keyboard shortcuts
-        self.set_keyboard_shortcuts()
-
-        # create the tabs
-        self.tabs = pyani.core.ui.TabsWidget(dynamic_tab_bar=True, tab_name="Exr Viewer #1")
-
-        self.exr_viewers = []
-        self.exr_viewers.append(AniExrViewerWidget())
-
-        self.create_layout()
-        self.set_slots()
-
-    def create_layout(self):
-        """Creates all the widgets used by the UI and build layout
-        """
-        self.main_layout.addWidget(self.tabs)
-
-        layout1 = QtWidgets.QVBoxLayout()
-        layout1.addWidget(self.exr_viewers[0])
-        self.tabs.update_tab(layout1)
-
-        self.main_layout.addItem(self.v_spacer)
-        # add the layout to the main app widget
-        self.add_layout_to_win()
-
-    def set_slots(self):
-        """Create the slots/actions that UI buttons / etc... do
-        """
-        self.tabs.tab_created_signal.connect(self.add_exr_viewer)
-
-    def set_keyboard_shortcuts(self):
-        """Set keyboard shortcuts for app
-        """
-        next_img_shortcut = QtWidgets.QShortcut(self)
-        next_img_shortcut.setKey(QtCore.Qt.Key_Right)
-        self.main_win.connect(next_img_shortcut, QtCore.SIGNAL("activated()"), self.tabs_next_layer_in_menu)
-        prev_img_shortcut = QtWidgets.QShortcut(self)
-        prev_img_shortcut.setKey(QtCore.Qt.Key_Left)
-        self.main_win.connect(prev_img_shortcut, QtCore.SIGNAL("activated()"), self.tabs_prev_layer_in_menu)
-        metadata_shortcut = QtWidgets.QShortcut(self)
-        metadata_shortcut.setKey(QtCore.Qt.Key_I)
-        self.main_win.connect(metadata_shortcut, QtCore.SIGNAL("activated()"), self.tabs_display_header_info)
-
-    def add_exr_viewer(self, index):
-        self.exr_viewers.append(AniExrViewerWidget())
-        self.tabs.setCurrentIndex(index)
-        layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self.exr_viewers[-1])
-        self.tabs.update_tab(layout)
-        self.tabs.update_tab_name("Exr Viewer #{0}".format(str(index+1)))
-
-    def dropEvent(self, e):
-        """
-        called when the drop is completed when dragging and dropping,
-        calls wrapper which gets mime data and calls self.load passing mime data to it
-        generic use lets other windows use drag and drop with whatever function they need
-        :param e: event mime data
-        """
-        self.drop_event_wrapper(e, self.tabs_drag_and_drop)
-
-    def tabs_drag_and_drop(self, file_names):
-        # if the target is a pyqt object in a layout created, target that object directly because know it
-        # since it was created in this class object. If however its in a custom class object, that class must
-        # have a dropEvent function that handles the drag and drop
-        self.tabs.drag_and_drop(file_names, AniExrViewerWidget)
-
-    def tabs_next_layer_in_menu(self):
-        self.tabs.key_input(QtCore.Qt.Key_Right, AniExrViewerWidget)
-
-    def tabs_prev_layer_in_menu(self):
-        self.tabs.key_input(QtCore.Qt.Key_Left, AniExrViewerWidget)
-
-    def tabs_display_header_info(self):
-        self.tabs.key_input(QtCore.Qt.Key_I, AniExrViewerWidget)

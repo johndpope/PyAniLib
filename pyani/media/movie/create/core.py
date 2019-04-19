@@ -99,8 +99,6 @@ class AniShoot:
         if self.__seq_list:
             self.__seq_list = []
 
-        print image_path_list
-
         # process any image paths that are directories and get images
         images_from_directories_list = []
         for image_path in image_path_list:
@@ -321,7 +319,7 @@ class AniShoot:
             if error:
                 log += "Movie {0} had the following errors: {1}".format(movie_list[movie_number], error)
         if log:
-            logger.warning("Couldn't create the following movies: {0}".format(", ".join(log)))
+            logger.warning("Couldn't create the following movies: {0}".format(log))
 
         return log, movie_list
 
@@ -360,12 +358,23 @@ class AniShoot:
             quality = self.default_quality
             preset = "slower"
 
+        '''
+        Basically, .h264 needs even dimensions so this will (passed to the vf flag):
+
+        Divide the original height and width by 2
+        Round it up to the nearest pixel
+        Multiply it by 2 again, thus making it an even number
+        Add black padding pixels up to this number
+        To change pad color use :color=color_name, see https://ffmpeg.org/ffmpeg-filters.html#pad
+        '''
+        rescale = "pad=ceil(iw/2)*2:ceil(ih/2)*2"
+
         try:
             (
                 ffmpeg
                     .input(in_path, start_number=user_frame_start, apply_trc='iec61966_2_1')
                     .output(out_path, crf=quality, preset=preset, video_size=formatted_size, pix_fmt='yuv420p',
-                            tune='animation', format='mp4', acodec='aac')
+                            tune='animation', format='mp4', acodec='aac', vf=rescale)
                     .overwrite_output()
                     .run(cmd=self.movie_create_app)
             )
