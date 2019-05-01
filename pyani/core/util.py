@@ -12,6 +12,7 @@ import logging
 import Queue
 import threading
 import operator
+import math
 from functools import reduce # python 3 compatibility
 
 
@@ -811,3 +812,13 @@ def is_number(string_var):
         return False
     else:
         return True
+
+
+def number_of_digits(num):
+    """
+    Count the number of digits in a number using log, since len(str(num)) is much slower
+    :param num: a number
+    :return: the number of digits
+    """
+    # Uses string modulo instead of str(i)
+    return len("%i" % num)

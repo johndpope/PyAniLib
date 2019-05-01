@@ -348,6 +348,12 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         # app vars
         self.app_vars = pyani.core.appvars.AppVars()
 
+        # download monitor - we create here, and set slot to receive signal. When receive signal we process. When
+        # a plugin is ready to download pass this object to the maya plugins class object so it can set the cmd to
+        # execute and start the process. Then the event loop for QT will run here and call the slot function to process
+        # the output.
+        self.download_monitor = pyani.core.ui.CGTDownloadMonitor()
+
         # path to json file containing list of py ani tool apps and maya plugins
         tools_list_json_path = self.app_vars.tools_list
 
@@ -374,6 +380,13 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         # list of maya plugins
         self.maya_plugins = pyani.core.mayapluginsmngr.AniMayaPlugins()
         self.maya_plugins.build_plugin_data()
+        # store the current plugin that was clicked - gets set in the get plugin from button pressed method
+        self.active_plugin = None
+        # progress bar widgets
+        self.progress_bar = QtWidgets.QProgressBar(self)
+        self.progress_label = QtWidgets.QLabel("Checking for downloads...")
+        self.progress_bar.hide()
+        self.progress_label.hide()
 
         self.create_layout()
         self.set_slots()
@@ -397,9 +410,14 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         """
         maya_plugins_layout = QtWidgets.QVBoxLayout()
 
+        header_layout = QtWidgets.QHBoxLayout()
         header_label = QtWidgets.QLabel("Plugins")
         header_label.setFont(self.titles)
-        maya_plugins_layout.addWidget(header_label)
+        header_layout.addWidget(header_label)
+        header_layout.addStretch(1)
+        header_layout.addWidget(self.progress_bar)
+        header_layout.addWidget(self.progress_label)
+        maya_plugins_layout.addLayout(header_layout)
         maya_plugins_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
 
         # make the buttons and labels for each plugin
@@ -422,6 +440,7 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
             maya_plugins_dl_btn.setObjectName(
                 "dl_{0}".format(self.maya_plugins.maya_plugin_data[plugin]["name"]))
             maya_plugins_dl_btn.clicked.connect(self.maya_plugins_download)
+            maya_plugins_dl_btn.setToolTip("Download the latest version of the plugin.")
             # get version_data
             if self.maya_plugins.maya_plugin_data[plugin]["version data"]:
                 # first element is the latest version
@@ -445,6 +464,9 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                 plugin_layout.addWidget(missing_label)
 
             else:
+                '''
+                REMOVED : revert version functionality, uncomment to re-activate
+
                 maya_plugins_vers_btn = pyani.core.ui.ImageButton(
                     "images\change_vers_off.png",
                     "images\change_vers_on.png",
@@ -453,6 +475,11 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                 )
                 maya_plugins_vers_btn.setObjectName("vers_{0}".format(self.maya_plugins.maya_plugin_data[plugin]["name"]))
                 maya_plugins_vers_btn.clicked.connect(self.maya_plugins_change_version)
+                maya_plugins_vers_btn.setToolTip("Revert to the Previous Version.")
+                
+                # put this down with the othe rbuttons if re-activate
+                plugin_layout.addWidget(maya_plugins_vers_btn)
+                '''
 
                 maya_plugins_notes_btn = pyani.core.ui.ImageButton(
                     "images\\release_notes_off.png",
@@ -464,6 +491,7 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                     "notes_{0}".format(self.maya_plugins.maya_plugin_data[plugin]["name"])
                 )
                 maya_plugins_notes_btn.clicked.connect(self.maya_plugins_view_release_notes)
+                maya_plugins_notes_btn.setToolTip("View the release notes for the current plugin version.")
 
                 maya_plugins_confluence_btn = pyani.core.ui.ImageButton(
                     "images\\html_off.png",
@@ -475,8 +503,8 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                     self.maya_plugins.maya_plugin_data[plugin]["name"])
                 )
                 maya_plugins_confluence_btn.clicked.connect(self.maya_plugins_open_confluence_page)
+                maya_plugins_confluence_btn.setToolTip("Open the plugin's confluence page in a web browser.")
 
-                plugin_layout.addWidget(maya_plugins_vers_btn)
                 plugin_layout.addWidget(maya_plugins_notes_btn)
                 plugin_layout.addWidget(maya_plugins_confluence_btn)
 
@@ -566,6 +594,58 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         self.menu_toggle_auto_dl.currentIndexChanged.connect(self.update_auto_dl_state)
         self.btn_manual_update.clicked.connect(self.update_core_files)
         self.btn_clean_install.clicked.connect(self.reinstall)
+        self.download_monitor.data_downloaded.connect(self.progress_received)
+
+    def progress_received(self, data):
+        """
+        Gets progress from CGTDownloadMonitor class via slot/signals
+        :param data: a string or int
+        """
+        # check for string message or download progress (int)
+        if isinstance(data, basestring):
+            # get the total number of files being downloaded - only get this data if downloading multiple files
+            if "file_total" in data:
+                self.progress_label.setText("Downloading {0} files.".format(data.split(":")[1]))
+            # get the total file size of the download - only get this data if downloading one file
+            elif "file_size" in data:
+                self.progress_label.setText("Downloading {0}.".format(data.split(":")[1]))
+            # check if we are done downloading and reset/refresh gui
+            elif "done" in data or "no_updates" in data:
+                self.progress_label.hide()
+                self.progress_bar.hide()
+                self.progress_bar.setValue(0)
+
+                # a successful download
+                if "done" in data:
+                    # show where plugin downloaded
+                    self.msg_win.show_info_msg(
+                        "Download Complete", "Downloaded {0} plugin to {1}".format(
+                            self.active_plugin,
+                            self.maya_plugins.get_plugin_path(self.active_plugin)
+                        )
+                    )
+
+                    # refresh version info
+                    error = self.maya_plugins.build_plugin_data()
+                    # return error if couldn't refresh data
+                    if error:
+                        self.msg_win.show_error_msg("Plugin Error", error)
+
+                    # refresh version info in gui, a bit overkill to rebuild ui, but lightweight enough doesn't matter
+                    # and don't need to keep track of each plugins ui elements to update
+                    maya_plugins_layout = self.create_layout_and_slots_maya_plugins()
+                    self.tabs.update_tab(maya_plugins_layout)
+                # at the latest
+                else:
+                    # let user know there aren't any updates
+                    self.msg_win.show_info_msg(
+                        "Download Complete", "There are no updates for the {0}. You have the latest. ".format(
+                            self.active_plugin
+                        )
+                    )
+        else:
+            # update progress
+            self.progress_bar.setValue(data)
 
     def maya_plugins_download(self):
         """
@@ -576,24 +656,10 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         # find which plugin to revert
         plugin = self.get_maya_plugin_from_button_press(btn_pressed)
         if plugin:
-            # move current version to restore folder before downloading
-            error = self.maya_plugins.create_restore_point(plugin)
-            if error:
-                self.msg_win.show_error_msg("Restore Point Error", "Could not create restore point for plugin {0}."
-                                                                   "Error is {1}".format(plugin, error))
-            # get the latest version
-            errors = self.maya_plugins.download_plugins(plugin)
-            if errors:
-                logger.error("Could not download plugin {0} from CGT. Error is: {1}".format(plugin, ', '.join(errors)))
-                self.msg_win.show_error_msg("Download Error", "Could not download plugin {0} from CGT".format(plugin))
-            else:
-                self.msg_win.show_info_msg(
-                    "Plugin Downloaded", "Successfully downloaded the plugin: {0}".format(plugin)
-                )
-            # refresh version info in gui, a bit overkill to rebuild ui, but lightweight enough doesn't matter
-            # and don't need to keep track of each plugins ui elements to update
-            maya_plugins_layout = self.create_layout_and_slots_maya_plugins()
-            self.tabs.update_tab(maya_plugins_layout)
+            # download from CGT
+            self.progress_bar.show()
+            self.progress_label.show()
+            self.maya_plugins.download_plugins(plugin, self.download_monitor)
         # couldn't find plugin
         else:
             logger.error("Could not find plugin for button {0} to download".format(btn_pressed))
@@ -642,17 +708,23 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
             logger.error("Could not find plugin for button {0} to change version".format(btn_pressed))
             self.msg_win.show_error_msg("Critical Error", "Could not find plugin, see log for details")
 
-    def get_maya_plugin_from_button_press(self, btn_pressed):
+    def get_maya_plugin_from_button_press(self, btn_pressed, display_name=True):
         """
         gets the plugin based off the button pressed
         :param btn_pressed: the name of the button set via setObjectName when created
+        :param display_name: use the display name (user friendly - no camel case or underscores)of the plugin
+        if True, otherwise use the file name (camel case, underscores)
         :return: the name of the plugin for that button, or None if can't be found
         """
         # find which plugin to revert
         for plugin in self.maya_plugins.maya_plugin_data:
             # find the plugin clicked
             if self.maya_plugins.maya_plugin_data[plugin]["name"] in btn_pressed:
-                return plugin
+                self.active_plugin = plugin
+                if display_name:
+                    return plugin
+                else:
+                    return self.maya_plugins.maya_plugin_data[plugin]["name"]
         return None
 
     def maya_plugins_view_release_notes(self):
@@ -675,7 +747,7 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         # get the buttons' name
         btn_pressed = self.sender().objectName()
         # find which plugin to revert
-        plugin = self.get_maya_plugin_from_button_press(btn_pressed)
+        plugin = self.get_maya_plugin_from_button_press(btn_pressed, display_name=False)
         if plugin:
             self.maya_plugins.open_confluence_page(plugin)
         # couldn't find plugin

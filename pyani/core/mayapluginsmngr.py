@@ -1,4 +1,5 @@
 import os
+import shutil
 import logging
 import pyani.core.util
 import pyani.core.appvars
@@ -22,8 +23,9 @@ class AniMayaPlugins:
 
     There are two ways to refer to a plugins name, the display name and file name (just called name). Display name
     is a user friendly version (for example Eye Plugin vs eyeBallNode), while the file name is the name of the folder
-    containing the plugin. We use a folder per plugin since some plugins have multiple files. The restore point to go
-    back a version exists in this plugin folder.
+    containing the plugin. We use a folder per plugin since some plugins have multiple files.
+
+    REMOVED : The restore point to go back a version. Left mehtods to re-implement at a later date if desired.
 
     Format for data in tools list json file (app data shared dir of pyanitools, see app vars, self.tools_list property):
 
@@ -98,7 +100,16 @@ class AniMayaPlugins:
             logger.error(error)
             self.maya_plugin_data = None
             return error
-        self.maya_plugin_data = maya_plugin_json_data["maya plugins"]
+
+        try:
+            self.maya_plugin_data = maya_plugin_json_data["maya plugins"]
+        except KeyError as e:
+            error = "Critical error loading list of maya plugins from {0}. Error is missing Key: {1}".format(
+                self.app_vars.tools_list,
+                e
+            )
+            logger.error(error)
+            return error
 
         # add version_data to maya plugin data under key 'version_data'. If no version can be loaded set to None.
         for plugin in self.maya_plugin_data:
@@ -211,10 +222,9 @@ class AniMayaPlugins:
     def open_confluence_page(self, plugin):
         """
         opens an html page in the web browser for help
-        :param plugin: the name of the plugin (display name) as a string
+        :param plugin: the name of the plugin (file name) as a string
         """
-        # TODO: add real pages, do like my apps where page is name of tool
-        link = QtCore.QUrl("http://172.18.10.11:8090/display/KB/PyAppMngr")
+        link = QtCore.QUrl("http://172.18.10.11:8090/display/KB/{0}".format(plugin))
         QtGui.QDesktopServices.openUrl(link)
 
     def get_missing_plugins(self):
@@ -229,44 +239,106 @@ class AniMayaPlugins:
                 plugins_missing.append(plugin)
         return plugins_missing
 
-    def download_plugins(self, plugins):
+    def download_plugins(self, plugins, download_monitor, use_progress_monitor=True):
         """
         Downloads the plugins from the server. Updates the maya plugin data property as well to contain the updated
         plugin info
         :param plugins: a plugin as a string or a list of plugins on the server to download
-        :returns: error(s) if encountered as list, otherwise None
+        :param download_monitor: a pyani.core.ui.CGTDownloadMonitor object that executes a command via the
+        subprocess module and polls subprocess for output. Sends that via slot/signals to main window.
         """
-        errors = []
+
+        download_list = []
+        cgt_list = []
+
         # support one or more plugin downloads, convert single plugin string to a list
         if not isinstance(plugins, list):
             plugins = [plugins]
 
+        # build the list of files to download and where to download to
         for plugin in plugins:
-            download_root = self.get_plugin_location(plugin) + "\\{0}\\".format(self.maya_plugin_data[plugin]['name'])
-            py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
-            dl_command = [
-                py_script,
-                self.maya_plugin_data[plugin]['server path'],
-                download_root,
-                self.app_vars.cgt_ip,
-                self.app_vars.cgt_user,
-                self.app_vars.cgt_pass
-            ]
-            output, error = pyani.core.util.call_ext_py_api(dl_command)
-            if error:
-                errors.append(error)
-        # return errors if they exist
-        if errors:
-            logging.error(','.join(errors))
-            return errors
+            cgt_list.append(self.maya_plugin_data[plugin]['server path'])
+            download_list.append(
+                self.get_plugin_location(plugin) + "\\{0}\\".format(self.maya_plugin_data[plugin]['name'])
+            )
 
-        # refresh version info
-        error = self.build_plugin_data()
-        # return error if couldn't refresh data
-        if not isinstance(error, dict):
-            return error
-        # success
-        return None
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        # need to convert python lists to strings, separated by commas, so that it will pass through in the shell
+        # so if there are multiple paths, the list [path1, path2] becomes 'path1,path2'
+        dl_command = [
+            py_script,
+            ",".join(cgt_list),
+            ",".join(download_list),
+            self.app_vars.cgt_ip,
+            self.app_vars.cgt_user,
+            self.app_vars.cgt_pass
+        ]
+        # use threading to display progress
+        if use_progress_monitor:
+            # set the command to execute and start download - runs in separate thread
+            download_monitor.download_cmd = dl_command
+            download_monitor.start()
+        # no threading
+        else:
+            output, error = pyani.core.util.call_ext_py_api(dl_command)
+            self.cleanup_old_files(output)
+            if error:
+                return error
+
+    @staticmethod
+    def cleanup_old_files(files):
+        """
+        Cleans up files not on CGT
+        :param files: a string from CGT that has files to remove in the format:
+        file_dirs_to_dl#{directory of plugin}@file_names#{list of files separated by comma}
+        ex: (note all on one line, put on separate lines below for readability
+        file_dirs_to_dl#C:\Users\Patrick\Documents\maya\plug-ins\eyeBallNode\@file_names#C:\Users\Patrick\
+        Documents\maya\plug-ins\eyeBallNode\eyeBallNode.py,C:\Users\Patrick\Documents\maya\plug-ins\eyeBallNode\
+        plugin_version.json
+        """
+        for line in files.split("\n"):
+            logger.info("output from cgt in cleanup: {0}".format(line))
+            # first get the download folders so we can get the local files
+            if 'file_dirs_to_dl' in line:
+                existing_files = []
+                file_dirs_next_line = line.split("@")[0]
+                file_names_next_line = line.split("@")[-1]
+
+                # remove 'file_dirs_to_dl'
+                temp = file_dirs_next_line.split("#")[-1]
+                # the download folders
+                dl_dirs = temp.split(",")
+                dl_dirs = [dl_dir.replace("\n", "") for dl_dir in dl_dirs]
+                # list of files locally in download folders
+                for dl_dir in dl_dirs:
+                    # make sure folder exists
+                    if os.path.exists(dl_dir):
+                        for root, directories, file_names in os.walk(dl_dir):
+                            for directory in directories:
+                                existing_files.append(os.path.join(root, directory))
+                            for filename in file_names:
+                                existing_files.append(os.path.join(root, filename))
+                # now check if any local files aren't on CGT
+                # remove 'file_list'
+                temp = file_names_next_line.split("#")[-1]
+                # list of files in CGT
+                file_names = temp.split(",")
+
+                # look for any "/" and remove
+                file_names = [os.path.normpath(file_name) for file_name in file_names]
+
+                logger.info("cgt files: {0}".format(", ".join(file_names)))
+                for existing_file in existing_files:
+                    logger.info("existing files: {0}".format(existing_file))
+                    # look for any files that exist locally but are not in CGT
+                    if existing_file not in file_names:
+                        if os.path.isfile(existing_file):
+                            os.remove(existing_file)
+                        else:
+                            # only remove directories if empty
+                            if not os.listdir(existing_file):
+                                shutil.rmtree(existing_file, ignore_errors=True)
+                break
 
     def change_version(self, plugin):
         """

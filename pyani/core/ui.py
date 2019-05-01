@@ -1,8 +1,10 @@
 import os
 import sys
+import shutil
 import logging
 import pyqtgraph as pg
 import numpy as np
+from subprocess import Popen, PIPE, STDOUT
 import pyani.core.util
 import pyani.core.error_logging
 
@@ -19,6 +21,7 @@ from qtpy import QtGui, QtWidgets, QtCore
 # qtpy doesn't have fileDialog, so grab from PyQT4
 from PyQt4.QtGui import QFileDialog
 from PyQt4.QtCore import pyqtSignal
+from PyQt4.QtCore import QThread
 
 
 GOLD = "#be9117"
@@ -35,6 +38,187 @@ try:
 except AttributeError:
     def _fromUtf8(s):
         return s
+
+
+class CGTDownloadMonitor(QThread):
+    """
+    Monitors the output from CGT's download process. Looks for lines of output:
+    file_total:{number} - gives the total file count before downloading begins
+    -->file_size:{number} - gives the number of bytes to download
+    -->progress: {number} % - gives the percent of a particular file's download
+
+    Takes a command to execute - should be python interpreter path and then the python file as a list, for example:
+    ["C:\cgteamwork\python\python.exe", "C:\PyAniTools\lib\cgt\cgt_download.py"]
+
+    There are two modes
+
+    1. Download a single file - shows progress of the download as percentage of the file size downloaded
+    and shows the total file size
+    2. Download multiple files - shows progress of the download as a percentage of number of files downloaded and
+    shows the total number of files
+
+    Usage:
+
+    create an instance: self.downloader = CGTDownloadMonitor(cmd) or self.downloader = CGTDownloadMonitor()
+    if you don't pass a cmd then you need to set self.downloader.download_cmd = cmd.
+    run self.downloader.start() to start download via subprocess.
+    in the main window make sure you create the slot self.downloader.data_downloaded.connect(slot_function_name)
+    in the slot_function, process data as:
+
+        if isinstance(data, basestring):
+            if "file_total" in data:
+                self.progress_label.setText("Downloading {0} files.".format(data.split(":")[1]))
+            elif "file_size" in data:
+                self.progress_label.setText("Downloading {0}.".format(data.split(":")[1]))
+            elif "done" in data:
+                self.progress_label.hide()
+                self.progress_bar.hide()
+                self.progress_bar.setValue(0)
+
+                # a successful download
+                if "done" in data:
+                    code here....
+                # at the latest - no updates
+                else:
+                    code here....
+        else:
+            self.progress_download_bar.setValue(data)
+
+    """
+    # signal to fire when have progress to send, can send any python object
+    data_downloaded = pyqtSignal(object)
+
+    def __init__(self, cmd=None):
+        QThread.__init__(self)
+        # cmd to execute
+        self.download_cmd = cmd
+
+    @property
+    def download_cmd(self):
+        return self.__download_cmd
+
+    @download_cmd.setter
+    def download_cmd(self, cmd):
+        self.__download_cmd = cmd
+
+    def run(self):
+        """
+        monitors the subprocess for output from cgt's api callback. Fires a pyqt signal when have data to communicate
+        to the main window
+
+        removes old files:
+        looks for a string from CGT that has files to remove in the format:
+        file_dirs_to_dl#{directory of plugin}@file_names#{list of files separated by comma}
+        ex: (note all on one line, put on separate lines below for readability
+        file_dirs_to_dl#C:\Users\Patrick\Documents\maya\plug-ins\eyeBallNode\@file_names#C:\Users\Patrick\
+        Documents\maya\plug-ins\eyeBallNode\eyeBallNode.py,C:\Users\Patrick\Documents\maya\plug-ins\eyeBallNode\
+        plugin_version.json
+        """
+        process = Popen(self.download_cmd, shell=True, stdout=PIPE, stderr=STDOUT)
+
+        files_total = 0
+        files_downloaded = 0
+
+        # Poll process for new output until finished
+        while True:
+            next_line = process.stdout.readline()
+            if next_line == '' and process.poll() is not None:
+                break
+
+            # --------------------------------------------
+            # check if any files need to be deleted locally
+            # first get the download folders so we can get the local files
+            if 'file_dirs_to_dl' in next_line:
+                existing_files = []
+                file_dirs_next_line = next_line.split("@")[0]
+                file_names_next_line = next_line.split("@")[-1]
+
+                # remove 'file_dirs_to_dl'
+                temp = file_dirs_next_line.split("#")[-1]
+                # the download folders
+                dl_dirs = temp.split(",")
+                dl_dirs = [dl_dir.replace("\n", "") for dl_dir in dl_dirs]
+                # list of files locally in download folders
+                for dl_dir in dl_dirs:
+                    # make sure folder exists
+                    if os.path.exists(dl_dir):
+                        for root, directories, file_names in os.walk(dl_dir):
+                            for directory in directories:
+                                existing_files.append(os.path.join(root, directory))
+                            for filename in file_names:
+                                existing_files.append(os.path.join(root, filename))
+                # now check if any local files aren't on CGT
+                # remove 'file_list'
+                temp = file_names_next_line.split("#")[-1]
+                # list of files in CGT
+                file_names = temp.split(",")
+                # look for any "/" and remove
+                file_names = [os.path.normpath(file_name) for file_name in file_names]
+                for existing_file in existing_files:
+                    # look for any files that exist locally but are not in CGT
+                    if existing_file not in file_names:
+                        if os.path.isfile(existing_file):
+                            os.remove(existing_file)
+                        else:
+                            # only remove directories if empty
+                            if not os.listdir(existing_file):
+                                shutil.rmtree(existing_file, ignore_errors=True)
+
+            # get the number of files to download
+            if 'file_total' in next_line:
+                files_total = int(next_line.split(":")[-1])
+            # if the file total is greater than 1, then its a file list, and process download completion percentage
+            # as files downloaded / file total since cgt can't provide an overall file download progress with multiple
+            # files.
+            if files_total > 1:
+                # fire signal so main window knows number of files
+                self.data_downloaded.emit("file_total:{0}".format(files_total))
+            # only one file, so we can use cgt's progress
+            else:
+                if 'file_size' in next_line:
+                    # convert bytes to kb, mb, or gb depending on number of digits in bytes
+                    bytes_size = float(next_line.split(":")[-1])
+                    num_digits = pyani.core.util.number_of_digits(bytes_size)
+                    if num_digits < 7:
+                        converted_size = "{0} KB".format(bytes_size / 1000.0)
+                    elif num_digits < 10:
+                        converted_size = "{0} MB".format(bytes_size / 1000000.0)
+                    else:
+                        converted_size = "{0} GB".format(bytes_size / 1000000000.0)
+                    # fire signal so main window knows file size
+                    self.data_downloaded.emit("file_size:{0}".format(converted_size))
+
+            # monitor for progress updates
+            if 'progress' in next_line:
+                percent_done = next_line.split(" ")[1]
+                # if there are multiple files, show download progress as files downloaded / files total
+                if files_total > 1:
+                    if float(percent_done) == 100.0:
+                        files_downloaded += 1
+                        percent = float(files_downloaded) / float(files_total) * 100.0
+                        self.data_downloaded.emit(percent)
+                # one file, show actual progress
+                else:
+                    self.data_downloaded.emit(float(percent_done))
+
+            sys.stdout.write(next_line)
+            sys.stdout.flush()
+
+        # finished, check whether anything downloaded or if user has the latest and let main window know
+        if files_downloaded == 0:
+            # user has latest
+            self.data_downloaded.emit("no_updates")
+        else:
+            # downloaded successfully
+            self.data_downloaded.emit("done")
+
+        output = process.communicate()[0]
+        exit_code = process.returncode
+
+        if exit_code == 0:
+            print output
+        else:
+            print "error : exit code {0}".format(exit_code)
 
 
 class BarGraph(pg.GraphicsView):

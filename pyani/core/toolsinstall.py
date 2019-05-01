@@ -96,6 +96,7 @@ class AniToolsSetup:
             self.app_vars.cgt_user,
             self.app_vars.cgt_pass
         ]
+
         output, error = pyani.core.util.call_ext_py_api(dl_command)
         if error:
             logging.error(error)
@@ -111,6 +112,7 @@ class AniToolsSetup:
             return self.log_error(client_data)
 
         if self.updates_exist(server_data, client_data) or skip_update_check:
+            logging.info("Running Update")
             # download the file
             py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
             dl_command = [
@@ -125,31 +127,36 @@ class AniToolsSetup:
             if error:
                 logging.error(error)
                 return self.log_error(error)
-            # downloaded
-            else:
-                # move file to tempdir
-                src = os.path.join(self.app_vars.download_path_cgt, self.app_vars.tools_package)
-                dest = os.path.join(self.app_vars.download_path_pyanitools, self.app_vars.tools_package)
-                # check if directory exists
-                if not os.path.exists(self.app_vars.download_path_pyanitools):
-                    error = pyani.core.util.make_dir(self.app_vars.download_path_pyanitools)
-                    if error:
-                        return self.log_error(error)
-                error = pyani.core.util.move_file(src, dest)
-                if error:
-                    return self.log_error(error)
-                # try unzipping
-                try:
-                    with zipfile.ZipFile(file=dest) as zipped:
-                        zipped.extractall(path=self.app_vars.download_path_pyanitools)
-                except (zipfile.BadZipfile, zipfile.LargeZipFile, IOError, OSError) as e:
-                    error = "{0} update file is corrupt. Error is {1}".format(dest, e)
-                    logger.exception(error)
-                    return self.log_error(error)
-                # set the install_apps path
-                self.app_vars.update_setup_dir(self.app_vars.download_path_pyanitools)
             return True
         return False
+
+    def stage_updates(self):
+        """
+        Stage the updates that were downloaded
+        :returns: None if installed, errors if encountered
+        """
+        # move file to tempdir
+        src = os.path.join(self.app_vars.download_path_cgt, self.app_vars.tools_package)
+        dest = os.path.join(self.app_vars.download_path_pyanitools, self.app_vars.tools_package)
+        # check if directory exists
+        if not os.path.exists(self.app_vars.download_path_pyanitools):
+            error = pyani.core.util.make_dir(self.app_vars.download_path_pyanitools)
+            if error:
+                return self.log_error(error)
+        error = pyani.core.util.move_file(src, dest)
+        if error:
+            return self.log_error(error)
+        # try unzipping
+        try:
+            with zipfile.ZipFile(file=dest) as zipped:
+                zipped.extractall(path=self.app_vars.download_path_pyanitools)
+        except (zipfile.BadZipfile, zipfile.LargeZipFile, IOError, OSError) as e:
+            error = "{0} update file is corrupt. Error is {1}".format(dest, e)
+            logger.exception(error)
+            return self.log_error(error)
+        # set the install_apps path
+        self.app_vars.update_setup_dir(self.app_vars.download_path_pyanitools)
+        return None
 
     def set_install_date(self):
         """
@@ -435,15 +442,17 @@ class AniToolsSetup:
 
 class AniToolsSetupGui(QtWidgets.QDialog):
     """
-    Class to install_apps tools. Creates directories, moves install_apps files and app data, and updates nuke config. Also creates
-    a windows scheduling task to download future updates
+    Class to install_apps tools. Creates directories, moves install_apps files and app data, and updates nuke config.
+    Also creates a windows scheduling task to download future updates
     :param run_type : "setup" or "update"
     :param error_logging : error log (pyani.core.error_logging.ErrorLogging object) from trying
     :param close_on_success: close after a successful install or update, defaults to false
+    :param testing: set to True to run without actually downloading data, useful for testing since data download takes
+    a while and have to actually move and copy files
     to create logging in main program
     """
 
-    def __init__(self, run_type, error_logging, close_on_success=False):
+    def __init__(self, run_type, error_logging, close_on_success=False, testing=False):
         super(AniToolsSetupGui, self).__init__()
 
         # functionality to install apps and update tools
@@ -477,7 +486,11 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         self.report_txt = QtWidgets.QTextEdit("")
         self.report_txt.setFixedWidth(400)
         self.report_txt.setFixedHeight(350)
+        # a log of errors and what installed or updated
         self.log = []
+        # indicates if an error occured
+        self.error_occurred = False
+        self.progress_steps = 0
 
         self.create_layout()
         self.set_slots()
@@ -491,6 +504,11 @@ class AniToolsSetupGui(QtWidgets.QDialog):
                 "Error logging could not be setup because {0}. You can continue, however "
                 "errors will not be logged.".format(errors)
             )
+
+        # allows the app to run without downloading data or copying moving files
+        self.testing = testing
+        if self.testing:
+            logging.info("TEST MODE ENABLED")
 
     def create_layout(self):
 
@@ -523,10 +541,45 @@ class AniToolsSetupGui(QtWidgets.QDialog):
     def set_slots(self):
         self.close_btn.clicked.connect(self.close)
 
+    def progress_received_maya_plugins_update(self, data):
+        """
+        Gets progress from CGTDownloadMonitor class via slot/signals
+        :param data: a string or int
+        """
+        # check for string message or download progress (int)
+        if isinstance(data, basestring):
+            # get the total number of files being downloaded - only get this data if downloading multiple files
+            if "file_total" in data:
+                self.progress_download_label.setText("Downloading {0} files.".format(data.split(":")[1]))
+            # get the total file size of the download - only get this data if downloading one file
+            elif "file_size" in data:
+                self.progress_download_label.setText("Downloading {0}.".format(data.split(":")[1]))
+            elif "done" in data or "no_updates" in data:
+                self.progress_download_label.hide()
+                self.progress_download_bar.hide()
+                self.progress_download_bar.setValue(0)
+
+                logging.info("Maya plugins update ran with success")
+                self.log.append("Maya plugins are at the latest versions")
+
+                # show errors or success message
+                if not self.error_occurred:
+                    logging.info("-----------> Completed Update Successfully.")
+                    self.log.append(
+                        "<font color={0}>Update Process Completed Successfully!</font>".format(pyani.core.ui.GREEN)
+                    )
+
+                # finish
+                self.finish_install(completion_msg="Updates Complete")
+        else:
+            # update progress
+            self.progress_download_bar.setValue(data)
+
     def run(self, force_update=False):
         """
-        starts the install or update process. exits on a successful installation or update if the flag
-        'close_on_success was passed'. Otherwise shows report of the install or update
+        starts the install or update process.
+        NOTE: exits on a successful installation or update if the flag
+        'close_on_success was passed'. Otherwise shows report of the install or update via the finish_install method
         :param force_update: optional flag to force an update regardless of user version
         """
         # determine if this is an install_apps or update
@@ -534,6 +587,204 @@ class AniToolsSetupGui(QtWidgets.QDialog):
             self.run_install()
         else:
             self.run_update(force_update=force_update)
+
+    def run_install(self):
+        """
+        Does the complete installation of the tools
+        """
+        # schedule tools update to run, if it is already scheduled skips. If scheduling errors then informs user
+        # but try to install apps
+        error = self.task_scheduler.setup_task(schedule_type="daily", start_time="14:00")
+        if error:
+            msg = "Can't Setup Windows Task Scheduler. Error is: {0}".format(error)
+            logging.error(msg)
+            self.log.append(self.format_error(msg))
+            self.error_occurred = True
+
+        # install_apps
+        # set the directory the exe file is in
+        path = pyani.core.util.get_script_dir()
+        self.tools_setup.app_vars.update_setup_dir(path)
+        logger.info("setup_dir is {0}".format(path))
+
+        self.progress_steps = 100.0 / float(len(self.install_list))
+        log = self.install()
+        # if its a list its the success log, otherwise its an error
+        if isinstance(log, list):
+            self.log.extend(log)
+        else:
+            self.log.append(log)
+            self.error_occurred = True
+
+        # run maya plugins install - will run regardless of whether pyanitools installs successfully
+        self.progress_label.setText("Adding Maya Plugins")
+        QtWidgets.QApplication.processEvents()
+        self.progress.setValue(90)
+        # run this here, because we need the app data installed first. plugin data is in app_data/shared/app_list.json
+        error = self.maya_plugins.build_plugin_data()
+        if error:
+            self.log.append(self.format_error(error))
+            # at end of installation, couldn't install maya plugins
+            self.error_occurred = True
+        else:
+            # download from CGT
+            error = self.maya_plugins.download_plugins(
+                self.maya_plugins.get_plugins(), None, use_progress_monitor=False
+            )
+            if error:
+                self.log.append(self.format_error(error))
+                # at end of installation, couldn't install maya plugins
+                self.error_occurred = True
+            else:
+                self.log.append("Added maya plugins: {0}".format(', '.join(self.maya_plugins.get_plugins())))
+
+                # update install_apps date
+                if not self.testing:
+                    error = self.tools_setup.set_install_date()
+                else:
+                    error = None
+                if error:
+                    self.log.append(self.format_error(error))
+
+        # if no errors show success message in green
+        if not self.error_occurred:
+            self.log.append(
+                "<font color={0}>Installation Completed Successfully!</font>".format(pyani.core.ui.GREEN)
+            )
+        else:
+            self.log.append(
+                self.format_error("Installation Completed With Errors. See Above Log.")
+            )
+
+        # finish
+        self.finish_install()
+
+    def run_update(self, force_update=False):
+        """
+        Runs the update process
+        :param force_update: optional flag to force an update regardless of user version
+        :return: exits early if can't download the tools from cgt or the sequence / shot list from cgt
+        """
+        # number of install_apps steps is the installation of files plus 2
+        # (update seq shot list, download zip)
+        self.progress_steps = 100.0 / float(len(self.install_list) + 2)
+
+        # set the directory the exe file is in
+        path = pyani.core.util.get_script_dir()
+        self.tools_setup.app_vars.update_setup_dir(path)
+
+        # ----------------------------------------------------------------
+        # update sequence list - note records if fails but doesn't exit update process. Tries to update
+        # the tools and maya plugins
+        self.progress_label.setText("Updating list of Sequences and Shots")
+        # update progress bar
+        self.progress.setValue(self.progress.value() + self.progress_steps)
+        QtWidgets.QApplication.processEvents()
+        if not self.testing:
+            error = self.tools_setup.update_show_info()
+        else:
+            error = None
+        if error:
+            msg = "Sequence List Update Failed. Error is {0}".format(error)
+            self.error_occurred = True
+            self.log.append(self.format_error(msg))
+        else:
+            self.log.append("Sequence update ran with success")
+            logging.info("Sequence update ran with success")
+
+        # ----------------------------------------------------------------
+        # update tools - doesn't exit if fails, just record and try to download maya plugins
+        self.progress_label.setText("Checking and downloading tool updates. Package is 495 MB, this may take "
+                                    "several minutes....")
+        # update progress bar
+        self.progress.setValue(self.progress.value() + self.progress_steps)
+        QtWidgets.QApplication.processEvents()
+
+        if not self.testing:
+            error = self.tools_setup.download_updates(skip_update_check=force_update)
+        else:
+            error = False
+        # not true or false, so an error occurred getting the timestamp
+        if not isinstance(error, bool):
+            msg = "PyAniTools Update Failed. Error is {0}".format(error)
+            self.log.append(self.format_error(msg))
+            logging.error(msg)
+            self.error_occurred = True
+        # returned False, means nothing downloaded
+        elif not error:
+            self.log.append("No updates to download.")
+            logging.info("No updates to download.")
+        # returned true so pyanitools downloaded
+        else:
+            # unzips and sets directory where the unzipped files are
+            error = self.tools_setup.stage_updates()
+            if error:
+                self.log.append(error)
+                self.error_occurred = True
+            else:
+                # install apps
+                log = self.install()
+                # if its a list its the success log, otherwise its an error
+                if isinstance(log, list):
+                    self.log.extend(log)
+                else:
+                    self.log.append(log)
+                    self.error_occurred = True
+
+        # Update Maya Plugins
+        error = self.maya_plugins.build_plugin_data()
+        if error:
+            self.log.append(self.format_error(error))
+            # at end of installation, couldn't install maya plugins
+            self.error_occurred = True
+        else:
+            # download from CGT
+            error = self.maya_plugins.download_plugins(
+                self.maya_plugins.get_plugins(), None, use_progress_monitor=False
+            )
+            if error:
+                self.log.append(self.format_error(error))
+                # at end of installation, couldn't install maya plugins
+                self.error_occurred = True
+            else:
+                self.log.append("Added maya plugins: {0}".format(', '.join(self.maya_plugins.get_plugins())))
+
+                # update install_apps date
+                if not self.testing:
+                    # only set date if no errors installing
+                    if not self.error_occurred:
+                        error = self.tools_setup.set_install_date()
+                else:
+                    error = None
+                if error:
+                    self.log.append(self.format_error(error))
+                    self.error_occurred = True
+                else:
+                    logging.info("Apps update ran with success")
+
+        # if no errors show success message in green
+        if not self.error_occurred:
+            self.log.append(
+                "<font color={0}>Update Completed Successfully!</font>".format(pyani.core.ui.GREEN)
+            )
+        else:
+            self.log.append(
+                self.format_error("Update Completed With Errors. See Above Log.")
+            )
+
+        # finish install
+        self.finish_install(completion_msg="Updates Complete")
+
+    def finish_install(self, completion_msg="Installation Complete"):
+        """
+        :param completion_msg: a string containing the message to display above the progress bar for installation
+        complete. Defaults to Installation Complete
+        Finishes the installation regardless of success or error. Shows messages and cleans up temp dirs
+        """
+        self.progress_label.setText(completion_msg)
+        self.progress.setValue(100)
+        QtWidgets.QApplication.processEvents()
+
         # check if the flag was passed to close after a successful install or update
         if self.close_on_success:
             sys.exit()
@@ -545,177 +796,36 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         # remove temp files
         self.tools_setup.cleanup()
 
-    def run_install(self):
+    def update_maya_plugins(self):
         """
-        Does the complete installation of the tools
-        :return: exits early if error scheduling task
+        Runs the maya plugin update
+        :return: False if can't build plugin data, True otherwise - means attempting download
         """
-        install_successful = False
-
-        # schedule tools update to run, if it is already scheduled skips. If scheduling errors then informs user
-        # and doesn't install_apps
-        error = self.task_scheduler.setup_task(schedule_type="daily", start_time="14:00")
-        if error:
-            self.log.append(error)
-            self.log.append("Skipping Installation, Can't Setup Windows Task Scheduler.")
-            self.progress_label.setText("Incomplete Installation")
-            self.progress.setValue(100)
-            return
-
-        # install_apps
-        #
-        # set the directory the exe file is in
-        path = pyani.core.util.get_script_dir()
-        self.tools_setup.app_vars.update_setup_dir(path)
-        logger.info("setup_dir is {0}".format(path))
-
-        progress_steps = 100.0 / float(len(self.install_list))
-        log = self.install(progress_steps)
-        # if its a list its the success log, otherwise its an error
-        if isinstance(log, list):
-            self.log.extend(log)
-        else:
-            self.log.append(log)
-
-        # run maya plugins install
-        self.progress_label.setText("Adding Maya Tools  ")
-        self.progress.setValue(90)
-        # run this here, because we need the app data installed first. plugin data is in app_data/shared/app_list.json
         error = self.maya_plugins.build_plugin_data()
         if error:
-            self.log.append(error)
-        else:
-            errors = self.maya_plugins.download_plugins(self.maya_plugins.get_plugins())
-            if errors:
-                self.log.extend(errors)
-            else:
-                install_successful = True
-                plugins_list = self.maya_plugins.get_plugins()
-                if isinstance(plugins_list, list):
-                    plugins_list = ','.join(plugins_list)
-                logging.info("Installed maya plugins: {0}".format(plugins_list))
-                self.log.append("Installed Maya plugins.")
+            self.log.append(self.format_error(error))
+            # at end of installation, couldn't install maya plugins
+            self.error_occurred = True
+            return False
 
-        # update install_apps date
-        if install_successful:
-            error = self.tools_setup.set_install_date()
-            if error:
-                self.log.append(self.tools_setup.log_error(error))
-            else:
-                self.log.append(
-                    "<font color={0}>Installation Completed Successfully!</font>".format(pyani.core.ui.GREEN)
-                )
-
-        # FINISH -----------------------------------------------------------------------
-        self.progress_label.setText("Installation Complete")
-        self.progress.setValue(100)
-        QtWidgets.QApplication.processEvents()
-
-    def run_update(self, force_update=False):
-        """
-        Runs the update process
-        :param force_update: optional flag to force an update regardless of user version
-        :return: exits early if can't download the tools from cgt or the sequence / shot list from cgt
-        """
-        # number of install_apps steps is the installation of files plus 2
-        # (update seq shot list, download zip)
-        progress_steps = 100.0 / float(len(self.install_list) + 2)
-
-        # set the directory the exe file is in
-        path = pyani.core.util.get_script_dir()
-        self.tools_setup.app_vars.update_setup_dir(path)
-
-        # indicates if there is an update to install
-        download_successful = False
-        # what installed, self.log logs errors
-        success_log = []
-
-        self.progress_label.setText("Downloading tool updates, this may take a while, file is several hundred mega"
-                                    "bytes (mb)")
-        # update progress bar
-        self.progress.setValue(self.progress.value() + progress_steps)
-        QtWidgets.QApplication.processEvents()
-        # update
-        error = self.tools_setup.download_updates(skip_update_check=force_update)
-        # not true or false, so an error occurred
-        if not isinstance(error, bool):
-            self.log.append(error)
-            self.log.append("Skipping Installation, Tools Update Failed.")
-            self.progress_label.setText("Incomplete Update")
-            self.progress.setValue(100)
-            return
-        # returned True, means downloaded
-        elif error:
-            download_successful = True
-            logging.info("App Download ran with success.")
-        else:
-            success_log.append("No updates to download.")
-            logging.info("No updates to download.")
-
-        # set the install_apps path
-        if download_successful:
-            # install_apps, log is what successfully installed
-            success_log.extend(self.install(progress_steps))
-            # update install_apps date
-            error = self.tools_setup.set_install_date()
-            if error:
-                self.log.append(self.tools_setup.log_error(error))
-            else:
-                logging.info("Apps update ran with success")
-
-        self.progress_label.setText("Updating list of Sequences and Shots")
-        # update progress bar
-        self.progress.setValue(self.progress.value() + progress_steps)
-        QtWidgets.QApplication.processEvents()
-        # update sequence list
-        error = self.tools_setup.update_show_info()
-        if error:
-            self.log.append(error)
-            self.log.append("Sequence List Update Failed.")
-            self.progress_label.setText("Incomplete Update")
-            self.progress.setValue(100)
-            return
-        else:
-            logging.info("Sequence update ran with success")
-
-        # run maya plugins install
-        self.progress_label.setText("Updating Maya Plugins To Latest")
         self.progress.setValue(90)
-        self.maya_plugins.build_plugin_data()
-        # move current version to restore folder before downloading
-        for plugin in self.maya_plugins.get_plugins():
-            error = self.maya_plugins.create_restore_point(plugin)
-            if error:
-                logger.error(error)
-                self.log.append(error)
-                self.log.append("Could not create restore point for plugin {0}. Update continued but you will not "
-                                "be able to revert the plugin version.".format(plugin))
+        self.progress_label.setText(
+            "Updating Maya Plugins: {0}".format(', '.join(self.maya_plugins.get_plugins()))
+        )
 
-        errors = self.maya_plugins.download_plugins(self.maya_plugins.get_plugins())
-        if errors:
-            self.log.extend(errors)
-        else:
-            logging.info("Maya plugins update ran with success")
-            success_log.append("Maya plugins are at the latest versions")
-
-        # show errors or success message
-        if not self.log:
-            logging.info("-----------> Completed Update.")
-            # show what was successfully installed
-            self.log.extend(success_log)
-            self.log.append(
-                "<font color={0}>Update Process Completed Successfully!</font>".format(pyani.core.ui.GREEN)
+        if not self.testing:
+            self.maya_plugins.download_plugins(
+                self.maya_plugins.get_plugins(),
+                self.download_monitor_maya_update
             )
         else:
-            # some errors, so show errors and what was installed
-            self.log.extend(success_log)
+            # testing so want to return false so we can exit - otherwise waits on
+            # progress_recieved_maya_plugin_updates()
+            return False
 
-        # FINISH -----------------------------------------------------------------------
-        self.progress_label.setText("Updating Complete")
-        self.progress.setValue(100)
-        QtWidgets.QApplication.processEvents()
+        return True
 
-    def install(self, progress_steps):
+    def install(self):
         """Installs apps from the setup directory where the unzipped files are to the application directory
         Installs new apps if not installed, always updates app data, packages, app mngr, install update assistant,
         pyanitools lib for nuke. Handles 3 types of installs:
@@ -724,7 +834,6 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         3. Installing core files only - means updating everything but the apps, but will install new apps. Call
            this install type 'updating' since it is only installing core data files that handle app management
         Exits early if errors are encountered, otherwise returns a log of the steps installed.
-        :param progress_steps : the number of steps in the installation
         :return: if an error encountered, returns a string of the error. if no errors returns a list of the install
                  steps that ran
         """
@@ -735,41 +844,51 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         # MAKE MAIN DIRECTORY ON C DRIVE --------------------------------------------
         # display install_apps step in gui
         self.progress_label.setText(self.install_list[install_steps])
-        # setup the tools directories - run first install_apps only
-        error, created = self.tools_setup.make_install_dirs()
+        if not self.testing:
+            # setup the tools directories - run first install_apps only
+            error, created = self.tools_setup.make_install_dirs()
+        else:
+            error = None
+            created = True
         if error:
-            return error
+            return self.format_error(error)
         else:
             if created:
                 log_success.append("Created {0}".format(self.tools_setup.app_vars.tools_dir))
         # update progress bar
-        self.progress.setValue(self.progress.value() + progress_steps)
+        self.progress.setValue(self.progress.value() + self.progress_steps)
         QtWidgets.QApplication.processEvents()
 
         # APP DATA -------------------------------------------------------------------
         # update install_apps step in gui
         install_steps = install_steps + 1
         self.progress_label.setText(self.install_list[install_steps])
-        error = self.tools_setup.update_app_data()
+        if not self.testing:
+            error = self.tools_setup.update_app_data()
+        else:
+            error = None
         if error:
-            return error
+            return self.format_error(error)
         else:
             log_success.append("Updated {0}".format(self.tools_setup.app_vars.app_data_dir))
         # update progress bar
-        self.progress.setValue(self.progress.value() + progress_steps)
+        self.progress.setValue(self.progress.value() + self.progress_steps)
         QtWidgets.QApplication.processEvents()
 
         # SETUP PACKAGES ------------------------------------------------------------
         # update install_apps step in gui
         install_steps = install_steps + 1
         self.progress_label.setText(self.install_list[install_steps])
-        error = self.tools_setup.update_packages()
+        if not self.testing:
+            error = self.tools_setup.update_packages()
+        else:
+            error = None
         if error:
-            return error
+            return self.format_error(error)
         else:
             log_success.append("Updated {0}".format(self.tools_setup.app_vars.packages_dir))
         # update progress bar
-        self.progress.setValue(self.progress.value() + progress_steps)
+        self.progress.setValue(self.progress.value() + self.progress_steps)
         QtWidgets.QApplication.processEvents()
 
         # SETUP APPS ---------------------------------------------------------------
@@ -777,22 +896,26 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         install_steps = install_steps + 1
         self.progress_label.setText(self.install_list[install_steps])
 
-        # ----> make sure shortcut link is on desktop, if not copy
-        if not os.path.exists(self.tools_setup.app_vars.tools_shortcuts):
-            shortcut_to_move = os.path.join(self.tools_setup.app_vars.setup_installed_path, "PyAniTools.lnk")
-            logging.info(
-                "Step: Moving: {0} to {1}".format(self.tools_setup.app_vars.setup_installed_path + "\\PyAniTools.lnk",
-                                                  self.tools_setup.app_vars.user_desktop)
-            )
-            error = pyani.core.util.move_file(shortcut_to_move, self.tools_setup.app_vars.user_desktop)
-            if error:
-                return self.tools_setup.log_error(error)
+        if not self.testing:
+            # ----> make sure shortcut link is on desktop, if not copy
+            if not os.path.exists(self.tools_setup.app_vars.tools_shortcuts):
+                shortcut_to_move = os.path.join(self.tools_setup.app_vars.setup_installed_path, "PyAniTools.lnk")
+                logging.info(
+                    "Step: Moving: {0} to {1}".format(self.tools_setup.app_vars.setup_installed_path + "\\PyAniTools.lnk",
+                                                      self.tools_setup.app_vars.user_desktop)
+                )
+                error = pyani.core.util.move_file(shortcut_to_move, self.tools_setup.app_vars.user_desktop)
+                if error:
+                    return self.format_error(error)
 
         # first time tools installed
         if not os.path.exists(self.tools_setup.app_vars.apps_dir):
-            error = self.tools_setup.add_all_apps()
+            if not self.testing:
+                error = self.tools_setup.add_all_apps()
+            else:
+                error = None
             if error:
-                return error
+                return self.format_error(error)
             else:
                 log_success.append("Installed Apps To {0}".format(self.tools_setup.app_vars.apps_dir))
         # already installed, doing a re-installation or update of core files
@@ -806,10 +929,13 @@ class AniToolsSetupGui(QtWidgets.QDialog):
             # copies ffmpeg, icons, apps, and shortcuts, and tools updater
             if self.run_type == "setup":
                 # ----> create shortcuts folder - add new apps will add the actual shortcut
-                error = pyani.core.util.make_dir(self.tools_setup.app_vars.apps_shortcut_dir)
+                if not self.testing:
+                    error = pyani.core.util.make_dir(self.tools_setup.app_vars.apps_shortcut_dir)
+                else:
+                    error = None
                 logging.info("Creating shortcut directory: {0}".format(self.tools_setup.app_vars.apps_shortcut_dir))
                 if error:
-                    return self.tools_setup.log_error(error)
+                    return self.format_error(error)
                 else:
                     log_success.append(
                         "Created shortcuts folder: {0}".format(self.tools_setup.app_vars.apps_shortcut_dir)
@@ -822,9 +948,12 @@ class AniToolsSetupGui(QtWidgets.QDialog):
                     logger.info(
                         "Step: Moving icons from {0} to {1}".format(dir_to_move, self.tools_setup.app_vars.apps_dir)
                     )
-                    error = pyani.core.util.move_file(dir_to_move, self.tools_setup.app_vars.apps_dir)
+                    if not self.testing:
+                        error = pyani.core.util.move_file(dir_to_move, self.tools_setup.app_vars.apps_dir)
+                    else:
+                        error = None
                     if error:
-                        return error
+                        return self.format_error(error)
                     else:
                         log_success.append("Added Icons folder")
 
@@ -835,9 +964,12 @@ class AniToolsSetupGui(QtWidgets.QDialog):
                     logger.info(
                         "Step: Moving ffmpeg from {0} to {1}".format(dir_to_move, self.tools_setup.app_vars.apps_dir)
                     )
-                    error = pyani.core.util.move_file(dir_to_move, self.tools_setup.app_vars.apps_dir)
+                    if not self.testing:
+                        error = pyani.core.util.move_file(dir_to_move, self.tools_setup.app_vars.apps_dir)
+                    else:
+                        None
                     if error:
-                        return error
+                        return self.format_error(error)
                     else:
                         log_success.append("Added ffmpeg")
             # END REINSTALL ONLY SECTION -----------------------------------------------------------------------------
@@ -852,15 +984,19 @@ class AniToolsSetupGui(QtWidgets.QDialog):
                     file_to_move, self.tools_setup.app_vars.apps_dir
                 )
             )
-            # check if iuassist.exe exists, if so remove from tools dir
-            if os.path.exists(self.tools_setup.app_vars.iu_assist_path):
-                error = pyani.core.util.delete_file(self.tools_setup.app_vars.iu_assist_path)
-                if error:
-                    return error
+            if not self.testing:
+                # check if iuassist.exe exists, if so remove from tools dir
+                if os.path.exists(self.tools_setup.app_vars.iu_assist_path):
+                    error = pyani.core.util.delete_file(self.tools_setup.app_vars.iu_assist_path)
+                    if error:
+                        return self.format_error(error)
             # move iuassist.exe from newly downloaded tools in temp dir to existing tools dir
-            error = pyani.core.util.move_file(file_to_move, self.tools_setup.app_vars.apps_dir)
+            if not self.testing:
+                error = pyani.core.util.move_file(file_to_move, self.tools_setup.app_vars.apps_dir)
+            else:
+                error = None
             if error:
-                return error
+                return self.format_error(error)
             else:
                 log_success.append("Updated Install Update Assistant")
 
@@ -878,16 +1014,23 @@ class AniToolsSetupGui(QtWidgets.QDialog):
                 logger.info(
                     "Step: Moving update exe from {0} to {1}".format(file_to_move, self.tools_setup.app_vars.apps_dir)
                 )
-                error = pyani.core.util.move_file(file_to_move, self.tools_setup.app_vars.apps_dir)
+                if not self.testing:
+                    error = pyani.core.util.move_file(file_to_move, self.tools_setup.app_vars.apps_dir)
+                else:
+                    error = None
                 if error:
-                    return error
+                    return self.format_error(error)
                 else:
                     log_success.append("Updated Tools Updater")
 
             # ----> move missing apps - returns either a list or none for new_apps
-            error, new_apps = self.tools_setup.add_new_apps()
+            if not self.testing:
+                error, new_apps = self.tools_setup.add_new_apps()
+            else:
+                error = None
+                new_apps = ["Testing Mode - Added Foo App"]
             if error:
-                return error
+                return self.format_error(error)
             else:
                 log_success.append(
                     "Updated App Manager {0}".format(self.tools_setup.app_vars.app_mngr_path)
@@ -903,40 +1046,64 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         # directory if doesn't exist).
 
         # first check for .nuke  folder in C:Users\username
-        error, created = self.tools_setup.make_nuke_dir()
+        if not self.testing:
+            error, created = self.tools_setup.make_nuke_dir()
+        else:
+            error = None
+            created = True
         if error:
-            return error
+            return self.format_error(error)
         else:
             if created:
                 log_success.append("Created {0}".format(self.ani_vars.nuke_user_dir))
 
         # check for custom nuke folder in C:PyAniTools\
-        error, created = self.tools_setup.make_custom_nuke_dir()
+        if not self.testing:
+            error, created = self.tools_setup.make_custom_nuke_dir()
+        else:
+            error = None
+            created = True
         if error:
-            return error
+            return self.format_error(error)
         else:
             if created:
                 log_success.append("Created {0}".format(self.ani_vars.nuke_custom_dir))
 
         # copy custom init.py, menu.py, and .py (script with python code to support menu and gizmos)
         # Note: remove the files first, copy utils seem to not like existing files
-        error = self.tools_setup.copy_custom_nuke_init_and_menu_files()
+        if not self.testing:
+            error = self.tools_setup.copy_custom_nuke_init_and_menu_files()
+        else:
+            error = None
         if error:
-            return error
+            return self.format_error(error)
         else:
             log_success.append("Updated {0}".format(self.ani_vars.nuke_custom_dir))
 
         # finally update the init.py - only append, don't want to lose existing code added by user
-        error, added_plugin_path = self.tools_setup.add_custom_nuke_path_to_init()
+        if not self.testing:
+            error, added_plugin_path = self.tools_setup.add_custom_nuke_path_to_init()
+        else:
+            error = None
+            added_plugin_path = True
         if error:
-            return error
+            return self.format_error(error)
         else:
             if added_plugin_path:
                 log_success.append("Added {0} to {1}".format(
                     self.tools_setup.app_vars.custom_plugin_path, self.tools_setup.app_vars.nuke_init_file_path)
                 )
 
-        self.progress.setValue(self.progress.value() + progress_steps)
+        self.progress.setValue(self.progress.value() + self.progress_steps)
         QtWidgets.QApplication.processEvents()
 
         return log_success
+
+    @staticmethod
+    def format_error(error):
+        """
+        Simple utility to format errors
+        :param error: the error as a string
+        :return a string set to color red using html
+        """
+        return "<font color={0}>{1}</font>".format(pyani.core.ui.RED.name(), error)
