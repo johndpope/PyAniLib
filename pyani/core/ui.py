@@ -92,6 +92,8 @@ class CGTDownloadMonitor(QThread):
         QThread.__init__(self)
         # cmd to execute
         self.download_cmd = cmd
+        # use -u to help with buffer
+        self.python_exe = ["C:\Python27\python.exe", "-u"]
 
     @property
     def download_cmd(self):
@@ -114,8 +116,7 @@ class CGTDownloadMonitor(QThread):
         Documents\maya\plug-ins\eyeBallNode\eyeBallNode.py,C:\Users\Patrick\Documents\maya\plug-ins\eyeBallNode\
         plugin_version.json
         """
-        process = Popen(self.download_cmd, shell=True, stdout=PIPE, stderr=STDOUT)
-
+        process = Popen(self.python_exe + self.download_cmd, shell=True, stdout=PIPE, stderr=STDOUT)
         files_total = 0
         files_downloaded = 0
 
@@ -138,6 +139,7 @@ class CGTDownloadMonitor(QThread):
                 # the download folders
                 dl_dirs = temp.split(",")
                 dl_dirs = [dl_dir.replace("\n", "") for dl_dir in dl_dirs]
+                dl_dirs = [dl_dir.replace("\r", "") for dl_dir in dl_dirs]
                 # list of files locally in download folders
                 for dl_dir in dl_dirs:
                     # make sure folder exists
@@ -152,8 +154,11 @@ class CGTDownloadMonitor(QThread):
                 temp = file_names_next_line.split("#")[-1]
                 # list of files in CGT
                 file_names = temp.split(",")
-                # look for any "/" and remove
+                # look for any "/" and remove "\r" and "\n"
                 file_names = [os.path.normpath(file_name) for file_name in file_names]
+                file_names = [file_name.replace("\r", "") for file_name in file_names]
+                file_names = [file_name.replace("\n", "") for file_name in file_names]
+
                 for existing_file in existing_files:
                     # look for any files that exist locally but are not in CGT
                     if existing_file not in file_names:

@@ -17,7 +17,7 @@ from qtpy import QtCore, QtGui
 logger = logging.getLogger()
 
 
-class AniMayaPlugins:
+class AniMayaTools:
     """
     Class for managing maya plugins
 
@@ -37,7 +37,7 @@ class AniMayaPlugins:
               },...
        }
 
-    Version info is in each maya plugin directory, see app vars for file name in self.maya_plugins_vers_json_name
+    Version info is in each maya plugin directory, see app vars for file name in self.maya_tools_vers_json_name
     property. Format is:
 
     [
@@ -49,7 +49,7 @@ class AniMayaPlugins:
         },...
     ]
 
-    Both are combined to create the self.maya_plugin_data dict which is:
+    Both are combined to create the self.maya_tool_data dict which is:
 
     {
           "plugin display name" : {
@@ -72,25 +72,25 @@ class AniMayaPlugins:
     def __init__(self):
         # app vars
         self.app_vars = pyani.core.appvars.AppVars()
-        self.maya_plugin_data = None
+        self.maya_tool_data = None
 
     @property
-    def maya_plugin_data(self):
-        return self.__maya_plugin_data
+    def maya_tool_data(self):
+        return self.__maya_tool_data
 
-    @maya_plugin_data.setter
-    def maya_plugin_data(self, plugin_data):
-        self.__maya_plugin_data = plugin_data
+    @maya_tool_data.setter
+    def maya_tool_data(self, tool_data):
+        self.__maya_tool_data = tool_data
 
-    def get_plugins(self):
+    def get_tools_list(self):
         """Returns a list of plugins for maya. Returns the display name.
         """
-        return self.maya_plugin_data.keys()
+        return self.maya_tool_data.keys()
 
-    def build_plugin_data(self):
+    def build_tool_data(self):
         """
         Makes the dict of plugin data that contains the plugin's name, version, release notes and any other data for
-        managing the plugins. Sets the member property self.maya_plugin_data
+        managing the plugins. Sets the member property self.maya_tool_data
         :return: error if encountered, otherwise None
         """
         # list of maya plugins
@@ -98,11 +98,11 @@ class AniMayaPlugins:
         if not isinstance(maya_plugin_json_data, dict):
             error = "Critical error loading list of maya plugins from {0}".format(self.app_vars.tools_list)
             logger.error(error)
-            self.maya_plugin_data = None
+            self.maya_tool_data = None
             return error
 
         try:
-            self.maya_plugin_data = maya_plugin_json_data["maya plugins"]
+            self.maya_tool_data = maya_plugin_json_data["maya plugins"]
         except KeyError as e:
             error = "Critical error loading list of maya plugins from {0}. Error is missing Key: {1}".format(
                 self.app_vars.tools_list,
@@ -112,17 +112,17 @@ class AniMayaPlugins:
             return error
 
         # add version_data to maya plugin data under key 'version_data'. If no version can be loaded set to None.
-        for plugin in self.maya_plugin_data:
-            location = self.get_plugin_location(plugin)
+        for plugin in self.maya_tool_data:
+            location = self.get_tool_root_directory(plugin)
             version_path = os.path.join(
-                    os.path.join(location, self.maya_plugin_data[plugin]['name']),
-                    self.app_vars.maya_plugins_vers_json_name
+                    os.path.join(location, self.maya_tool_data[plugin]['name']),
+                    self.app_vars.maya_tools_vers_json_name
              )
             version_data = pyani.core.util.load_json(version_path)
             if isinstance(version_data, list):
-                self.maya_plugin_data[plugin]['version data'] = version_data
+                self.maya_tool_data[plugin]['version data'] = version_data
             else:
-                self.maya_plugin_data[plugin]['version data'] = None
+                self.maya_tool_data[plugin]['version data'] = None
         return None
 
     def get_version(self, plugin, version="latest"):
@@ -133,10 +133,10 @@ class AniMayaPlugins:
         :return: the version number as a string
         """
         if version == "latest":
-            return self.maya_plugin_data[plugin]["version data"][0]["version"]
+            return self.maya_tool_data[plugin]["version data"][0]["version"]
         else:
             # this can be expanded to get previous versions, right now only store one prev version
-            return self.maya_plugin_data[plugin]["version data"][1]["version"]
+            return self.maya_tool_data[plugin]["version data"][1]["version"]
 
     def get_restore_path(self, plugin):
         """
@@ -144,14 +144,14 @@ class AniMayaPlugins:
         :param plugin: the name of the plugin (display name) as a string
         :return: the restore file path
         """
-        loc = self.get_plugin_location(plugin)
+        loc = self.get_tool_root_directory(plugin)
         # get restore path and
         restore_path = os.path.join(
-            loc, os.path.join(self.maya_plugin_data[plugin]["name"], self.app_vars.maya_plugins_restore_dir)
+            loc, os.path.join(self.maya_tool_data[plugin]["name"], self.app_vars.maya_tools_restore_dir)
         )
         return restore_path
 
-    def retore_path_exists(self, plugin):
+    def restore_path_exists(self, plugin):
         """
         Checks for existence of restore path
         :param plugin: the name of the plugin (display name) as a string
@@ -164,16 +164,16 @@ class AniMayaPlugins:
         else:
             return restore_path
 
-    def get_plugin_path(self, plugin):
+    def get_tool_full_path(self, plugin):
         """
         get the path location to the plugin
         :param plugin: the name of the plugin (display name) as a string
         :return: the file path or None if doesn't exist
         """
-        loc = self.get_plugin_location(plugin)
+        loc = self.get_tool_root_directory(plugin)
         # get restore path and
         plugin_path = os.path.join(
-            loc, os.path.join(self.maya_plugin_data[plugin]["name"])
+            loc, os.path.join(self.maya_tool_data[plugin]["name"])
         )
         # check for path
         if not os.path.exists(plugin_path) or not os.listdir(plugin_path):
@@ -181,23 +181,18 @@ class AniMayaPlugins:
         else:
             return plugin_path
 
-    def get_plugin_location(self, plugin):
+    def get_tool_root_directory(self, tool):
         """
-        determine file path location of plugin - is it local in maya's plugin folder or on the server
-        :param plugin: the name of the plugin (display name) as a string
-        :return: the location file path as a string. returns the directory holding the plugin
+        determine file path location of tool locally
+        :param tool: the name of the tool (display name) as a string
+        :return: the location file path as a string. returns the directory holding the tool
         """
-        # find where its located, local or server
-        if self.maya_plugin_data[plugin]["location"] == "local":
-            loc = self.app_vars.maya_plugins_local
-        else:
-            loc = self.app_vars.maya_plugins_server
-        return loc
+        return self.maya_tool_data[tool]["location"]
 
-    def get_release_notes(self, plugin, version="latest", formatted=True):
+    def get_release_notes(self, tool, version="latest", formatted=True):
         """
-        Get the release notes for the plugin
-        :param plugin: the name of the plugin (display name) as a string
+        Get the release notes for the tool
+        :param tool: the name of the tool (display name) as a string
         :param version: the version to get release notes for. defaults to latest version
         :param formatted: whether to format the notes as human readable (bulleted list). Default is to format
         :return: the release notes formatted as a bulleted list if format=True, otherwise a list of strings if
@@ -210,8 +205,8 @@ class AniMayaPlugins:
             version_num = int(version)
         # if ask for an index that isn't there, then means no version data, index must be less than the length of the
         # version data list if it exists
-        if version_num < len(self.maya_plugin_data[plugin]["version data"]):
-            release_notes = self.maya_plugin_data[plugin]["version data"][version_num]["notes"]
+        if version_num < len(self.maya_tool_data[tool]["version data"]):
+            release_notes = self.maya_tool_data[tool]["version data"][version_num]["notes"]
         else:
             return None
         if formatted:
@@ -219,31 +214,31 @@ class AniMayaPlugins:
 
         return release_notes
 
-    def open_confluence_page(self, plugin):
+    def open_confluence_page(self, tool):
         """
         opens an html page in the web browser for help
-        :param plugin: the name of the plugin (file name) as a string
+        :param tool: the name of the tool (file name) as a string
         """
-        link = QtCore.QUrl("http://172.18.10.11:8090/display/KB/{0}".format(plugin))
+        link = QtCore.QUrl("http://172.18.10.11:8090/display/KB/{0}".format(tool))
         QtGui.QDesktopServices.openUrl(link)
 
-    def get_missing_plugins(self):
+    def get_missing_tools(self):
         """
-        Gets a list of plugins as names that are missing on disk
-        :return: a list of plugin names for missing plugins
+        Gets a list of tools as names that are missing on disk
+        :return: a list of tool names for missing tools
         """
-        plugins_missing = []
-        for plugin in self.maya_plugin_data:
-            # check if plugin doesn't exist
-            if not self.get_plugin_location(plugin):
-                plugins_missing.append(plugin)
-        return plugins_missing
+        tools_missing = []
+        for tool in self.maya_tool_data:
+            # check if tool doesn't exist
+            if not self.get_tool_root_directory(tool):
+                tools_missing.append(tool)
+        return tools_missing
 
-    def download_plugins(self, plugins, download_monitor, use_progress_monitor=True):
+    def download_tools(self, tools, download_monitor, use_progress_monitor=True):
         """
-        Downloads the plugins from the server. Updates the maya plugin data property as well to contain the updated
-        plugin info
-        :param plugins: a plugin as a string or a list of plugins on the server to download
+        Downloads the tools from the server. Updates the maya tool data property as well to contain the updated
+        tool info
+        :param tools: a tool as a string or a list of tools on the server to download
         :param download_monitor: a pyani.core.ui.CGTDownloadMonitor object that executes a command via the
         subprocess module and polls subprocess for output. Sends that via slot/signals to main window.
         """
@@ -251,16 +246,20 @@ class AniMayaPlugins:
         download_list = []
         cgt_list = []
 
-        # support one or more plugin downloads, convert single plugin string to a list
-        if not isinstance(plugins, list):
-            plugins = [plugins]
+        # support one or more tool downloads, convert single tool string to a list
+        if not isinstance(tools, list):
+            tools = [tools]
 
         # build the list of files to download and where to download to
-        for plugin in plugins:
-            cgt_list.append(self.maya_plugin_data[plugin]['server path'])
-            download_list.append(
-                self.get_plugin_location(plugin) + "\\{0}\\".format(self.maya_plugin_data[plugin]['name'])
-            )
+        for tool in tools:
+            cgt_list.append(self.maya_tool_data[tool]['server path'])
+            # check if the tool goes in a subfolder
+            if self.maya_tool_data[tool]['name']:
+                download_list.append(
+                    self.get_tool_root_directory(tool) + "\\{0}\\".format(self.maya_tool_data[tool]['name'])
+                )
+            else:
+                download_list.append(self.get_tool_root_directory(tool))
 
         py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
         # need to convert python lists to strings, separated by commas, so that it will pass through in the shell
@@ -273,6 +272,7 @@ class AniMayaPlugins:
             self.app_vars.cgt_user,
             self.app_vars.cgt_pass
         ]
+
         # use threading to display progress
         if use_progress_monitor:
             # set the command to execute and start download - runs in separate thread
@@ -290,7 +290,7 @@ class AniMayaPlugins:
         """
         Cleans up files not on CGT
         :param files: a string from CGT that has files to remove in the format:
-        file_dirs_to_dl#{directory of plugin}@file_names#{list of files separated by comma}
+        file_dirs_to_dl#{directory of tool}@file_names#{list of files separated by comma}
         ex: (note all on one line, put on separate lines below for readability
         file_dirs_to_dl#C:\Users\Patrick\Documents\maya\plug-ins\eyeBallNode\@file_names#C:\Users\Patrick\
         Documents\maya\plug-ins\eyeBallNode\eyeBallNode.py,C:\Users\Patrick\Documents\maya\plug-ins\eyeBallNode\
@@ -309,6 +309,7 @@ class AniMayaPlugins:
                 # the download folders
                 dl_dirs = temp.split(",")
                 dl_dirs = [dl_dir.replace("\n", "") for dl_dir in dl_dirs]
+                dl_dirs = [dl_dir.replace("\r", "") for dl_dir in dl_dirs]
                 # list of files locally in download folders
                 for dl_dir in dl_dirs:
                     # make sure folder exists
@@ -324,8 +325,10 @@ class AniMayaPlugins:
                 # list of files in CGT
                 file_names = temp.split(",")
 
-                # look for any "/" and remove
+                # look for any "/" and remove "\r" and "\n"
                 file_names = [os.path.normpath(file_name) for file_name in file_names]
+                file_names = [file_name.replace("\r", "") for file_name in file_names]
+                file_names = [file_name.replace("\n", "") for file_name in file_names]
 
                 logger.info("cgt files: {0}".format(", ".join(file_names)))
                 for existing_file in existing_files:
@@ -340,18 +343,18 @@ class AniMayaPlugins:
                                 shutil.rmtree(existing_file, ignore_errors=True)
                 break
 
-    def change_version(self, plugin):
+    def change_version(self, tool):
         """
-        Restores the previous version as the current version. Updates the maya plugin
-        data property as well to contain the updated plugin info on a successful version change
-        :param plugin: the name of the plugin (display name) as a string
+        Restores the previous version as the current version. Updates the maya tool
+        data property as well to contain the updated tool info on a successful version change
+        :param tool: the name of the tool (display name) as a string
         :return: Error as a string or None if no errors
         """
-        plugin_path = self.get_plugin_path(plugin)
-        # get a list of files to remove in plugin folder. We want all files except restore point dir
+        tool_path = self.get_tool_full_path(tool)
+        # get a list of files to remove in tool folder. We want all files except restore point dir
         file_list = [
-            os.path.join(plugin_path, file_name) for file_name in os.listdir(plugin_path)
-            if self.app_vars.maya_plugins_restore_dir not in file_name
+            os.path.join(tool_path, file_name) for file_name in os.listdir(tool_path)
+            if self.app_vars.maya_tools_restore_dir not in file_name
         ]
         # remove files and directories
         for file_path in file_list:
@@ -363,29 +366,29 @@ class AniMayaPlugins:
                 return error
 
         # restore previous version as current version
-        restore_path = self.get_restore_path(plugin)
+        restore_path = self.get_restore_path(tool)
         file_list = [os.path.join(restore_path, file_name) for file_name in os.listdir(restore_path)]
-        error = pyani.core.util.move_files(file_list, plugin_path)
+        error = pyani.core.util.move_files(file_list, tool_path)
         if error:
             return error
 
-        # refresh plugin info
-        error = self.build_plugin_data()
+        # refresh tool info
+        error = self.build_tool_data()
         if not isinstance(error, dict):
             return error
 
         return None
 
-    def create_restore_point(self, plugin):
+    def create_restore_point(self, tool):
         """
-        Creates a backup of the current version in the restore folder defined in self.app_vars.maya_plugins_restore_dir.
+        Creates a backup of the current version in the restore folder defined in self.app_vars.maya_tools_restore_dir.
         Handles a) no current restore data b) restore data already exists
-        :param plugin: the name of the plugin (display name) as a string
+        :param tool: the name of the tool (display name) as a string
         :return: Error as a string or None if no errors
         """
-        restore_path = self.get_restore_path(plugin)
+        restore_path = self.get_restore_path(tool)
         # check if a restore point exists and if so remove
-        if self.retore_path_exists(plugin):
+        if self.restore_path_exists(tool):
             error = pyani.core.util.rm_dir(restore_path)
             if error:
                 return error
@@ -396,8 +399,8 @@ class AniMayaPlugins:
             return error
 
         # move current version
-        plugin_path = self.get_plugin_path(plugin)
-        file_list = [os.path.join(plugin_path, file_name) for file_name in os.listdir(plugin_path)]
+        tool_path = self.get_tool_full_path(tool)
+        file_list = [os.path.join(tool_path, file_name) for file_name in os.listdir(tool_path)]
         error = pyani.core.util.move_files(file_list, restore_path)
         if error:
             return error

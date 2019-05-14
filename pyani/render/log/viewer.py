@@ -20,6 +20,31 @@ logger = logging.getLogger()
 
 
 class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
+    """
+    Views:
+
+        Show:
+            - does not display per render layer, stat totals are a sum of all render layers
+            - displays sequences as bars
+            - sidebar average totals all sequences and averages for the selected stat. Does both the stat total and
+              components
+
+        Sequence:
+            - does not display per render layer, stat totals are a sum of all render layers
+            - displays shots as bars
+            - sidebar average totals all shots and averages for the selected stat. Does both the stat total and
+              components
+
+        Shot:
+            - displays frames as bars
+            - sidebar average totals all frames and averages for the selected stat. Does both the stat total and
+              components. When All render layers is selected, averages the stat for all layers
+            - Displays according to render layer. Also has option to display a total of all render layers.
+            - When all render layers is selected, the x axis frame numbers are taken from the render layer with the
+              most frames. i.e. if a shot has render layers Qian and Env, Qian has frames 1001,1002, and Env has frames
+              1001, then Qian will be used. The frame data for frame 1002 of env will be pulled from 1001.
+
+    """
     def __init__(self, error_logging):
         self.app_name = "PyRenderDataViewer"
         self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
@@ -43,8 +68,8 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
 
         self.render_data = pyani.render.log.data.AniRenderData(dept="lighting")
 
-        # indicate sif show data is present locally
-        self.show_data = True
+        # indicates if show render data is present locally
+        self.show_render_data_exists = True
 
         error = self.render_data.ani_vars.load_seq_shot_list()
         if error:
@@ -96,17 +121,30 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                 self.stats_menu.addItem(stat)
             self.selected_stat = str(self.stats_menu.currentText())
 
+            # render layer menu - disabled until reach shot level/view
+            self.render_layer = None
+            self.render_layer_menu = QtWidgets.QComboBox()
+            self._build_render_layer_menu()
+            self.render_layer_menu.setDisabled(True)
+
             # set up the data
+            import time
+            s = time.time()
             self.render_data.read_stats()
+            e = time.time()
+            print e-s
+            import sys
+            sys.exit()
+
+            # process data to get averages and totals - uses the first stat listed in the menu
             self.render_data.process_data(self.selected_stat)
 
-            # history widgets - show level and sequence level only allow history="1", because you would have
-            # to check all sequences for show level for the most history and use the one with the most
-            # history for the combo box. same for sequence level. so for now make it easy and do just shot level
-            # run this after render data has been populated
+            # history widgets - show level and sequence level only allow history="1", because doesn't make sense in
+            # context of show and sequence views, since shots will have varying levels of history
             self.history_menu = QtWidgets.QComboBox()
             self._build_history_menu()
             self.history = "1"
+            self.history_menu.setDisabled(True)
 
             self.nav_crumbs = QtWidgets.QLabel()
             self.set_nav_link()
@@ -118,11 +156,18 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             if self.render_data.stat_data:
                 x_axis_labels, graph_data, colors = self.build_graph_data()
 
+                if "min" in self.render_data.get_stat_type(self.selected_stat):
+                    x_label = "minutes (min)"
+                elif "gb" in self.render_data.get_stat_type(self.selected_stat):
+                    x_label = "gigabytes (gb)"
+                else:
+                    x_label = "percent (%)"
+
                 self.bar_graph = pyani.core.ui.BarGraph(
                     x_axis_labels,
                     graph_data,
                     self.levels[self.current_level],
-                    self.selected_stat,
+                    x_label,
                     width=.95,
                     color=colors
                 )
@@ -131,7 +176,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                 self.msg_win.show_warning_msg("No Data Found", "No render data was found on disk. This is only a "
                                                                "warning. You can use the load data button to load "
                                                                "your own render stats.")
-                self.show_data = False
+                self.show_render_data_exists = False
             # override any custom qt style, which breaks the text spacing for the bar graph on axis labels
             self.bar_graph.setStyle(QtWidgets.QCommonStyle())
 
@@ -164,6 +209,15 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         )
         graph_header_layout.addWidget(history_label)
         graph_header_layout.addWidget(self.history_menu)
+
+        render_layer_label = QtWidgets.QLabel(
+            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Render Layers</span>".format(
+                self.font_size_menus, self.font_family
+            )
+        )
+        graph_header_layout.addWidget(render_layer_label)
+        graph_header_layout.addWidget(self.render_layer_menu)
+
         stats_label = QtWidgets.QLabel(
             "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Render Stats</span>".format(
                 self.font_size_menus, self.font_family
@@ -179,7 +233,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         main_layout.addItem(QtWidgets.QSpacerItem(20, 0))
 
         # side bar gui - only build if there is data
-        if self.show_data:
+        if self.show_render_data_exists:
             self.build_averages_sidebar()
         main_layout.addLayout(self.averages_layout)
         # space between side bar and edge window
@@ -192,6 +246,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         self.nav_crumbs.linkActivated.connect(self.update_from_nav_link)
         self.history_menu.currentIndexChanged.connect(self.update_displayed_history)
         self.stats_menu.currentIndexChanged.connect(self.update_displayed_stat)
+        self.render_layer_menu.currentIndexChanged.connect(self.update_displayed_render_layer)
         self.bar_graph.graph_update_signal.connect(self.update_from_graph)
         self.load_data_btn.clicked.connect(self.load_user_data)
         self.clear_data_btn.clicked.connect(self.clear_user_data)
@@ -231,7 +286,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
 
             # enable button, data loaded. only enable though if there is show data, otherwise doesn't make
             # sense to clear data
-            if self.show_data:
+            if self.show_render_data_exists:
                 self.clear_data_btn.setDisabled(False)
 
     def clear_user_data(self):
@@ -289,6 +344,15 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         self.history = str(self.history_menu.currentText())
         self.update_ui()
 
+    def update_displayed_render_layer(self):
+        """
+        Updates the graph and sidebar averages with the render layer selected
+        """
+        # only allow render layer when viewing a shot's data
+        self.render_layer = str(self.render_layer_menu.currentText())
+        self._build_history_menu()
+        self.update_ui()
+
     def update_displayed_stat(self):
         """
         Updates the graph and sidebar averages with the render stat selected
@@ -305,12 +369,18 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         """
         # set the level based off x axis value clicked on
         if pyani.core.util.is_valid_seq_name(str(x_axis_value)):
+            # enable render layer and history menus since at shot level
             self.seq = str(x_axis_value)
             self.current_level = 1
+        # build shot view, note we don't do history here because we start with the all render layers. history gets
+        # built when a render layer is selected
         elif pyani.core.util.is_valid_shot_name(str(x_axis_value)):
+            # enable render layer and history menus since at shot level
+            self.render_layer_menu.setDisabled(False)
+            self.history_menu.setDisabled(False)
             self.shot = str(x_axis_value)
             self.current_level = 2
-            self._build_history_menu()
+            self._build_render_layer_menu()
         elif pyani.core.util.is_valid_frame(str(x_axis_value)):
             # no more levels, don't do anything except show log
             pass
@@ -329,8 +399,18 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         :param link: passed from the signal connected to the text
         """
         if link == "#Show":
+            # disable and reset render layer and history menus since not at shot level
+            self._build_history_menu()
+            self.history_menu.setDisabled(True)
+            self._build_render_layer_menu()
+            self.render_layer_menu.setDisabled(True)
             self.current_level = 0
         elif link == "#Seq":
+            # disable and reset render layer and history menus since not at shot level
+            self._build_history_menu()
+            self.history_menu.setDisabled(True)
+            self._build_render_layer_menu()
+            self.render_layer_menu.setDisabled(True)
             self.current_level = 1
         self.set_nav_link()
         self.update_ui()
@@ -342,7 +422,18 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         """
         # process the render data based off level
         if self.current_level is 2:
-            self.render_data.process_data(self.selected_stat, self.seq, self.shot, history=self.history)
+            # check if the menu is the first entry, which is all render layers, if so process all render layers
+            # in the shot
+            if self.render_layer_menu.currentIndex() == 0:
+                # process data for every render layer
+                for render_layer in self.render_data.get_render_layers(self.seq, self.shot, history=self.history):
+                    self.render_data.process_data(
+                        self.selected_stat, self.seq, self.shot, render_layer, history=self.history
+                    )
+            else:
+                self.render_data.process_data(
+                    self.selected_stat, self.seq, self.shot, self.render_layer, history=self.history
+                )
         elif self.current_level is 1:
             self.render_data.process_data(self.selected_stat, self.seq)
         else:
@@ -351,9 +442,17 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         # rebuild data
         x_axis_labels, graph_data, colors = self.build_graph_data()
 
+        x_label = ""
+        if "min" in self.render_data.get_stat_type(self.selected_stat):
+            x_label = "minutes (min)"
+        elif "gb" in self.render_data.get_stat_type(self.selected_stat):
+            x_label = "gigabytes (gb)"
+        else:
+            x_label = "percent (%)"
+
         self.bar_graph.update_graph(
             x_axis_label=self.levels[self.current_level],
-            y_axis_label=self.selected_stat,
+            y_axis_label=x_label,
             x_data=x_axis_labels,
             y_data=graph_data,
             width=0.95,
@@ -397,13 +496,52 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                     self.render_data.stat_data[self.seq][shot]['average'][self.selected_stat]['components'])
         # build data for shot
         else:
-            x_axis_labels = self.render_data.get_frames(self.seq, self.shot)
+            x_axis_labels = []
+            # check if the menu is the first entry, which is all render layers, if so find the render layer
+            # with the most frames, and use that as the x axis label
+            if self.render_layer_menu.currentIndex() == 0:
+                # get the render layer with the most frames
+                for render_layer in self.render_data.get_render_layers(self.seq, self.shot, history=self.history):
+                    frames = self.render_data.get_frames(self.seq, self.shot, render_layer, history=self.history)
+                    if len(frames) > len(x_axis_labels):
+                        x_axis_labels = frames
+            else:
+                x_axis_labels = self.render_data.get_frames(
+                    self.seq, self.shot, self.render_layer, history=self.history
+                )
 
+            # for every frame build data
             for frame in x_axis_labels:
-                graph_data['total'].append(
-                    self.render_data.stat_data[self.seq][self.shot][self.history][frame][self.selected_stat]['total'])
-                graph_data['components'].append(
-                    self.render_data.stat_data[self.seq][self.shot][self.history][frame][self.selected_stat]['components'])
+                # check if the menu is the first entry, which is all render layers, if so process all render layers
+                # in the shot
+                if self.render_layer_menu.currentIndex() == 0:
+                    total = 0.0
+                    component_total = [0.0] * len(self.render_data.get_stat_components(self.selected_stat))
+                    render_layers = self.render_data.get_render_layers(self.seq, self.shot, history=self.history)
+                    for render_layer in render_layers:
+                        # need to add up the stat for every render layer - note frame data may not exist, since we
+                        # use the frame count from the render layer that has the most frames. If the data isn't there,
+                        # use the first existing frame's data
+                        if frame not in self.render_data.stat_data[self.seq][self.shot][render_layer][self.history]:
+                            # take the first frame's value
+                            frame = self.render_data.get_frames(self.seq, self.shot, render_layer, history=self.history)[0]
+                        total += self.render_data.stat_data[self.seq][self.shot][render_layer][self.history][frame][self.selected_stat]['total']
+                        for i, component in enumerate(self.render_data.stat_data[self.seq][self.shot][render_layer][self.history][frame][self.selected_stat]['components']):
+                            component_total[i] += component
+
+                    # treat cpu utilization specially, because just summing it doesn't make much sense. Consider
+                    # render layer 1 uses 93%, and render layer 2 is 90%, seeing 183% doesn't really help. Averaging
+                    # is a slightly better help
+                    if "cpu utilization" in self.selected_stat:
+                        total /= len(render_layers)
+
+                    graph_data['total'].append(total)
+                    graph_data['components'].append(component_total)
+                else:
+                    graph_data['total'].append(
+                        self.render_data.stat_data[self.seq][self.shot][self.render_layer][self.history][frame][self.selected_stat]['total'])
+                    graph_data['components'].append(
+                        self.render_data.stat_data[self.seq][self.shot][self.render_layer][self.history][frame][self.selected_stat]['components'])
 
         if self.render_data.get_stat_type(self.selected_stat) == "min":
             colors_to_use = self.color_set_cool
@@ -440,9 +578,19 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
 
         # average based off level - ie sequence, shot, or frame
         if self.levels[self.current_level] == "Frame":
-            # average stat for all the frames for this shot
-            main_total = self.render_data.stat_data[self.seq][self.shot][self.history]['average'][self.selected_stat]["total"]
-            component_totals = self.render_data.stat_data[self.seq][self.shot][self.history]['average'][self.selected_stat]["components"]
+            # check if the menu is the first entry, which is all render layers, if so process all render layers
+            # in the shot
+            if self.render_layer_menu.currentIndex() == 0:
+                # average stat for all the frames of all render layers in this shot - can just grab the shot average
+                # since its already an average of the stat for all render layers for every frame in the shot. Need
+                # to build the data first though
+                self.render_data.process_data(self.selected_stat, self.seq, self.shot)
+                main_total = self.render_data.stat_data[self.seq][self.shot]['average'][self.selected_stat]["total"]
+                component_totals = self.render_data.stat_data[self.seq][self.shot]['average'][self.selected_stat]["components"]
+            else:
+                # average stat for all the frames of a single render layer in this shot
+                main_total = self.render_data.stat_data[self.seq][self.shot][self.render_layer][self.history]['average'][self.selected_stat]["total"]
+                component_totals = self.render_data.stat_data[self.seq][self.shot][self.render_layer][self.history]['average'][self.selected_stat]["components"]
         elif self.levels[self.current_level] == "Shot":
             # average stat across all shots in sequence
             main_total = self.render_data.stat_data[self.seq]['average'][self.selected_stat]["total"]
@@ -491,17 +639,43 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self.averages_layout.addItem(QtWidgets.QSpacerItem(0, 15))
         self.averages_layout.addStretch(1)
 
-    def _build_history_menu(self):
-        """Makes the history menu based off the current seq and shot. If no seq or shot is set, defaults to
-        "1". Also defaults to "1" if user data is loaded (the sequence is set to the user_seq member var
+    def _build_render_layer_menu(self):
         """
+        Builds the render layer menu, based off the sequence, shot and history. Adds an "All Render Layers" option
+        that calculates all render layer's stats together. This is the default.
+        """
+        # block signals so currentIndexChanged doesn't get invoked when we clear and rebuild menu
+        self.render_layer_menu.blockSignals(True)
+        self.render_layer_menu.clear()
+        # ensures the seq and shot were set and not on a custom user loaded sequence
+        if (self.seq and self.shot) and (not self.seq == self.user_seq):
+            # add the all render layers option
+            self.render_layer_menu.addItem("All Render Layers")
+            for render_layer in self.render_data.get_render_layers(self.seq, self.shot, history="1"):
+                self.render_layer_menu.addItem(render_layer)
+        else:
+            self.render_layer_menu.addItem("N/A : Please select a shot")
+        # set the active render layer to the first menu item as a default
+        self.render_layer = str(self.render_layer_menu.currentText())
+        self.render_layer_menu.blockSignals(False)
+
+    def _build_history_menu(self):
+        """
+        Makes the history menu based off the current seq and shot. If no seq or shot is set, defaults to
+        "1". Also defaults to "1" if user data is loaded (the sequence is set to the user_seq member var. Finally
+        history is set to "1" when the user is displaying all render layers instead of a specific render layer
+        """
+        # block signals so currentIndexChanged doesn't get invoked when we clear and rebuild menu
         self.history_menu.blockSignals(True)
         self.history_menu.clear()
-
-        if (self.seq and self.shot) and (not self.seq == self.user_seq):
-            for history in self.render_data.get_history(self.seq, self.shot):
+        # ensures the seq and shot were set and not on a custom user loaded sequence and also checks 'all render layers'
+        # isn't selected. Doesn't make sense to build history when all render layers are being totaled.
+        if (self.seq and self.shot) and (not self.seq == self.user_seq) and \
+                int(self.render_layer_menu.currentIndex()) > 0:
+            for history in self.render_data.get_history(self.seq, self.shot, self.render_layer):
                 self.history_menu.addItem(history)
         else:
             self.history_menu.addItem("1")
+        # reset the current history
+        self.history = str(self.history_menu.currentText())
         self.history_menu.blockSignals(False)
-

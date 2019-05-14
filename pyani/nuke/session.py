@@ -288,6 +288,31 @@ class AniNukeCmds:
         cmd = "nuke.toNode({0})['image_path_eval'].setValue(nuke.toNode({1})['{2}'].evaluate())".format(read, read, txt)
         node['knobChanged'].setValue(cmd)
 
+    @staticmethod
+    def alembic_rename():
+        """
+        Renames read geo nodes based off transform node name
+        """
+        # counter to use when we encounter nodes that have the name we want to use, avoids name clashes
+        count = 1
+        # ReadGeo2 is the class type, to check class select a node, and run nuke.selectedNode().Class()
+        # Loop through all ReadGeo nodes in scene
+        for node in nuke.allNodes('ReadGeo2'):
+            # get the scene view values
+            scene_view = node['scene_view']
+            # this will return a list with the hierarchy as the first element and the
+            # path as 'root/geo/shape', for example:
+            # ['/root/mp_Mtn/mp_Mtn_Shape']
+            full_hierarchy = scene_view.getAllItems()
+            # parse string for the transform name, do this by splitting string at forward slash
+            node_name = full_hierarchy[0].split("/")[-2]
+            # check if node name exists, if it does append a number to avoid name clash
+            if nuke.exists(node_name):
+                node_name = node_name + "_" + str(count)
+                count += 1
+            # set name
+            node['name'].setValue(node_name)
+
 
 class AniNukeGui:
     """

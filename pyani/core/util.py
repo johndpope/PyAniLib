@@ -12,7 +12,7 @@ import logging
 import Queue
 import threading
 import operator
-import math
+import datetime
 from functools import reduce # python 3 compatibility
 
 
@@ -180,6 +180,77 @@ class WinTaskScheduler:
                 )
                 logger.error(error)
                 return error
+        return None
+
+    def get_task_time(self):
+        """
+        Returns the time a task runs
+        :return: the time as a datetime object. Returns the error if an error occurs, or None if
+        no errors but can't get time
+        """
+        p = subprocess.Popen(
+            ["schtasks", "/Query", "/tn", self.task_name, "/fo", "list"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        output, error = p.communicate()
+        logging.info("task query is: {0}".format(output))
+        for line in output.split("\n"):
+            if "Next Run Time:" in line:
+                split_line = line.split(" ")[-2:]
+                run_time = " ".join(split_line)
+                run_time = run_time.replace("\r", "")
+                time_object = datetime.datetime.strptime(run_time, "%I:%M:%S %p")
+                logging.info("Run time for task {0} is {1}".format(self.task_name, time_object.strftime("%I:%M %p")))
+                return time_object
+
+        if p.returncode != 0:
+            error = "Problem getting task state for {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
+                self.task_name,
+                p.returncode,
+                output,
+                error
+            )
+            logger.error(error)
+            return error
+        return None
+
+    def set_task_time(self, run_time):
+        """
+        Sets the time a task runs - deletes existing task then creates a new task. Trying to update an existing task
+        causes problems because you need a password, or have to input password when prompted after run schtasks command
+        :param run_time: the time as hours:minutes to run as military time
+        :return error if encountered as a string, otherwise None
+        """
+        error = self.delete_task()
+        if error:
+            return error
+        error = self.setup_task(start_time=run_time)
+        if error:
+            return error
+        return None
+
+    def delete_task(self):
+        """
+        Deletes a task
+        :return: error if encountered as a string, otherwise None
+        """
+        p = subprocess.Popen(
+            ["schtasks", "/Delete", "/tn", self.task_name, "/f"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        output, error = p.communicate()
+        logging.info("task query is: {0}".format(output))
+        if p.returncode != 0:
+            error = "Problem deleting task {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
+                self.task_name,
+                p.returncode,
+                output,
+                error
+            )
+            logger.error(error)
+            return error
         return None
 
 
@@ -403,13 +474,14 @@ def make_dir(dir_path):
 
 def make_all_dir_in_path(dir_path):
     """
-    makes all the directories in the path if they don't exist
+    makes all the directories in the path if they don't exist, handles if some folders already exist
     :param dir_path: a file path
     :return: None if no errors, otherwise return error as string
     """
     # make directory if doesn't exist
     try:
-        os.makedirs(dir_path)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
     except (IOError, OSError) as e:
         if not os.path.isdir(dir_path):
             error_msg = "Could not make directory {0}. Received error {1}".format(dir_path, e)
@@ -575,6 +647,7 @@ def call_ext_py_api(command, interpreter=None):
     py_command.extend(command)
     logger.info("Command is: {0}".format(' '.join(py_command)))
     p = subprocess.Popen(py_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
     output, error = p.communicate()
     if p.returncode != 0:
         error = "Problem executing command {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(

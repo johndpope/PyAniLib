@@ -1,6 +1,6 @@
 import os
 import json
-import numbers
+import copy
 import pyani.core.anivars
 import pyani.core.util as util
 
@@ -9,23 +9,53 @@ class AniRenderData:
     """
         Note a comma after a bracket means there could be more than one entry
 
-        Raw Data stored as
+        Raw Data - read in from disk, not accessible by viewer, just puts data on disk in memory. Loads all
+        sequence data at one time
+        ------------------------------------------
+        stored as dict in format:
         {
             sequence: {
                 shot: {
-                    history: {
-                        frame: {
-                            stat: {
-                                item(s)
+                    render layer: {
+                        history: {
+                            frame: {
+                                stat: {
+                                    item(s)
+                                },
+                                more stats...
                             },
-                            more stats...
                         },
                     },
                 },
             },
         }
-        Processed Data stored as
+
+        Processed Data - takes raw data and does averaging, this is a deferred loading approach, to speed up processing
+        Only process data as requested (when a render layer or stat is changed)
+
+        Averages for stat are a total of all render layers. For example if there are 3 render layers, we sum and
+        average the memory for all 3 layers
+
+        Sequence :
+            - Store average per stat of all shots, so memory for example is totaling and averaging every shot's memory
+            - This is the total of all render layers
+
+        Shot:
+            - Store average per stat of all frames, so memory for example is totaling and averaging every frame's memory
+            - This is the total of all render layers
+
+        Render Layer:
+            - Store average per stat of all frames for this render layer
+
+        --------------------------------------------
+        stored as dict in format:
         {
+            average: {
+                stat: {
+                    total: float
+                    components: [list of floats]
+                },
+            }
             sequence#: {
                 average: {
                     stat: {
@@ -40,17 +70,19 @@ class AniRenderData:
                             components: [list of floats]
                         },
                     }
-                    history: {
-                        average: {
-                            stat: {
-                                total: float
-                                components: [list of floats]
-                            },
-                        }
-                        frame: {
-                            stat: {
-                                total: float
-                                components: [list of floats]
+                    render layer: {
+                        history: {
+                            average: {
+                                stat: {
+                                    total: float
+                                    components: [list of floats]
+                                },
+                            }
+                            frame: {
+                                stat: {
+                                    total: float
+                                    components: [list of floats]
+                                },
                             },
                         },
                     },
@@ -256,12 +288,13 @@ class AniRenderData:
             print "There is no stat named: {0}. Available stats are: {1}".format(stat, ", ".join(self.stat_names))
         return components
 
-    def get_stat(self, seq, shot, frame, stat, history='1'):
+    def get_stat(self, seq, shot, render_layer, frame, stat, history='1'):
         """
         gets the stat for a specific frame. if the stat is comprised of multiple stats, gets the components values too.
         :param stat:
         :param seq: sequence number as string
         :param shot: shot number as string
+        :param render_layer: the render layer as a string
         :param frame: frame number as a string
         :param stat: the stat to get
         :param history: the history number as string - defaults to 1
@@ -276,14 +309,14 @@ class AniRenderData:
             # get the type - seconds or bytes
             stat_type = mapping_dict['type']
             # get the total time for stat
-            key_path = [seq, shot, history, frame] + key_name + [stat_type]
+            key_path = [seq, shot, render_layer, history, frame] + key_name + [stat_type]
             # figure out data type for conversion
             if stat_type == "bytes":
-                stat_total = self._bytes_to_gb(util.find_val_in_nested_dict(self.__raw_stat_data, key_path))
+                stat_total = self._bytes_to_gb(util.find_val_in_nested_dict(self.raw_stat_data, key_path))
             elif stat_type == "percent":
-                stat_total = util.find_val_in_nested_dict(self.__raw_stat_data, key_path)
+                stat_total = util.find_val_in_nested_dict(self.raw_stat_data, key_path)
             else:
-                stat_total = self._microsec_to_min(util.find_val_in_nested_dict(self.__raw_stat_data, key_path))
+                stat_total = self._microsec_to_min(util.find_val_in_nested_dict(self.raw_stat_data, key_path))
 
             # if no total, return 0.0. Note return a list for compatibility with return value of actual data which
             # is a list
@@ -299,38 +332,44 @@ class AniRenderData:
                 # loop through stat data dict and get microseconds for every component
                 for component in component_keys:
                     # build key path to access value in stat data
-                    key_path = [seq, shot, history, frame] + key_name + component.split(":")
+                    key_path = [seq, shot, render_layer, history, frame] + key_name + component.split(":")
                     # get time, memory or percent from stats dict
                     if stat_type == "bytes":
                         component_amounts.append(
-                            self._bytes_to_gb(util.find_val_in_nested_dict(self.__raw_stat_data, key_path))
+                            self._bytes_to_gb(util.find_val_in_nested_dict(self.raw_stat_data, key_path))
                         )
                     elif stat_type == "percent":
-                        component_amounts.append(util.find_val_in_nested_dict(self.__raw_stat_data, key_path))
+                        component_amounts.append(util.find_val_in_nested_dict(self.raw_stat_data, key_path))
                     else:
                         component_amounts.append(
-                            self._microsec_to_min(util.find_val_in_nested_dict(self.__raw_stat_data, key_path))
+                            self._microsec_to_min(util.find_val_in_nested_dict(self.raw_stat_data, key_path))
                         )
             # return the time
             return [stat_total] + component_amounts
         else:
             return [0.0]
 
-    def process_data(self, stat, seq=None, shot=None, history="1"):
+    def process_data(self, stat, seq=None, shot=None, render_layer=None, history="1"):
         """
         Takes the raw data and puts in the format listed in the class doc string under Processed Data
         :param stat: the stat name as a string
         :param seq: sequence number as string
         :param shot: shot number as string
+        :param render_layer: the render layer as a string
         :param history: the history to get, defaults to the current render data
         """
-        # a sequence and shot were provided, so process the frame data
-        if seq and shot:
+        # a sequence, shot, and render layer were provided, process frame data
+        if seq and shot and render_layer:
+            # check if the data has been processed yet
+            if not util.find_val_in_nested_dict(self.stat_data, [seq, shot, render_layer, history, 'average', stat]):
+                self.process_render_layer_data(stat, seq, shot, render_layer, history=history)
+        # a sequence and shot were provided, so process the render layer data
+        elif seq and shot:
             # check if the data has been processed yet
             if not util.find_val_in_nested_dict(self.stat_data, [seq, shot, history, 'average', stat]):
                 self.process_shot_data(stat, seq, shot, history=history)
         # just a sequence was provided, process all shot data for the sequence
-        elif seq and not shot:
+        elif seq:
             # check if the data has been processed already
             if not util.find_val_in_nested_dict(self.stat_data, [seq, 'average', stat]):
                 self.process_sequence_data(stat, seq)
@@ -350,7 +389,7 @@ class AniRenderData:
         main_total_sum = 0.0
         component_totals_sum = [0.0] * len(self.get_stat_components(stat))
 
-        # average stat across all sequences
+        # get list of all sequences that have stats
         seq_list = self.get_sequences(history=history)
 
         # no sequences, then don't add anything
@@ -362,22 +401,31 @@ class AniRenderData:
             if seq not in self.stat_data:
                 self.stat_data[seq] = {}
 
-            # get the average for the stat for the sequence
-            self.process_sequence_data(stat, seq, history=history)
-            # sum the average
-            main_total_sum += self.stat_data[seq]["average"][stat]["total"]
-            component_totals_sum = [
-                component_totals_sum[index] +
-                self.stat_data[seq]["average"][stat]["components"][index]
-                for index in xrange(len(component_totals_sum))
-            ]
+            # get the average for the stat for the sequence, skips if there isn't any data for the sequences
+            if self.process_sequence_data(stat, seq, history=history):
+                # make key if doesn't exist for the average of the stat for all sequences
+                if 'average' not in self.stat_data:
+                    self.stat_data["average"] = {}
 
-        # average the sequence data
-        main_total_sum /= len(seq_list)
-        component_totals_sum = [component_total / len(seq_list) for component_total in component_totals_sum]
-        if 'average' not in self.stat_data:
-            self.stat_data['average'] = {}
-        self.stat_data['average'][stat] = {'total': main_total_sum, 'components': component_totals_sum}
+                # check if already summed
+                if stat not in self.stat_data["average"]:
+                    # get the frame average for the shot and sum
+                    main_total_sum += self.stat_data[seq]["average"][stat]["total"]
+                    component_totals_sum = [
+                        component_totals_sum[index] +
+                        self.stat_data[seq]["average"][stat]["components"][index]
+                        for index in xrange(len(component_totals_sum))
+                    ]
+                else:
+                    continue
+
+        # average the total sums so that the sequence has an average of all its shots data
+        if stat not in self.stat_data["average"]:
+            main_total_sum /= len(seq_list)
+            component_totals_sum = [component_total / len(seq_list) for component_total in component_totals_sum]
+            self.stat_data['average'][stat] = {'total': main_total_sum, 'components': component_totals_sum}
+
+        return True
 
     def process_sequence_data(self, stat, seq, history="1"):
         """
@@ -404,33 +452,32 @@ class AniRenderData:
             # average the shot's frame data and store
             if self.process_shot_data(stat, seq, shot, history=history):
                 # make key if doesn't exist
-                if 'average' not in self.stat_data[seq][shot]:
-                    self.stat_data[seq][shot]["average"] = {}
-                # set the shot total
-                self.stat_data[seq][shot]["average"][stat] = {
-                    'total': self.stat_data[seq][shot][history]["average"][stat]["total"],
-                    'components': self.stat_data[seq][shot][history]["average"][stat]["components"]
-                }
-                # get the frame average for the shot and sum
-                main_total_sum += self.stat_data[seq][shot][history]["average"][stat]["total"]
-                component_totals_sum = [
-                    component_totals_sum[index] +
-                    self.stat_data[seq][shot][history]["average"][stat]["components"][index]
-                    for index in xrange(len(component_totals_sum))
-                ]
+                if 'average' not in self.stat_data[seq]:
+                    self.stat_data[seq]["average"] = {}
+
+                # check if already summed
+                if stat not in self.stat_data[seq]["average"]:
+                    # get the frame average for the shot and sum
+                    main_total_sum += self.stat_data[seq][shot]["average"][stat]["total"]
+                    component_totals_sum = [
+                        component_totals_sum[index] +
+                        self.stat_data[seq][shot]["average"][stat]["components"][index]
+                        for index in xrange(len(component_totals_sum))
+                    ]
+                else:
+                    continue
 
         # average the total sums so that the sequence has an average of all its shots data
-        main_total_sum /= len(shot_list)
-        component_totals_sum = [component_total / len(shot_list) for component_total in component_totals_sum]
-        if 'average' not in self.stat_data[seq]:
-            self.stat_data[seq]['average'] = {}
-        self.stat_data[seq]['average'][stat] = {'total': main_total_sum, 'components': component_totals_sum}
+        if stat not in self.stat_data[seq]["average"]:
+            main_total_sum /= len(shot_list)
+            component_totals_sum = [component_total / len(shot_list) for component_total in component_totals_sum]
+            self.stat_data[seq]['average'][stat] = {'total': main_total_sum, 'components': component_totals_sum}
 
         return True
 
     def process_shot_data(self, stat, seq, shot, history="1"):
         """
-         Gets the stat and its component values per frame, and averages those values
+         Gets the stat and its component values per render layer, and averages those values
          :param stat: the main stat as a string
          :param seq: the seq as a string, format seq###
          :param shot: the shot as a string, format shot###
@@ -440,25 +487,80 @@ class AniRenderData:
         main_total_sum = 0.0
         component_totals_sum = [0.0] * len(self.get_stat_components(stat))
 
+        # get all of the render layers in the sequence that have data at the given history
+        render_layer_list = self.get_render_layers(seq, shot, history=history)
+        # no shots, then return False, don't add anything
+        if not render_layer_list:
+            return False
+
+        for render_layer in render_layer_list:
+            # make key if doesn't exist
+            if render_layer not in self.stat_data[seq][shot]:
+                self.stat_data[seq][shot][render_layer] = {}
+
+            # average the shot's render layer frame data and store, note if process_render_layer_data returns True
+            # it means there was render data for the render layer, so we add that data to the average for the shot
+            if self.process_render_layer_data(stat, seq, shot, render_layer, history=history):
+                # make key if doesn't exist
+                if 'average' not in self.stat_data[seq][shot]:
+                    self.stat_data[seq][shot]["average"] = {}
+                # check if we already summed this stat
+                if stat not in self.stat_data[seq][shot]["average"]:
+                    # get the render layer average for the shot and sum
+                    main_total_sum += self.stat_data[seq][shot][render_layer][history]["average"][stat]["total"]
+                    component_totals_sum = [
+                        component_totals_sum[index] +
+                        self.stat_data[seq][shot][render_layer][history]["average"][stat]["components"][index]
+                        for index in xrange(len(component_totals_sum))
+                    ]
+                else:
+                    continue
+
+        # average the total sums so that the shot has an average of all its render layer data - only process
+        # if the stat doesn't exist, otherwise we already did this stat
+        if stat not in self.stat_data[seq][shot]["average"]:
+            main_total_sum /= len(render_layer_list)
+            component_totals_sum = [component_total / len(render_layer_list) for component_total in
+                                    component_totals_sum]
+            self.stat_data[seq][shot]['average'][stat] = {'total': main_total_sum, 'components': component_totals_sum}
+
+        return True
+
+    def process_render_layer_data(self, stat, seq, shot, render_layer, history="1"):
+        """
+         Gets the stat and its component values per frame, and averages those values
+         :param stat: the main stat as a string
+         :param seq: the seq as a string, format seq###
+         :param shot: the shot as a string, format shot###
+         :param render_layer: the render layer as a string
+         :param history: the history as a string, defaults to "1" which is the current render data
+         :return: False if no data was added to the processed data dict, True if data added
+        """
+        main_total_sum = 0.0
+        component_totals_sum = [0.0] * len(self.get_stat_components(stat))
+
         # get all of the frames in the shot that have data at the given history
-        frames = self.get_frames(seq, shot, history=history)
+        frames = self.get_frames(seq, shot, render_layer, history=history)
 
         # no frames means no history, so don't add anything to processed data
         if not frames:
             return False
 
         # make the key if it doesn't exist
-        if history not in self.stat_data[seq][shot]:
-            self.stat_data[seq][shot][history] = {}
+        if history not in self.stat_data[seq][shot][render_layer]:
+            self.stat_data[seq][shot][render_layer][history] = {}
 
         for frame in frames:
             # get the stat values for this frame - the main stat total and any sub components
-            totals = self.get_stat(seq, shot, frame, stat, history)
+            totals = self.get_stat(seq, shot, render_layer, frame, stat, history)
             # make the key if it doesn't exist
-            if frame not in self.stat_data[seq][shot][history]:
-                self.stat_data[seq][shot][history][frame] = {}
+            if frame not in self.stat_data[seq][shot][render_layer][history]:
+                self.stat_data[seq][shot][render_layer][history][frame] = {}
             # store frame data
-            self.stat_data[seq][shot][history][frame][stat] = {'total': totals[0], 'components': totals[1:]}
+            self.stat_data[seq][shot][render_layer][history][frame][stat] = {
+                'total': totals[0],
+                'components': totals[1:]
+            }
 
             # sum frame data for averaging
             # first number is the main stat total, remaining numbers are the component totals
@@ -470,10 +572,10 @@ class AniRenderData:
         component_totals = [component_total / len(frames) for component_total in component_totals_sum]
 
         # make the key if it doesn't exist
-        if 'average' not in self.stat_data[seq][shot][history]:
-            self.stat_data[seq][shot][history]['average'] = {}
+        if 'average' not in self.stat_data[seq][shot][render_layer][history]:
+            self.stat_data[seq][shot][render_layer][history]['average'] = {}
         # store the frame average
-        self.stat_data[seq][shot][history]['average'][stat] = {
+        self.stat_data[seq][shot][render_layer][history]['average'][stat] = {
             'total': main_total, 'components': component_totals
         }
 
@@ -485,7 +587,6 @@ class AniRenderData:
         member variable
         """
         stats = {}
-        stats_processed = {}
         # for every seq, go through shots and get the frame data
         for sequence in self.ani_vars.get_sequence_list():
             # path to the stats for this sequence
@@ -502,64 +603,91 @@ class AniRenderData:
                 }
                 '''
                 stats[sequence] = {}
-                stats_processed[sequence] = {'average': {}}
+
                 # update ani vars to this sequence
                 self.ani_vars.update(sequence)
-                # get a list of the history for this sequence
-                history_numbers = [history for history in os.listdir(sequence_stats_path) if util.is_number(history)]
-                # make sure there is history, if not skip
-                if history_numbers:
-                    # get a list of the paths to the history
-                    history_stats_paths = [os.path.join(sequence_stats_path, history) for history in history_numbers]
-                    # loop through history folders to get stats
-                    for history_index in range(0, len(history_numbers)):
-                        # a list of all the shots stat files in the history folder, skips files
-                        if os.path.isdir(history_stats_paths[history_index]):
-                            shot_stats_files = [
-                                os.path.join(history_stats_paths[history_index], shot_stats_file)
-                                for shot_stats_file in os.listdir(history_stats_paths[history_index])
-                            ]
-                        # no directory, its a file, so don't process
-                        else:
-                            shot_stats_files = []
 
-                        if shot_stats_files:
-                            # for every shot stat file, add to our stat data dict
-                            for shot_stat_file in shot_stats_files:
-                                shot_name = pyani.core.util.get_shot_name_from_string(shot_stat_file)
-                                # check if shot added yet, if not add as a key with a dict as value
-                                if shot_name not in stats[sequence]:
+                for shot in self.ani_vars.get_shot_list():
+                    shot_stats_path = "Z:\\LongGong\\sequences\\{0}\\lighting\\render_data\\{1}".format(sequence, shot)
+                    # check if shot exists, if it doesn't proceed to the next shot
+                    if not os.path.exists(shot_stats_path):
+                        continue
+
+                    # get render layers for the shot
+                    render_layers = os.listdir(shot_stats_path)
+                    for render_layer in render_layers:
+                        render_layer_stats_path = os.path.join(sequence_stats_path, shot, render_layer)
+
+                        # get a list of the history for the shot sequence
+                        history_numbers = [
+                            history for history in os.listdir(render_layer_stats_path) if util.is_number(history)
+                        ]
+                        # make sure there is history, if not skip
+                        if history_numbers:
+                            # get a list of the paths to the history
+                            history_stats_paths = [
+                                os.path.join(render_layer_stats_path, history) for history in history_numbers
+                            ]
+                            # loop through history folders to get stats
+                            for history_index in range(0, len(history_numbers)):
+
+                                # a list of all the shots stat files in the history folder, skips files
+                                if os.path.isdir(history_stats_paths[history_index]):
+                                    # make the path to the json file, only ever one file in the history directory,
+                                    # so we grab the first element from os.listdir
+                                    shot_stats_file = os.path.join(
+                                        history_stats_paths[history_index],
+                                        os.listdir(history_stats_paths[history_index])[0]
+                                    )
+                                # no directory, its a file, so don't process
+                                else:
+                                    shot_stats_file = None
+
+                                if shot_stats_file:
+                                    # check if shot added yet, if not add as a key with a dict as value
+                                    if shot not in stats[sequence]:
+                                        '''
+                                          add shot to get:
+                                          {
+                                              sequence: {
+                                                    shot: {
+                                        '''
+                                        stats[sequence][shot] = {}
+
+                                    # check if render layer added yet, if not add as a key with a dict as value
+                                    if render_layer not in stats[sequence][shot]:
+                                        '''
+                                            add render layer to get:
+                                            {
+                                                sequence: {
+                                                        shot: {
+                                                           render_layer : {
+                                        '''
+                                        stats[sequence][shot][render_layer] = {}
+
+                                    stat_data_on_disk = util.load_json(shot_stats_file)
+
+                                    # now set history to the loaded stat data - a nested dict of frames and their
+                                    # associated stat data
                                     '''
-                                      add shot to get:
+                                      add history, frames, and stats, so we have now:
                                       {
                                           sequence: {
                                                 shot: {
-                                    '''
-                                    stats[sequence][shot_name] = {}
-                                    stats_processed[sequence][shot_name] = {'average': {}}
-
-                                stat_data_on_disk = util.load_json(shot_stat_file)
-
-                                # now set history to the loaded stat data - a nested dict of frames and their
-                                # associated stat data
-                                '''
-                                  add history, frames, and stats, so we have now:
-                                  {
-                                      sequence: {
-                                            shot: {
-                                                  history: {
-                                                      frame: {
-                                                          stats
+                                                      history: {
+                                                          frame: {
+                                                              stats
+                                                          }
                                                       }
-                                                  }
-                                            }
-                                      }
-                                  }   
-                                '''
-                                stats[sequence][shot_name][history_numbers[history_index]] = stat_data_on_disk
-                else:
-                    # no history so remove the sequence key
-                    stats.pop(sequence)
+                                                }
+                                          }
+                                      }   
+                                    '''
+                                    stats[sequence][shot][render_layer][history_numbers[history_index]] = \
+                                        stat_data_on_disk
+                        else:
+                            # no history so remove the sequence key
+                            stats.pop(sequence)
         # save the stats
         self.__raw_stat_data = stats
 
@@ -572,19 +700,22 @@ class AniRenderData:
         # print entire stat data dict
         if show_stats:
             if raw:
-                print json.dumps(self.__raw_stat_data, sort_keys=True, indent=5)
+                print json.dumps(self.raw_stat_data, sort_keys=True, indent=4)
             else:
-                print json.dumps(self.stat_data, sort_keys=True, indent=5)
+                print json.dumps(self.stat_data, sort_keys=True, indent=4)
         else:
             if raw:
+                temp_dict = copy.deepcopy(self.raw_stat_data)
                 # only show the seq, shots, history, and frames
-                for seq in self.__raw_stat_data:
-                    for shot in self.__raw_stat_data[seq]:
-                        for history in self.__raw_stat_data[seq][shot]:
-                            for frame in self.__raw_stat_data[seq][shot][history]:
-                                self.__raw_stat_data[seq][shot][history][frame] = ""
+                for seq in temp_dict:
+                    for shot in temp_dict[seq]:
+                        for render_layer in temp_dict[seq][shot]:
+                            for history in temp_dict[seq][shot][render_layer]:
+                                for frame in temp_dict[seq][shot][render_layer][history]:
+                                    temp_dict[seq][shot][render_layer][history][frame] = ""
+                print json.dumps(temp_dict, sort_keys=True, indent=4)
             else:
-                json.dumps(self.stat_data, sort_keys=True, indent=5)
+                print json.dumps(self.stat_data, sort_keys=True, indent=4)
 
     def get_sequences(self, history="1"):
         """
@@ -595,52 +726,72 @@ class AniRenderData:
         """
         # loop through all sequences, and check if the sequence has data for the given history
         seqs_with_data = []
-        if self.__raw_stat_data:
-            for seq in self.__raw_stat_data:
+        if self.raw_stat_data:
+            for seq in self.raw_stat_data:
                 if self.get_shots(seq, history=history):
                     seqs_with_data.append(seq)
         return sorted(seqs_with_data)
 
     def get_shots(self, seq, history="1"):
         """
-        Get the list of shots that have render data for a given shot and history
+        Get the list of shots that have render data for a given sequence and history
         :param seq: the sequence as a string, format Seq###
         :param history: the history as a string, example '1'
         :return: the list of shots in order ascending or an empty list if there are no shots for the given history
         """
         # loop through all shots in sequence, and check if the shot has data for the given history
         shots_with_data = []
-        if seq in self.__raw_stat_data:
-            for shot in self.__raw_stat_data[seq]:
-                if self.get_frames(seq, shot, history=history):
+        if seq in self.raw_stat_data:
+            for shot in self.raw_stat_data[seq]:
+                if self.get_render_layers(seq, shot, history=history):
                     shots_with_data.append(shot)
         return sorted(shots_with_data)
 
-    def get_frames(self, seq, shot, history="1"):
+    def get_render_layers(self, seq, shot, history="1"):
         """
-        Get the list of frames that have render data for a given shot and history
+        Get the list of render layers that have render data for a given sequence, shot, and history
         :param seq: the sequence as a string, format Seq###
         :param shot: the shot as a string, format Shot###
         :param history: the history as a string, example '1'
-        :return: the list of frames in order ascending, or an empty list if no data
+        :return: the list of render layers in order A-Z, or an empty list if no data
+        """
+        # loop through all render layers in shot, and check if the render layer has data for the given history
+        render_layers_with_data = []
+        if seq in self.raw_stat_data:
+            if shot in self.raw_stat_data[seq]:
+                for render_layer in self.raw_stat_data[seq][shot]:
+                    if self.get_frames(seq, shot, render_layer, history):
+                        render_layers_with_data.append(render_layer)
+        return sorted(render_layers_with_data)
+
+    def get_frames(self, seq, shot, render_layer, history="1"):
+        """
+        Get the list of frames that have render data for a given sequence, shot, render layer, and history
+        :param seq: the sequence as a string, format Seq###
+        :param shot: the shot as a string, format Shot###
+        :param render_layer: the render layer as a string
+        :param history: the history as a string, example '1'
+        :return: the list of frames (as strings not numbers) in order ascending, or an empty list if no data
         """
         # check for the given history
-        if seq in self.__raw_stat_data:
-            if shot in self.__raw_stat_data[seq]:
-                if history in self.__raw_stat_data[seq][shot]:
-                    return sorted(self.__raw_stat_data[seq][shot][history].keys())
+        if seq in self.raw_stat_data:
+            if shot in self.raw_stat_data[seq]:
+                if render_layer in self.raw_stat_data[seq][shot]:
+                    if history in self.__raw_stat_data[seq][shot][render_layer]:
+                        return sorted(self.__raw_stat_data[seq][shot][render_layer][history].keys())
         return []
 
-    def get_history(self, seq, shot):
+    def get_history(self, seq, shot, render_layer):
         """
         Get the list of history for a given shot
         :param seq: the sequence as a string, format Seq###
         :param shot: the shot as a string, format Shot###
+        :param render_layer: the render layer as a string
         :return: the list of history sorted ascending
         """
         if seq in self.__raw_stat_data:
             if shot in self.__raw_stat_data[seq]:
-                return sorted(self.__raw_stat_data[seq][shot].keys())
+                return sorted(self.__raw_stat_data[seq][shot][render_layer].keys())
         return []
 
     @staticmethod

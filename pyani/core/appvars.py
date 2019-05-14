@@ -47,12 +47,10 @@ class AppVars:
         # path to .nuke/init.py
         self.nuke_init_file_path = os.path.join(self.ani_vars.nuke_user_dir, "init.py")
 
-        # maya plugins
-        self.maya_plugins_local = os.path.join(homepath, "Documents\\maya\\plug-ins")
-        self.maya_plugins_server = "Z:\\LongGong\\tools\\maya\\scripts"
+        # maya tools
         # json file name to find the plugin version, this file will be in the plugins directory
-        self.maya_plugins_vers_json_name = "plugin_version.json"
-        self.maya_plugins_restore_dir = "restore"
+        self.maya_tools_vers_json_name = "plugin_version.json"
+        self.maya_tools_restore_dir = "restore"
 
         # cgt paths
         self.cgt_tools_online_path = "/LongGong/tools/"

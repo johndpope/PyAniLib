@@ -1,12 +1,13 @@
 import zipfile
 import os
 import signal
+import datetime
 import pyani.core.util
 import logging
 import pyani.core.ui
 import pyani.core.anivars
 import pyani.core.appvars
-import pyani.core.mayapluginsmngr
+import pyani.core.mayatoolsmngr
 from pyani.core.toolsinstall import AniToolsSetup
 
 # set the environment variable to use a specific wrapper
@@ -372,14 +373,23 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         self.menu_toggle_auto_dl.addItem("-------")
         self.menu_toggle_auto_dl.addItem("Enabled")
         self.menu_toggle_auto_dl.addItem("Disabled")
+        self.auto_dl_run_time_label = QtWidgets.QLabel("")
+        self.auto_dl_hour = QtWidgets.QLineEdit("12")
+        self.auto_dl_hour.setMaximumWidth(40)
+        self.auto_dl_min = QtWidgets.QLineEdit("00")
+        self.auto_dl_min.setMaximumWidth(40)
+        self.auto_dl_am_pm = QtWidgets.QComboBox()
+        self.auto_dl_am_pm.addItem("AM")
+        self.auto_dl_am_pm.addItem("PM")
+        self.btn_auto_dl_update_time = QtWidgets.QPushButton("Update Run Time")
         # tree app version information
         self.app_tree = pyani.core.ui.CheckboxTreeWidget(self._format_app_info(), 3)
 
         # INIT FOR MAYA PLUGINS
         # ---------------------------------------------------------------------
         # list of maya plugins
-        self.maya_plugins = pyani.core.mayapluginsmngr.AniMayaPlugins()
-        self.maya_plugins.build_plugin_data()
+        self.maya_plugins = pyani.core.mayatoolsmngr.AniMayaTools()
+        self.maya_plugins.build_tool_data()
         # store the current plugin that was clicked - gets set in the get plugin from button pressed method
         self.active_plugin = None
         # progress bar widgets
@@ -399,7 +409,7 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         self.tabs.update_tab(pyanitools_layout)
 
         maya_plugins_layout = self.create_layout_and_slots_maya_plugins()
-        self.tabs.add_tab("Maya Plugins", layout=maya_plugins_layout)
+        self.tabs.add_tab("Maya Tools", layout=maya_plugins_layout)
 
         self.add_layout_to_win()
 
@@ -411,7 +421,7 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         maya_plugins_layout = QtWidgets.QVBoxLayout()
 
         header_layout = QtWidgets.QHBoxLayout()
-        header_label = QtWidgets.QLabel("Plugins")
+        header_label = QtWidgets.QLabel("Tools")
         header_label.setFont(self.titles)
         header_layout.addWidget(header_label)
         header_layout.addStretch(1)
@@ -421,15 +431,25 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         maya_plugins_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
 
         # make the buttons and labels for each plugin
-        for plugin in sorted(self.maya_plugins.maya_plugin_data):
+        for row_index, plugin in enumerate(sorted(self.maya_plugins.maya_tool_data)):
             # common ui elements whether plugin exists locally or not
             #
-            plugin_layout = QtWidgets.QHBoxLayout()
+            plugin_layout = QtWidgets.QGridLayout()
             # add name of plugin - this is the user friendly display name
             name_label = QtWidgets.QLabel(plugin)
-            plugin_layout.addWidget(name_label)
+            plugin_layout.addWidget(name_label, row_index, 0)
             # space between name and vers or missing plugin label
-            plugin_layout.addItem(QtWidgets.QSpacerItem(50, 0))
+            plugin_layout.addItem(QtWidgets.QSpacerItem(50, 0), row_index, 1)
+
+            # get version_data
+            if self.maya_plugins.maya_tool_data[plugin]["version data"]:
+                # first element is the latest version
+                version = self.maya_plugins.get_version(plugin, version="latest")
+            else:
+                version = "N/A"
+            vers_label = QtWidgets.QLabel(version)
+            plugin_layout.addWidget(vers_label,  row_index, 2)
+
             # download plugin button
             maya_plugins_dl_btn = pyani.core.ui.ImageButton(
                 "images\download_off.png",
@@ -437,31 +457,31 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                 "images\download_off.png",
                 size=(32, 32)
             )
-            maya_plugins_dl_btn.setObjectName(
-                "dl_{0}".format(self.maya_plugins.maya_plugin_data[plugin]["name"]))
+
+            # check if tool goes in sub folder, if it does then use that name, otherwis euse the display name
+            if self.maya_plugins.maya_tool_data[plugin]["name"]:
+                btn_name = self.maya_plugins.maya_tool_data[plugin]["name"]
+            else:
+                # remove spaces
+                btn_name = plugin.replace(" ", "_")
+
+            maya_plugins_dl_btn.setMaximumWidth(32)
+            maya_plugins_dl_btn.setObjectName("dl_{0}".format(btn_name))
             maya_plugins_dl_btn.clicked.connect(self.maya_plugins_download)
             maya_plugins_dl_btn.setToolTip("Download the latest version of the plugin.")
-            # get version_data
-            if self.maya_plugins.maya_plugin_data[plugin]["version data"]:
-                # first element is the latest version
-                version = self.maya_plugins.get_version(plugin, version="latest")
-            else:
-                version = "N/A"
-            vers_label = QtWidgets.QLabel(version)
-            plugin_layout.addWidget(vers_label)
             # space between vers and buttons
-            plugin_layout.addItem(QtWidgets.QSpacerItem(150, 0))
-            plugin_layout.addWidget(maya_plugins_dl_btn)
+            plugin_layout.addItem(QtWidgets.QSpacerItem(100, 0), row_index, 3)
+            plugin_layout.addWidget(maya_plugins_dl_btn,  row_index, 4)
 
             # find where its located, local or server
-            loc = self.maya_plugins.get_plugin_location(plugin)
+            loc = self.maya_plugins.get_tool_root_directory(plugin)
 
             # check for existence
-            if not os.path.exists(os.path.join(loc, self.maya_plugins.maya_plugin_data[plugin]["name"])):
+            if not os.path.exists(os.path.join(loc, self.maya_plugins.maya_tool_data[plugin]["name"])):
                 missing_label = QtWidgets.QLabel(
                     "<font color={0}>( Plugin missing )</font>".format(pyani.core.ui.RED.name())
                 )
-                plugin_layout.addWidget(missing_label)
+                plugin_layout.addWidget(missing_label,  row_index, 5)
 
             else:
                 '''
@@ -473,11 +493,11 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                     "images\change_vers_off.png",
                     size=(24, 24)
                 )
-                maya_plugins_vers_btn.setObjectName("vers_{0}".format(self.maya_plugins.maya_plugin_data[plugin]["name"]))
+                maya_plugins_vers_btn.setObjectName("vers_{0}".format(btn_name)
                 maya_plugins_vers_btn.clicked.connect(self.maya_plugins_change_version)
                 maya_plugins_vers_btn.setToolTip("Revert to the Previous Version.")
                 
-                # put this down with the othe rbuttons if re-activate
+                # put this down with the other buttons if re-activate
                 plugin_layout.addWidget(maya_plugins_vers_btn)
                 '''
 
@@ -487,9 +507,8 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                     "images\\release_notes_off.png",
                     size=(24, 24)
                 )
-                maya_plugins_notes_btn.setObjectName(
-                    "notes_{0}".format(self.maya_plugins.maya_plugin_data[plugin]["name"])
-                )
+                maya_plugins_notes_btn.setMaximumWidth(24)
+                maya_plugins_notes_btn.setObjectName("notes_{0}".format(btn_name))
                 maya_plugins_notes_btn.clicked.connect(self.maya_plugins_view_release_notes)
                 maya_plugins_notes_btn.setToolTip("View the release notes for the current plugin version.")
 
@@ -499,16 +518,15 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                     "images\\html_off.png",
                     size=(24, 24)
                 )
-                maya_plugins_confluence_btn.setObjectName("confluence_{0}".format(
-                    self.maya_plugins.maya_plugin_data[plugin]["name"])
-                )
+                maya_plugins_confluence_btn.setMaximumWidth(24)
+                maya_plugins_confluence_btn.setObjectName("confluence_{0}".format(btn_name))
                 maya_plugins_confluence_btn.clicked.connect(self.maya_plugins_open_confluence_page)
                 maya_plugins_confluence_btn.setToolTip("Open the plugin's confluence page in a web browser.")
 
-                plugin_layout.addWidget(maya_plugins_notes_btn)
-                plugin_layout.addWidget(maya_plugins_confluence_btn)
+                plugin_layout.addWidget(maya_plugins_notes_btn, row_index, 6)
+                plugin_layout.addWidget(maya_plugins_confluence_btn, row_index, 7)
+                plugin_layout.addItem(QtWidgets.QSpacerItem(300, 0), row_index, 8)
 
-            plugin_layout.addStretch(1)
             maya_plugins_layout.addLayout(plugin_layout)
             # space between rows of plugins
             maya_plugins_layout.addItem(QtWidgets.QSpacerItem(0, 20))
@@ -575,13 +593,31 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         else:
             state_label = "Disabled"
         self.auto_dl_label.setText(
-            "Auto-download of updates from server <i>(Currently: {0})</i>".format(state_label)
+            "Auto-download of updates from server <i><font color='#7d8792'>"
+            "(Currently: {0})</font></i>".format(state_label)
         )
         h_options_layout = QtWidgets.QHBoxLayout()
         h_options_layout.addWidget(self.auto_dl_label)
         h_options_layout.addWidget(self.menu_toggle_auto_dl)
         h_options_layout.addStretch(1)
         pyanitools_layout.addLayout(h_options_layout)
+        h_options_change_time_layout = QtWidgets.QHBoxLayout()
+
+        # get the run time and format as hour:seconds am or pm, ex: 02:00 PM
+        run_time = self.task_scheduler.get_task_time()
+        if isinstance(run_time, datetime.datetime):
+            run_time = run_time.strftime("%I:%M %p")
+        else:
+            run_time = "N/A"
+        self.auto_dl_run_time_label.setText("Change Update Time <i><font color='#7d8792'>"
+                                            "(Current Update Time: {0})</font></i>".format(run_time))
+        h_options_change_time_layout.addWidget(self.auto_dl_run_time_label)
+        h_options_change_time_layout.addWidget(self.auto_dl_hour)
+        h_options_change_time_layout.addWidget(self.auto_dl_min)
+        h_options_change_time_layout.addWidget(self.auto_dl_am_pm)
+        h_options_change_time_layout.addWidget(self.btn_auto_dl_update_time)
+        h_options_change_time_layout.addStretch(1)
+        pyanitools_layout.addLayout(h_options_change_time_layout)
         pyanitools_layout.addItem(self.v_spacer)
 
         return pyanitools_layout
@@ -594,6 +630,7 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         self.menu_toggle_auto_dl.currentIndexChanged.connect(self.update_auto_dl_state)
         self.btn_manual_update.clicked.connect(self.update_core_files)
         self.btn_clean_install.clicked.connect(self.reinstall)
+        self.btn_auto_dl_update_time.clicked.connect(self.update_auto_dl_time)
         self.download_monitor.data_downloaded.connect(self.progress_received)
 
     def progress_received(self, data):
@@ -614,19 +651,17 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                 self.progress_label.hide()
                 self.progress_bar.hide()
                 self.progress_bar.setValue(0)
-
                 # a successful download
                 if "done" in data:
                     # show where plugin downloaded
                     self.msg_win.show_info_msg(
-                        "Download Complete", "Downloaded {0} plugin to {1}".format(
+                        "Download Complete", "Plugin: {0} is up to date. Location is {1}".format(
                             self.active_plugin,
-                            self.maya_plugins.get_plugin_path(self.active_plugin)
+                            self.maya_plugins.get_tool_full_path(self.active_plugin)
                         )
                     )
-
-                    # refresh version info
-                    error = self.maya_plugins.build_plugin_data()
+                        # refresh version info
+                    error = self.maya_plugins.build_tool_data()
                     # return error if couldn't refresh data
                     if error:
                         self.msg_win.show_error_msg("Plugin Error", error)
@@ -655,11 +690,12 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         btn_pressed = self.sender().objectName()
         # find which plugin to revert
         plugin = self.get_maya_plugin_from_button_press(btn_pressed)
+
         if plugin:
             # download from CGT
             self.progress_bar.show()
             self.progress_label.show()
-            self.maya_plugins.download_plugins(plugin, self.download_monitor)
+            self.maya_plugins.download_tools(plugin, self.download_monitor)
         # couldn't find plugin
         else:
             logger.error("Could not find plugin for button {0} to download".format(btn_pressed))
@@ -676,7 +712,7 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         # find which plugin to revert
         plugin = self.get_maya_plugin_from_button_press(btn_pressed)
         if plugin:
-            if not self.maya_plugins.retore_path_exists(plugin):
+            if not self.maya_plugins.restore_path_exists(plugin):
                 self.msg_win.show_error_msg(
                     "Critical Error", "No restore point found for {0}.".format(plugin)
                 )
@@ -717,14 +753,14 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
         :return: the name of the plugin for that button, or None if can't be found
         """
         # find which plugin to revert
-        for plugin in self.maya_plugins.maya_plugin_data:
+        for plugin in self.maya_plugins.maya_tool_data:
             # find the plugin clicked
-            if self.maya_plugins.maya_plugin_data[plugin]["name"] in btn_pressed:
+            if self.maya_plugins.maya_tool_data[plugin]["name"] in btn_pressed:
                 self.active_plugin = plugin
                 if display_name:
                     return plugin
                 else:
-                    return self.maya_plugins.maya_plugin_data[plugin]["name"]
+                    return self.maya_plugins.maya_tool_data[plugin]["name"]
         return None
 
     def maya_plugins_view_release_notes(self):
@@ -780,6 +816,45 @@ class AniAppMngrGui(pyani.core.ui.AniQMainWindow):
                 self.auto_dl_label.setText(
                     "Auto-download of updates from server <i>(Currently: {0})</i>".format(state)
                 )
+
+    def update_auto_dl_time(self):
+        """
+        Update the run time for the auto updates
+        """
+        try:
+            # get hour an minute from input
+            hour = str(self.auto_dl_hour.text())
+            min = str(self.auto_dl_min.text())
+            time_of_day = str(self.auto_dl_am_pm.currentText())
+            run_time = ("{0}:{1}".format(hour, min))
+            # validate input - if doesn't work throws ValueError
+            datetime.datetime.strptime(run_time, "%H:%M")
+            # add am or pm
+            run_time += " {0}".format(time_of_day)
+            # convert to 24 hours
+            military_time = datetime.datetime.strptime(run_time, "%I:%M %p").strftime("%H:%M")
+            # set new run time
+            error = self.task_scheduler.set_task_time(military_time)
+            if error:
+                self.msg_win.show_warning_msg(
+                    "Task Scheduling Error",
+                    "Could not set run time. Error is {0}".format(error)
+                )
+
+            # update time in ui
+            # get the run time and format as hour:seconds am or pm, ex: 02:00 PM
+            run_time = self.task_scheduler.get_task_time()
+            if isinstance(run_time, datetime.datetime):
+                run_time = run_time.strftime("%I:%M %p")
+            else:
+                run_time = "N/A"
+            self.auto_dl_run_time_label.setText("Change Update Time <i><font color='#7d8792'>"
+                                                "(Current Update Time: {0})</font></i>".format(run_time))
+        except ValueError:
+            self.msg_win.show_warning_msg(
+                "Task Scheduling Error",
+                "Could not set run time. {0} is not a valid time".format(run_time)
+            )
 
     def reinstall(self):
         """
