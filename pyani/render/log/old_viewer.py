@@ -1,11 +1,9 @@
 import logging
 import os
-import ujson
-import pyani.core.appvars
+import tempfile
 import pyani.core.util
 import pyani.core.appmanager
 import pyani.core.ui
-import pyani.core.anivars
 import pyani.render.log.data
 
 
@@ -25,6 +23,12 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
     """
     Views:
 
+        Show:
+            - does not display per render layer, stat totals are a sum of all render layers
+            - displays sequences as bars
+            - sidebar average totals all sequences and averages for the selected stat. Does both the stat total and
+              components
+
         Sequence:
             - does not display per render layer, stat totals are a sum of all render layers
             - displays shots as bars
@@ -39,13 +43,6 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             - When all render layers is selected, the x axis frame numbers are taken from the render layer with the
               most frames. i.e. if a shot has render layers Qian and Env, Qian has frames 1001,1002, and Env has frames
               1001, then Qian will be used. The frame data for frame 1002 of env will be pulled from 1001.
-
-    Reports TODO:
-
-        Show:
-            - does not display per render layer, stat totals are a sum of all render layers
-            - average totals all sequences and averages for the stats. Does both the stat total and
-              components
 
     """
     def __init__(self, error_logging):
@@ -69,21 +66,15 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                 "errors will not be logged.".format(errors)
             )
 
-        self.dept = "lighting"
-        self.render_data = pyani.render.log.data.AniRenderData(dept=self.dept)
+        self.render_data = pyani.render.log.data.AniRenderData(dept="lighting")
 
-        self.ani_vars = pyani.core.anivars.AniVars()
-        error = self.ani_vars.load_seq_shot_list()
+        # indicates if show render data is present locally
+        self.show_render_data_exists = True
+
+        error = self.render_data.ani_vars.load_seq_shot_list()
         if error:
             self.msg_win.show_error_msg("Critical Error", "A critical error occurred: {0}".format(error))
         else:
-            # threading vars
-            self.thread_pool = QtCore.QThreadPool()
-            logger.info("Multi-threading with maximum %d threads" % self.thread_pool.maxThreadCount())
-            self.thread_total = 0.0
-            self.threads_done = 0.0
-            self.progress_win = QtWidgets.QProgressDialog()
-
             # setup color sets for the graph. Use cool colors for time stats, warm colors for memory stats, and yellow
             # for single bar stats.
             self.color_set_cool = [
@@ -109,14 +100,18 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
 
             # load user data option
             self.load_data_btn = QtWidgets.QPushButton("Load Data")
+            self.clear_data_btn = QtWidgets.QPushButton("Clear Data")
+            # disable button, no data loaded
+            self.clear_data_btn.setDisabled(True)
             self.user_seq = "Seq000"
             self.user_shot = "Shot000"
-            self.user_render_layer = "Render_Lyr000"
 
-            # tracks the where we are at - sequence (display shots) or shot (displays frames)
-            # current level is 0-sequence, 1-shot, corresponds as an index into self.levels list
+            # tracks the where we are at - show (displays sequences), sequence (display shots) or shot
+            # (displays frames)
+            # current level is 0-show, 1-sequence, 2-shot, corresponds as an index into self.levels list
             self.current_level = 0
-            self.levels = ["Shot", "Frame"]
+            self.levels = ["Sequence", "Shot", "Frame"]
+
             self.seq = None
             self.shot = None
 
@@ -132,6 +127,12 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self._build_render_layer_menu()
             self.render_layer_menu.setDisabled(True)
 
+            # set up the data
+            self.render_data.read_sequence_stats(self.seq)
+
+            # process data to get averages and totals - uses the first stat listed in the menu
+            self.render_data.process_data(self.selected_stat)
+
             # history widgets - show level and sequence level only allow history="1", because doesn't make sense in
             # context of show and sequence views, since shots will have varying levels of history
             self.history_menu = QtWidgets.QComboBox()
@@ -139,20 +140,37 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self.history = "1"
             self.history_menu.setDisabled(True)
 
-            # sequence selection
-            self.seq_menu = QtWidgets.QComboBox()
-            self.seq_menu.addItem("Select a Sequence")
-            for seq in self.ani_vars.get_sequence_list():
-                self.seq_menu.addItem(seq)
-
             self.nav_crumbs = QtWidgets.QLabel()
             self.set_nav_link()
 
             # averages side bar widgets created dynamically, just store layout
             self.averages_layout = QtWidgets.QVBoxLayout()
 
-            self.bar_graph = pyani.core.ui.BarGraph()
+            # make sure data was found
+            if self.render_data.stat_data:
+                x_axis_labels, graph_data, colors = self.build_graph_data()
 
+                if "min" in self.render_data.get_stat_type(self.selected_stat):
+                    x_label = "minutes (min)"
+                elif "gb" in self.render_data.get_stat_type(self.selected_stat):
+                    x_label = "gigabytes (gb)"
+                else:
+                    x_label = "percent (%)"
+
+                self.bar_graph = pyani.core.ui.BarGraph(
+                    x_axis_labels,
+                    graph_data,
+                    self.levels[self.current_level],
+                    x_label,
+                    width=.95,
+                    color=colors
+                )
+            else:
+                self.bar_graph = pyani.core.ui.BarGraph()
+                self.msg_win.show_warning_msg("No Data Found", "No render data was found on disk. This is only a "
+                                                               "warning. You can use the load data button to load "
+                                                               "your own render stats.")
+                self.show_render_data_exists = False
             # override any custom qt style, which breaks the text spacing for the bar graph on axis labels
             self.bar_graph.setStyle(QtWidgets.QCommonStyle())
 
@@ -175,15 +193,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         )
         graph_header_layout.addWidget(user_data_label)
         graph_header_layout.addWidget(self.load_data_btn)
-        graph_header_layout.addItem(QtWidgets.QSpacerItem(75, 0))
-
-        sequence_label = QtWidgets.QLabel(
-            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Sequence</span>".format(
-                self.font_size_menus, self.font_family
-            )
-        )
-        graph_header_layout.addWidget(sequence_label)
-        graph_header_layout.addWidget(self.seq_menu)
+        graph_header_layout.addWidget(self.clear_data_btn)
         graph_header_layout.addItem(QtWidgets.QSpacerItem(50, 0))
 
         history_label = QtWidgets.QLabel(
@@ -216,7 +226,9 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         # space between graph and sidebar
         main_layout.addItem(QtWidgets.QSpacerItem(20, 0))
 
-        # side bar gui
+        # side bar gui - only build if there is data
+        if self.show_render_data_exists:
+            self.build_averages_sidebar()
         main_layout.addLayout(self.averages_layout)
         # space between side bar and edge window
         main_layout.addItem(QtWidgets.QSpacerItem(20, 0))
@@ -226,12 +238,12 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
 
     def set_slots(self):
         self.nav_crumbs.linkActivated.connect(self.update_from_nav_link)
-        self.seq_menu.currentIndexChanged.connect(self.read_sequence_stats)
         self.history_menu.currentIndexChanged.connect(self.update_displayed_history)
         self.stats_menu.currentIndexChanged.connect(self.update_displayed_stat)
         self.render_layer_menu.currentIndexChanged.connect(self.update_displayed_render_layer)
         self.bar_graph.graph_update_signal.connect(self.update_from_graph)
         self.load_data_btn.clicked.connect(self.load_user_data)
+        self.clear_data_btn.clicked.connect(self.clear_user_data)
 
     def load_user_data(self):
         """
@@ -242,9 +254,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         ]
         if files:
             # set the custom data in the render data object
-            error = self.render_data.set_custom_data(
-                files, self.user_seq, self.user_shot, self.user_render_layer, stat=self.selected_stat
-            )
+            error = self.render_data.set_custom_data(files, self.user_seq, self.user_shot, stat=self.selected_stat)
             if error:
                 self.msg_win.show_error_msg("Error Formatting Custom Data", error)
 
@@ -256,62 +266,64 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self.nav_crumbs.setText(nav_str)
             # set vars
             #
-            # want to be at the shot level view
-            self.current_level = 1
+            # want to be at the shot level view, so set current level to 2
+            self.current_level = 2
             # These are fake seq and shot names
             self.seq = self.user_seq
             self.shot = self.user_shot
             # only show one history, no concept of history with user data
             self.history = "1"
-            # rebuild history to clear any existing history
+            # rebuild history to clear and existing history
             self._build_history_menu()
-            # reset render layer menu
-            self._build_render_layer_menu()
-            self.render_layer_menu.setDisabled(True)
-            # reset sequence menu
-            self.seq_menu.setCurrentIndex(0)
+            # show the custom data
+            self.update_ui()
+
+            # enable button, data loaded. only enable though if there is show data, otherwise doesn't make
+            # sense to clear data
+            if self.show_render_data_exists:
+                self.clear_data_btn.setDisabled(False)
+
+    def clear_user_data(self):
+        """
+        Clears the user data that was loaded and resets view to show level
+        """
+        # don't reset/clear if no user data was loaded. Always know user data loaded if Seq is Seq000
+        if self.seq == self.user_seq:
+            # set vars
+            self.current_level = 0
+            self.seq = ""
+            self.shot = ""
+            self.history = "1"
+
+            # clear the custom data so render data can show sequences again
+            self.render_data.clear_custom_data(self.selected_stat)
+
+            # set the nav crumbs link
+            self.set_nav_link()
 
             # show the custom data
             self.update_ui()
 
-    def read_sequence_stats(self):
-        if self.seq_menu.currentIndex() > 0:
-            self.seq = str(self.seq_menu.currentText())
-            self.current_level = 0
-            self.history = "1"
-            self.ani_vars.update(seq_name=self.seq)
-
-            self.progress_win.setWindowTitle("Render Data Progress")
-            self.progress_win.setLabelText("Loading {0} Render Data...".format(self.seq))
-            self.progress_win.show()
-
-            # make the paths to the sequence's render data
-            for shot in self.ani_vars.get_shot_list():
-                shot_stats_path = "Z:\\LongGong\\sequences\\{0}\\lighting\\render_data\\{1}".format(self.seq, shot)
-                if os.path.exists(shot_stats_path):
-                    stat_info = (self.seq, shot, shot_stats_path)
-                    # creates a worker object that takes the function to run in the thread, whether to report progress,
-                    # and a tuple containing the sequence name, shot name, and path to the stats. Note progress
-                    # reporting is not progress overall, but rather the progress of the particular thread.
-                    # We don't need this, we just show user the overall progress, ie how many threads finished
-                    worker = pyani.core.ui.Worker(self.render_data.load_shot_stats, False, stat_info)
-                    self.thread_total += 1.0
-                    self.thread_pool.start(worker)
-                    # slot that is called when a thread finishes
-                    worker.signals.finished.connect(self._render_data_thread_complete)
+            # disable button, no data loaded
+            self.clear_data_btn.setDisabled(True)
 
     def set_nav_link(self):
         """
         Sets the navigation link text and http link that appears above the graph. This is used to navigate up through
-        the data. ie. from shot level to sequence level
+        the data. ie. from shot level to sequence level to show level
         """
         if 0 <= self.current_level < len(self.levels):
             if self.current_level is 0:
                 nav_str = "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>" \
+                          "<b>Show</b></span></font>".format(self.font_size_nav_crumbs, self.font_family)
+            elif self.current_level is 1:
+                nav_str = "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>" \
+                          "<a href='#Show'><span style='text-decoration: none; color: #ffffff'>Show</span></a> > " \
                           "<b>{2}</b>" \
                           "</span>".format(self.font_size_nav_crumbs, self.font_family, self.seq)
             else:
                 nav_str = "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>" \
+                          "<a href='#Show'><span style='text-decoration: none; color: #ffffff'>Show</span></a> > " \
                           "<a href='#Seq'><span style='text-decoration: none; color: #ffffff'>{2}</span></a> > " \
                           "<b>{3}</b>" \
                           "</span>".format(self.font_size_nav_crumbs, self.font_family, self.seq, self.shot)
@@ -349,15 +361,11 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         :param x_axis_value: the x axis value clicked on from the graph = gets via signal slot,
         see pyani.core.ui.BarGraph class
         """
-        # don't do anything if custom data loaded
-        if self.seq == self.user_seq:
-            return
-
         # set the level based off x axis value clicked on
         if pyani.core.util.is_valid_seq_name(str(x_axis_value)):
             # enable render layer and history menus since at shot level
             self.seq = str(x_axis_value)
-            self.current_level = 0
+            self.current_level = 1
         # build shot view, note we don't do history here because we start with the all render layers. history gets
         # built when a render layer is selected
         elif pyani.core.util.is_valid_shot_name(str(x_axis_value)):
@@ -365,11 +373,11 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self.render_layer_menu.setDisabled(False)
             self.history_menu.setDisabled(False)
             self.shot = str(x_axis_value)
-            self.current_level = 1
+            self.current_level = 2
             self._build_render_layer_menu()
         elif pyani.core.util.is_valid_frame(str(x_axis_value)):
             # no more levels, don't do anything except show log
-            self.get_log(str(x_axis_value))
+            pass
         else:
             # don't know what it is, display warning and don't change level
             self.msg_win.show_warning_msg(
@@ -384,13 +392,20 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         Updates the graph and sidebar averages based off the navigation text that was clicked
         :param link: passed from the signal connected to the text
         """
-        if link == "#Seq":
+        if link == "#Show":
             # disable and reset render layer and history menus since not at shot level
             self._build_history_menu()
             self.history_menu.setDisabled(True)
             self._build_render_layer_menu()
             self.render_layer_menu.setDisabled(True)
             self.current_level = 0
+        elif link == "#Seq":
+            # disable and reset render layer and history menus since not at shot level
+            self._build_history_menu()
+            self.history_menu.setDisabled(True)
+            self._build_render_layer_menu()
+            self.render_layer_menu.setDisabled(True)
+            self.current_level = 1
         self.set_nav_link()
         self.update_ui()
 
@@ -400,7 +415,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         :return:
         """
         # process the render data based off level
-        if self.current_level is 1:
+        if self.current_level is 2:
             # check if the menu is the first entry, which is all render layers, if so process all render layers
             # in the shot
             if self.render_layer_menu.currentIndex() == 0:
@@ -413,29 +428,25 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                 self.render_data.process_data(
                     self.selected_stat, self.seq, self.shot, self.render_layer, history=self.history
                 )
-        else:
+        elif self.current_level is 1:
             self.render_data.process_data(self.selected_stat, self.seq)
+        else:
+            self.render_data.process_data(self.selected_stat)
 
         # rebuild data
-        graph_data = self.build_graph_data()
-        # check if render data was found - build_graph_data returns a tuple of lables, data, color. if it's not a tuple
-        # show error and exit
-        if not isinstance(graph_data, tuple):
-            self.msg_win.show_error_msg("No render data", "Could not find any render data for {0}".format(self.seq))
-            return
-        else:
-            x_axis_labels, graph_data, colors = graph_data
-        # get the label for the y axis
+        x_axis_labels, graph_data, colors = self.build_graph_data()
+
+        x_label = ""
         if "min" in self.render_data.get_stat_type(self.selected_stat):
-            y_label = "minutes (min)"
+            x_label = "minutes (min)"
         elif "gb" in self.render_data.get_stat_type(self.selected_stat):
-            y_label = "gigabytes (gb)"
+            x_label = "gigabytes (gb)"
         else:
-            y_label = "percent (%)"
+            x_label = "percent (%)"
 
         self.bar_graph.update_graph(
             x_axis_label=self.levels[self.current_level],
-            y_axis_label=y_label,
+            y_axis_label=x_label,
             x_data=x_axis_labels,
             y_data=graph_data,
             width=0.95,
@@ -447,8 +458,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
     def build_graph_data(self):
         """
         Makes the data dict and color dict needed by the bar graph
-        :return: The x axis labels, the data dict of float data and the color dict of pyqt colors
-        corresponding to the data. If there isn't render data, then returns None
+        :return: The data dict of float data and the color dict of pyqt colors corresponding to the data
         """
         # colors for the main stat number i.e. the total
         colors = {
@@ -463,8 +473,15 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         graph_data['total'] = []
         graph_data['components'] = []
 
-        # build data for sequence
+        # build data for show
         if self.current_level is 0:
+            x_axis_labels = self.render_data.get_sequences()
+            for seq in x_axis_labels:
+                graph_data['total'].append(self.render_data.stat_data[seq]['average'][self.selected_stat]['total'])
+                graph_data['components'].append(
+                    self.render_data.stat_data[seq]['average'][self.selected_stat]['components'])
+        # build data for sequence
+        elif self.current_level is 1:
             x_axis_labels = self.render_data.get_shots(self.seq)
             for shot in x_axis_labels:
                 graph_data['total'].append(
@@ -520,21 +537,18 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                     graph_data['components'].append(
                         self.render_data.stat_data[self.seq][self.shot][self.render_layer][self.history][frame][self.selected_stat]['components'])
 
-        if graph_data['total']:
-            if self.render_data.get_stat_type(self.selected_stat) == "min":
-                colors_to_use = self.color_set_cool
-            elif self.render_data.get_stat_type(self.selected_stat) == 'gb':
-                colors_to_use = self.color_set_warm
-            else:
-                colors_to_use = None
-                colors['total'] = pyani.core.ui.YELLOW
-            # set colors for the components
-            for index in xrange(0, len(graph_data['components'][0])):
-                colors['components'].append(colors_to_use[index])
-
-            return x_axis_labels, graph_data, colors
+        if self.render_data.get_stat_type(self.selected_stat) == "min":
+            colors_to_use = self.color_set_cool
+        elif self.render_data.get_stat_type(self.selected_stat) == 'gb':
+            colors_to_use = self.color_set_warm
         else:
-            return None
+            colors_to_use = None
+            colors['total'] = pyani.core.ui.YELLOW
+        # set colors for the components
+        for index in xrange(0, len(graph_data['components'][0])):
+            colors['components'].append(colors_to_use[index])
+
+        return x_axis_labels, graph_data, colors
 
     def build_averages_sidebar(self):
         """
@@ -571,10 +585,14 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                 # average stat for all the frames of a single render layer in this shot
                 main_total = self.render_data.stat_data[self.seq][self.shot][self.render_layer][self.history]['average'][self.selected_stat]["total"]
                 component_totals = self.render_data.stat_data[self.seq][self.shot][self.render_layer][self.history]['average'][self.selected_stat]["components"]
-        else:
+        elif self.levels[self.current_level] == "Shot":
             # average stat across all shots in sequence
             main_total = self.render_data.stat_data[self.seq]['average'][self.selected_stat]["total"]
             component_totals = self.render_data.stat_data[self.seq]['average'][self.selected_stat]["components"]
+        else:
+            # average stat across all sequences in show
+            main_total = self.render_data.stat_data['average'][self.selected_stat]["total"]
+            component_totals = self.render_data.stat_data['average'][self.selected_stat]["components"]
 
         # format the total - the average followed by the type such as seconds. Then add a '/' followed by level
         # examples: 25.5s / frame or 30gb / shot
@@ -614,97 +632,6 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self.averages_layout.addWidget(label_subtitle)
             self.averages_layout.addItem(QtWidgets.QSpacerItem(0, 15))
         self.averages_layout.addStretch(1)
-
-    def get_log(self, frame):
-        """
-        Gets the log for the frame clicked on in the graph and opens in the system's default text editor. Typically
-        notepad on windows
-        :param: frame: the frame number clicked on as a string
-        """
-        # don't do anything if custom data loaded
-        if self.seq == self.user_seq:
-            return
-
-        if self.render_layer_menu.currentIndex() == 0:
-            self.msg_win.show_info_msg("Unsupported Log Selection", "Select a render layer in the render layer menu, "
-                                                                    "then click on a frame to load the log.")
-            return
-
-        self.msg_win.show_msg("Opening Log", "Downloading log...This will close once the log is downloaded and the "
-                                             "log will open in the default system text editor")
-        QtWidgets.QApplication.processEvents()
-        app_vars = pyani.core.appvars.AppVars()
-        py_script = os.path.join(app_vars.cgt_bridge_api_path, "cgt_download.py")
-        # cgt path
-        log_cgt_path = r"/LongGong/sequences/{0}/{1}/{2}/render_data/{3}/{4}/{5}_{6}_{7}.{8}.log".format(
-                    self.seq,
-                    self.shot,
-                    self.dept,
-                    self.render_layer,
-                    self.history,
-                    self.seq,
-                    self.shot,
-                    self.render_layer,
-                    frame
-                )
-        # download location for log
-        log_dl_path = r"Z:\LongGong\sequences\{0}\{1}\{2}\render_data\{3}\{4}".format(
-                    self.seq,
-                    self.shot,
-                    self.dept,
-                    self.render_layer,
-                    self.history
-                )
-        # the full path to the log on disk
-        downloaded_log = r"Z:\LongGong\sequences\{0}\{1}\{2}\render_data\{3}\{4}\{5}_{6}_{7}.{8}.log".format(
-                self.seq,
-                self.shot,
-                self.dept,
-                self.render_layer,
-                self.history,
-                self.seq,
-                self.shot,
-                self.render_layer,
-                frame
-            )
-        # download command
-        dl_command = [
-            py_script,
-            log_cgt_path,
-            log_dl_path,
-            app_vars.cgt_ip,
-            app_vars.cgt_user,
-            app_vars.cgt_pass
-        ]
-        output, error = pyani.core.util.call_ext_py_api(dl_command)
-        # close the info msg
-        self.msg_win.close()
-        error_msg = error
-        if error or 'Error' in output:
-            # get error msg from output
-            if 'Error' in output:
-                for line in output.split("\n"):
-                    if 'Error' in line:
-                        error_msg = line
-                        break
-            self.msg_win.show_error_msg("Log Download Error", "Encountered an error downloading the log. Check if the "
-                                                              "log exists in CGT and you are connected to the VPN. "
-                                                              "Error is {0}".format( error_msg)
-                                        )
-        else:
-            # opens the default text editor
-            os.startfile(downloaded_log)
-
-    def _render_data_thread_complete(self):
-        """
-        Called when a thread that loads render data for a shot completes. When all threads complete, refreshes ui
-        """
-        self.threads_done += 1.0
-        progress = (self.threads_done / self.thread_total) * 100.0
-        self.progress_win.setValue(progress)
-        if progress >= 100.0:
-            self.set_nav_link()
-            self.update_ui()
 
     def _build_render_layer_menu(self):
         """

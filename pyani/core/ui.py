@@ -1,5 +1,6 @@
 import os
 import sys
+import traceback
 import shutil
 import logging
 import pyqtgraph as pg
@@ -20,7 +21,7 @@ os.environ['QT_API'] = 'pyqt'
 from qtpy import QtGui, QtWidgets, QtCore
 # qtpy doesn't have fileDialog, so grab from PyQT4
 from PyQt4.QtGui import QFileDialog
-from PyQt4.QtCore import pyqtSignal
+from PyQt4.QtCore import pyqtSlot, pyqtSignal
 from PyQt4.QtCore import QThread
 
 
@@ -38,6 +39,76 @@ try:
 except AttributeError:
     def _fromUtf8(s):
         return s
+
+
+class WorkerSignals(QtCore.QObject):
+    """
+    Defines the signals available from a running worker thread.
+
+    Supported signals are:
+
+    finished
+        No data
+
+    error
+        `tuple` (exctype, value, traceback.format_exc() )
+
+    result
+        `object` data returned from processing, anything
+
+    progress
+        `int` indicating % progress
+
+    """
+    finished = pyqtSignal()
+    error = pyqtSignal(tuple)
+    result = pyqtSignal(object)
+    progress = pyqtSignal(int)
+
+
+class Worker(QtCore.QRunnable):
+    """
+    Worker thread
+
+    Inherits from QRunnable to handler worker thread setup, signals and wrap-up.
+
+    :param fn: The function callback to run on this worker thread. Supplied args and
+                     kwargs will be passed through to the runner.
+    :type fn: function
+    :param use_progress_callback: whether to use progress callback
+    :param args: Arguments to pass to the callback function
+    :param kwargs: Keywords to pass to the callback function
+
+    """
+    def __init__(self, fn, use_progress_callback, *args, **kwargs):
+        super(Worker, self).__init__()
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
+        self.signals = WorkerSignals()
+
+        # Add the callback to our kwargs
+        if use_progress_callback:
+            self.kwargs['progress_callback'] = self.signals.progress
+
+    @pyqtSlot()
+    def run(self):
+        """
+        Initialize the runner function with passed args, kwargs.
+        """
+        # Retrieve args/kwargs here; and fire processing using them
+        try:
+            result = self.fn(*self.args, **self.kwargs)
+        except:
+            traceback.print_exc()
+            exception_type, value = sys.exc_info()[:2]
+            self.signals.error.emit((exception_type, value, traceback.format_exc()))
+        else:
+            # Return the result of the processing
+            self.signals.result.emit(result)
+        finally:
+            # complete
+            self.signals.finished.emit()
 
 
 class CGTDownloadMonitor(QThread):
@@ -1087,6 +1158,9 @@ class QtMsgWindow(QtWidgets.QMessageBox):
         super(QtMsgWindow, self).__init__()
         # create the window and tell it to parent to the main window
         self.msg_box = QtWidgets.QMessageBox(parent=main_win)
+        # member variable declaring the type of mesg box, needed because a msg box without buttons must call
+        # a different method than close() to close it.
+        self.msg_box_type = None
 
     def hide(self):
         """Hide the msg box
@@ -1099,7 +1173,6 @@ class QtMsgWindow(QtWidgets.QMessageBox):
         :param title: the window title
         :param msg: the message to the user
         """
-
         self._show_message_box(title, self.Critical, msg)
 
     def show_warning_msg(self, title, msg):
@@ -1137,6 +1210,17 @@ class QtMsgWindow(QtWidgets.QMessageBox):
         self.msg_box.setText(msg)
         self.msg_box.setStandardButtons(self.msg_box.NoButton)
         self.msg_box.show()
+        self.msg_box_type = "no_btns"
+
+    def close(self):
+        """
+        Closes the msg box. Calls done(0) for msg boxes with no buttons - found this via a qt message board, not sure
+        why but no buttons needs this not close(). If a button is present then close() works
+        """
+        if self.msg_box_type == "no_btns":
+            self.msg_box.done(0)
+        else:
+            self.msg_box.close()
 
     def _show_message_box(self, title, icon, msg):
         """
@@ -1145,6 +1229,7 @@ class QtMsgWindow(QtWidgets.QMessageBox):
         :param icon: icon to show - information, warning, critical, etc...
         :param msg: the message to the user
         """
+        self.msg_box_type = "std"
         self.msg_box.setWindowTitle(title)
         self.msg_box.setIcon(icon)
         self.msg_box.setText(msg)
@@ -1160,6 +1245,9 @@ class QtInputDialogMenu(QtWidgets.QDialog):
     :param title: the window title as a string
     :param option_label: the text label next to the menu as a string
     :param option_list: the menu text options as a list
+    :param width: optional - the width of the window
+    :param height: optional - the height of the window
+    :param modal: optional - whether the window is modal (can't select the main window) or non modal
     :param pref: optional - whether to display the preference checkbox as a boolean
     :param pref_label: optional - required if pref=True, text next to checkbox
     :param pref_state: optional - default state of checkbox, defaults to reset
@@ -1171,12 +1259,19 @@ class QtInputDialogMenu(QtWidgets.QDialog):
             title,
             option_label,
             option_list,
+            width=None,
+            height=None,
+            modal=True,
             pref=False,
             pref_label=None,
             pref_state=False,
             pref_desc=""
     ):
         super(QtInputDialogMenu, self).__init__(parent=parent_win)
+        if width:
+            self.setMinimumWidth(width)
+        if height:
+            self.setMinimumHeight(height)
         # the selection from the menu option
         self.__selection = None
         # menu options
@@ -1197,6 +1292,7 @@ class QtInputDialogMenu(QtWidgets.QDialog):
         self.btn_cancel = QtWidgets.QPushButton("Cancel")
         # create window
         self.setWindowTitle(title)
+        self.setModal(modal)
         self.create_layout()
         self.set_slots()
 
@@ -1204,7 +1300,7 @@ class QtInputDialogMenu(QtWidgets.QDialog):
     def selection(self):
         """Return the user selection
         """
-        return self.__selection
+        return str(self.__selection)
 
     def pref_checked(self):
         """Return state of the checkbox for preferences, if preferences are used

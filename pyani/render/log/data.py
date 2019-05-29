@@ -1,8 +1,76 @@
 import os
 import json
 import copy
+import ujson
+import threading
+import Queue
 import pyani.core.anivars
 import pyani.core.util as util
+from PyQt4.Qt import pyqtSignal
+from PyQt4.QtCore import QThread
+
+
+class GetShotStatsThread(threading.Thread):
+    """
+    Class to get a shot's render stats using multi-threading via a queue
+    Takes a queue object in initialization
+    """
+    # signal to fire when have progress to send, can send any python object
+    data_processed = pyqtSignal(bool)
+
+    def __init__(self, queue):
+        threading.Thread.__init__(self)
+        self.queue = queue
+        '''
+        shot's stats in format
+        {
+                shot: {
+                    render layer: {
+                            history: {
+                                frame: {
+                                    stats
+                                }
+                            }
+                    }
+              }
+        }
+        '''
+        self.stats = {}
+        # store the shot name - set in load_stats() method
+        self.shot_name = None
+
+    def load_stats(self, stat_info):
+        """
+        Gets the stats for every render layer's history within a shot for the entire sequence. Stores result in the
+        class variable stats which is a dict
+        :param stat_info: a tuple containing the sequence name, shot name and the path to the render data folder
+        that holds all the shot's stats
+        """
+        # unpack from the tuple
+        sequence, shot, shot_render_data_path = stat_info
+        self.shot_name = shot
+        # make the path to the json file, only ever one file in the history directory,
+        # so we grab the first element from os.listdir
+        json_file_name = "{0}_{1}.json".format(sequence, shot)
+        with open(os.path.join(shot_render_data_path, json_file_name), 'r') as json_file:
+            stat_data_on_disk = ujson.load(json_file)
+        if not isinstance(stat_data_on_disk, dict):
+            print stat_data_on_disk
+        else:
+            self.stats = stat_data_on_disk
+            # let another class know this thread is done
+            #self.data_processed.emit(True)
+
+    def run(self):
+        """
+        gets a sequence and path to the render data, passes to the method to get the stats off disk and store in a dict
+        """
+        while True:
+            # get the stat tuple containing sequence name, shot name and path to render data
+            stat_info = self.queue.get()
+            # load the stats
+            self.load_stats(stat_info)
+            self.queue.task_done()
 
 
 class AniRenderData:
@@ -95,10 +163,9 @@ class AniRenderData:
         '''
         :param dept: a department such as lighting or modeling, defaults to lighting
         '''
-        self.ani_vars = pyani.core.anivars.AniVars()
         self.dept = dept
         # the data on disk read in and stored using format shown in class doc string
-        self.__raw_stat_data = {}
+        self.raw_stat_data = {}
         # the data averaged and processed
         self.stat_data = {}
         # the stats as a dict, keys are the labels, values are the labels/keys in the json file
@@ -171,6 +238,14 @@ class AniRenderData:
         """
         return self.__raw_stat_data
 
+    @raw_stat_data.setter
+    def raw_stat_data(self, stats):
+        """a dict of all stats stored for show in raw format. Every frame stores the same stats.
+         See class doc string for format.
+        """
+        self.__raw_stat_data = stats
+
+
     @property
     def stat_data(self):
         """a dict of all stats stored for show. Every frame stores the same stats. See class doc string for format.
@@ -211,7 +286,7 @@ class AniRenderData:
         """
         self.__stats_map = mapping
 
-    def set_custom_data(self, stat_files, user_seq, user_shot, stat="frame time"):
+    def set_custom_data(self, stat_files, user_seq, user_shot, user_render_layer, stat="frame time"):
         """
         Sets the data to user defined data
         :param stat_files: the user defined data as a list of json files (absolute path) on disk
@@ -224,7 +299,9 @@ class AniRenderData:
         combined_stats = {
             user_seq: {
                 user_shot: {
-                    "1": {}
+                    user_render_layer: {
+                        "1": {}
+                    }
                 }
             }
         }
@@ -236,23 +313,69 @@ class AniRenderData:
             # get frame number, should be the second to last element, before .json
             frame_num = stat_file.split(".")[-2]
             # get the data and save under the frame number
-            combined_stats[user_seq][user_shot]['1'][frame_num] = json_data['render 0000']
+            combined_stats[user_seq][user_shot][user_render_layer]['1'][frame_num] = json_data['render 0000']
 
-        self.__raw_stat_data = combined_stats
+        self.raw_stat_data = combined_stats
         self.stat_data = {}
         self.process_data(stat)
 
         return None
 
-    def clear_custom_data(self, stat="frame time"):
+    def read_sequence_stats_DEPR(self, sequence):
         """
-        Removes user data and reloads the show data
-        :param stat: the stat to load, defaults to frame time if no stat provided
+          Process the data on disk into the format shown in the class doc string under raw data. Stores in a class
+          member variable
         """
-        self.__raw_stat_data = {}
-        self.stat_data = {}
-        self.read_stats()
-        self.process_data(stat)
+
+        # check if sequence already loaded, if so don't load
+        if sequence in self.raw_stat_data:
+            return
+
+        # thread safe queue for loading json stats off disk
+        self.stats_queue = Queue.Queue()
+
+        # spawn threads and keep so we can access contents later
+        shots_threads_list = []
+        for i in range(0, 50):
+            shots_threads_list.append(GetShotStatsThread(self.stats_queue))
+            shots_threads_list[i].start()
+
+        self.ani_vars.update(seq_name=sequence)
+        # make the paths to the sequence's render data
+        for shot in self.ani_vars.get_shot_list():
+            shot_stats_path = "Z:\\LongGong\\sequences\\{0}\\lighting\\render_data\\{1}".format(sequence, shot)
+            if os.path.exists(shot_stats_path):
+                self.stats_queue.put((sequence, shot, shot_stats_path))
+
+        # wait for queue to get empty
+        self.stats_queue.join()
+
+        stats_seq = dict()
+        # collect stats
+        for shot_thread in shots_threads_list:
+            stats_seq[shot_thread.shot_name] = shot_thread.stats
+
+        # save the stats
+        self.raw_stat_data[sequence] = stats_seq
+
+    def load_shot_stats(self, stat_info):
+        """
+        Loads a shot's stats from disk and saves in the self.raw_stat_data dict
+        :param stat_info - a tuple containing the sequence name, shot name, and path to the stats
+        """
+        # unpack from the tuple
+        sequence, shot, shot_render_data_path = stat_info
+
+        # check if sequence key exists
+        if sequence not in self.raw_stat_data:
+            self.raw_stat_data[sequence] = {}
+
+        # make the path to the json file, only ever one file in the history directory,
+        # so we grab the first element from os.listdir
+        json_file_name = "{0}_{1}.json".format(sequence, shot)
+        with open(os.path.join(shot_render_data_path, json_file_name), 'r') as json_file:
+            stat_data_on_disk = ujson.load(json_file)
+            self.raw_stat_data[sequence][shot] = stat_data_on_disk
 
     def get_stat_type(self, stat):
         """
@@ -438,6 +561,10 @@ class AniRenderData:
         main_total_sum = 0.0
         component_totals_sum = [0.0] * len(self.get_stat_components(stat))
 
+        # process the sequence if it hasn't been processed
+        if seq not in self.stat_data:
+            self.stat_data[seq] = {}
+
         # get all of the shots in the sequence that have data at the given history
         shot_list = self.get_shots(seq, history=history)
         # no shots, then return False, don't add anything
@@ -581,116 +708,6 @@ class AniRenderData:
 
         return True
 
-    def read_stats(self):
-        """
-        Process the data on disk into the format shown in the class doc string under raw data. Stores in a class
-        member variable
-        """
-        stats = {}
-        # for every seq, go through shots and get the frame data
-        for sequence in self.ani_vars.get_sequence_list():
-            # path to the stats for this sequence
-            sequence_stats_path = os.path.normpath(
-                "Z:\\LongGong\\sequences\\{0}\\lighting\\render_data\\".format(sequence)
-            )
-            # sequence may not have render stat data, don't process if the path doesn't exist
-            if os.path.exists(sequence_stats_path):
-                '''
-                adds the sequence to the dict, so we have 
-                {
-                    sequence: {
-                    }
-                }
-                '''
-                stats[sequence] = {}
-
-                # update ani vars to this sequence
-                self.ani_vars.update(sequence)
-
-                for shot in self.ani_vars.get_shot_list():
-                    shot_stats_path = "Z:\\LongGong\\sequences\\{0}\\lighting\\render_data\\{1}".format(sequence, shot)
-                    # check if shot exists, if it doesn't proceed to the next shot
-                    if not os.path.exists(shot_stats_path):
-                        continue
-
-                    # get render layers for the shot
-                    render_layers = os.listdir(shot_stats_path)
-                    for render_layer in render_layers:
-                        render_layer_stats_path = os.path.join(sequence_stats_path, shot, render_layer)
-
-                        # get a list of the history for the shot sequence
-                        history_numbers = [
-                            history for history in os.listdir(render_layer_stats_path) if util.is_number(history)
-                        ]
-                        # make sure there is history, if not skip
-                        if history_numbers:
-                            # get a list of the paths to the history
-                            history_stats_paths = [
-                                os.path.join(render_layer_stats_path, history) for history in history_numbers
-                            ]
-                            # loop through history folders to get stats
-                            for history_index in range(0, len(history_numbers)):
-
-                                # a list of all the shots stat files in the history folder, skips files
-                                if os.path.isdir(history_stats_paths[history_index]):
-                                    # make the path to the json file, only ever one file in the history directory,
-                                    # so we grab the first element from os.listdir
-                                    shot_stats_file = os.path.join(
-                                        history_stats_paths[history_index],
-                                        os.listdir(history_stats_paths[history_index])[0]
-                                    )
-                                # no directory, its a file, so don't process
-                                else:
-                                    shot_stats_file = None
-
-                                if shot_stats_file:
-                                    # check if shot added yet, if not add as a key with a dict as value
-                                    if shot not in stats[sequence]:
-                                        '''
-                                          add shot to get:
-                                          {
-                                              sequence: {
-                                                    shot: {
-                                        '''
-                                        stats[sequence][shot] = {}
-
-                                    # check if render layer added yet, if not add as a key with a dict as value
-                                    if render_layer not in stats[sequence][shot]:
-                                        '''
-                                            add render layer to get:
-                                            {
-                                                sequence: {
-                                                        shot: {
-                                                           render_layer : {
-                                        '''
-                                        stats[sequence][shot][render_layer] = {}
-
-                                    stat_data_on_disk = util.load_json(shot_stats_file)
-
-                                    # now set history to the loaded stat data - a nested dict of frames and their
-                                    # associated stat data
-                                    '''
-                                      add history, frames, and stats, so we have now:
-                                      {
-                                          sequence: {
-                                                shot: {
-                                                      history: {
-                                                          frame: {
-                                                              stats
-                                                          }
-                                                      }
-                                                }
-                                          }
-                                      }   
-                                    '''
-                                    stats[sequence][shot][render_layer][history_numbers[history_index]] = \
-                                        stat_data_on_disk
-                        else:
-                            # no history so remove the sequence key
-                            stats.pop(sequence)
-        # save the stats
-        self.__raw_stat_data = stats
-
     def print_stat_data(self, raw=True, show_stats=False):
         """
         Formatted printout of the stat data dict, useful for debugging
@@ -777,8 +794,8 @@ class AniRenderData:
         if seq in self.raw_stat_data:
             if shot in self.raw_stat_data[seq]:
                 if render_layer in self.raw_stat_data[seq][shot]:
-                    if history in self.__raw_stat_data[seq][shot][render_layer]:
-                        return sorted(self.__raw_stat_data[seq][shot][render_layer][history].keys())
+                    if str(history) in self.raw_stat_data[seq][shot][render_layer]:
+                        return sorted(self.raw_stat_data[seq][shot][render_layer][history].keys())
         return []
 
     def get_history(self, seq, shot, render_layer):
@@ -789,9 +806,9 @@ class AniRenderData:
         :param render_layer: the render layer as a string
         :return: the list of history sorted ascending
         """
-        if seq in self.__raw_stat_data:
-            if shot in self.__raw_stat_data[seq]:
-                return sorted(self.__raw_stat_data[seq][shot][render_layer].keys())
+        if seq in self.raw_stat_data:
+            if shot in self.raw_stat_data[seq]:
+                return sorted(self.raw_stat_data[seq][shot][render_layer].keys())
         return []
 
     @staticmethod

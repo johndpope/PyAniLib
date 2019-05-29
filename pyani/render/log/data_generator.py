@@ -1,27 +1,55 @@
+"""
+This script generates test data. Just set the variables under configuration variables
+
+This will generate data for the specified settings below and also create a sequence / shot list in
+C:pyanitools\app_data\shared\sequences.json with the fake sequences and shots
+"""
+
 import os
 import pyani.core.anivars
 import pyani.core.util
 import tempfile
 import shutil
 
+
+"""
+CONFIGURATION VARIABLES
+"""
+# should be a sequence number that doesn't exist, will increment by one and remove these after testing
+seq_start = 5001
+# this will get padded with two zeroes
+shot_start = 1
+# this will get padded with 2 zeroes
+render_lyr_start = 1
+# number of sequences to generate data for
+num_sequences = 50
+# number of shots to generate data for
+num_shots = 50
+# number of frames to generate data for
+num_frames = 150
+# number of render layers to generate data for
+num_render_layers = 5
+# number of history to generate data for
+num_history = 5
+"""
+END CONFIG
+"""
+
+# do not change these variables unless core code locations changed
 anivars = pyani.core.anivars.AniVars()
 # the file from maya with a frame of data
-stat_source = "C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\PyRenderDataViewer\\venv\\render_data\\stat_data.json"
+stat_source = "C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\PyRenderDataViewer\\venv\\data_generation_to_test\\stat_data.json"
 seq_root = "Z:\\LongGong\\sequences"
 temp_output_path = os.path.join(tempfile.gettempdir(), "PyRenderDataViewer")
 shot_template_stats_file = os.path.join(temp_output_path, "shot_template_stats.json")
 sequence_list_json = os.path.join(temp_output_path, "sequences.json")
-# should be a sequence number that doesn't exist, will increment by one and remove these after testing
-seq_start = 5001
-shot_start = 1
-render_lyr_start = 1
-num_sequences = 50
-num_shots = 50
-num_frames = 150
-num_render_layers = 4
-history_list = [str(count) for count in range(1,6)]
+# build fake history
+history_list = [str(count) for count in range(1,num_history+1)]
+# build fake sequences
 seq_names_list = ["Seq{0}".format(str(count)) for count in range(seq_start, seq_start+num_sequences)]
+# build fake shots
 shot_names_list = ["Shot{0}".format(str(count).zfill(3)) for count in range(shot_start, shot_start+num_shots)]
+# build fake render layers
 render_lyrs_list = [
     "Render_Lyr{0}".format(str(count).zfill(3)) for count in range(render_lyr_start, render_lyr_start+num_render_layers)
 ]
@@ -60,15 +88,16 @@ def make_sequence_list():
 
 def setup_directories():
     """
-    Make the render data directories, ie Z:\LongGong\sequences\Seq###\lighting\render_data\Shot###\render_layer\history
+    Make the render data directories, ie Z:\LongGong\sequences\Seq###\lighting\render_data\Shot###\Seq###_Shot###.json
     """
     for seq_name in seq_names_list:
+        print "Creating {0}".format(seq_name)
         for shot in shot_names_list:
-            for render_lyr in render_lyrs_list:
-                for history in history_list:
-                    path = os.path.join(seq_root, seq_name, "lighting\\render_data", shot, render_lyr, history)
-                    os.makedirs(path)
-                    shutil.copy2(shot_template_stats_file, path)
+            print "Creating {0}".format(shot)
+            path = os.path.join(seq_root, seq_name, "lighting\\render_data", shot)
+            os.makedirs(path)
+            stats_file_name = os.path.join(path, "{0}_{1}.json".format(seq_name, shot))
+            shutil.copy2(shot_template_stats_file, stats_file_name)
 
 
 def cleanup():
@@ -97,10 +126,28 @@ def make_stat_file(input_data_file, output_data_file, num_frames):
         print json_data
     # get the data from the file
     frame_data = json_data['1001']
+    # a dict of all the frame sof data
+    frames_data = {}
     shot_data = {}
     # create data for every frame - start at frame 1001, go to 1001 + the number of desired frames worth of data
     for frame in xrange(1001, 1001+num_frames):
-        shot_data[frame] = frame_data
+        frames_data[frame] = frame_data
+
+    ''' now build dict in format
+    {
+        <render lyr> : {
+            <history> : {
+                <frame> : {
+                    stats
+                },...
+            },...
+        },...
+    '''
+    for render_lyr in render_lyrs_list:
+        if render_lyr not in shot_data:
+            shot_data[render_lyr] = {}
+        for history in history_list:
+            shot_data[render_lyr][history] = frames_data
     # write data to disk
     error = pyani.core.util.write_json(output_data_file, shot_data, indent=4)
     if error:
@@ -115,7 +162,7 @@ if __name__ == '__main__':
             print error
     error = pyani.core.util.make_dir(temp_output_path)
     if error:
-            print error
+        print error
     # make a file that represents a shot's worth of data - 200 frames
     make_stat_file(stat_source, shot_template_stats_file, num_frames)
 

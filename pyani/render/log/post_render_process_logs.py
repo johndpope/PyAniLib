@@ -14,8 +14,10 @@ import logging
 import datetime
 import tempfile
 import json
+
 import maya.cmds as cmds
 import maya.app.renderSetup.model.renderSetup as renderSetup
+
 
 logger = logging.getLogger()
 
@@ -43,8 +45,10 @@ def setup_logging():
 class AniLogProcessor:
     """
     Class that processes logs and render stats produced by Arnold. Moves logs to the shot directory and adds some
-    custom log data. Also combines the stats json files in a shot into one large json file per render layer,
-    stored in the sequence directory
+    custom log data. Also combines the stats json files in a shot into one large json file for the shot to reduce load
+    times for the viewer. Stored in:
+    Z:\LongGong\sequences\{sequence}\{dept}\render_data\{shot}\
+    ex: Z:\LongGong\sequences\Seq040\lighting\render_data\Shot260\
 
     Maya / Arnold writes logs and stats to :
     Z:\LongGong\sequences\{sequence}\{shot}\{dept}\render_data\
@@ -57,7 +61,7 @@ class AniLogProcessor:
     Stat files are stored in one json file per render layer for each shot in a sequence (Note the difference from logs
     is we store all frames in one file, instead of a file per frame):
     Z:\LongGong\sequences\{sequence}\{dept}\render_data\{shot}\{render layer}\history
-    ex: Z:\LongGong\sequences\Seq040\lighting\render_data\env\1
+    ex: Z:\LongGong\sequences\Seq040\lighting\render_data\Shot260\env\1
 
     Format of stat file is:
     {
@@ -96,8 +100,7 @@ class AniLogProcessor:
         self.__arnold_stat_categories = [
             "scene creation time",
             "frame time",
-            "peak CPU memory used",
-            "ray counts"
+            "peak CPU memory used"
         ]
 
         # store each render layers log and stats paths
@@ -352,8 +355,6 @@ class AniLogProcessor:
             return
 
         # move stats for each render layer to the show location for stats
-        compiled_stats = {}
-
         for layer in self.render_layers:
 
             # if the render_layer folder doesn't exist for a shot, make it, ie
@@ -397,6 +398,49 @@ class AniLogProcessor:
             logger.info("Looking for stats in : {0}".format(self.log_stat_loc_info['arnold stat dir']))
             logger.info("Looking for stats named : {0}".format(self.log_stat_loc_info[layer]['stat name']))
             logger.info("Moving stats to : {0}".format(first_history_path))
+
+    def cache_stats_for_shot(self):
+        """
+        Takes the shot's stat data that is broken down by render layer and history and combines into one json to
+        reduce the number of files to load by render data viewer
+        """
+        cached_data = {}
+        # go through every render layer on disk
+        for layer in self.render_layers:
+            # add key id doesn't exist
+            if layer not in cached_data:
+                cached_data[layer] = {}
+            # get a list of the history
+            history_dirs = os.listdir(self.log_stat_loc_info[layer]['show stat dir'])
+            # go through all history folders to get stats
+            for history in history_dirs:
+                # add key if doesn't exist
+                if history not in cached_data[layer]:
+                    cached_data[layer][history] = {}
+                # the file path to the json stat data on disk
+                path_to_data = os.path.join(
+                    self.log_stat_loc_info[layer]['show stat dir'],
+                    history,
+                    (self.log_stat_loc_info[layer]['stat name'] + ".json")
+                )
+                # open the stats file
+                try:
+                    with open(path_to_data, "r") as json_data:
+                        stat_frame_data = json.load(json_data)
+                        cached_data[layer][history] = stat_frame_data
+                except (IOError, WindowsError, OSError) as e:
+                    logger.error("encountered error reading json file {0}. Error is {1}".format(path_to_data, e))
+        # path to write the cached stats to, contains all the shots render layer's stat data for all history anf frame.
+        # its a cache of all the render data for the shot in one file
+        shot_stats_path = "Z:\\LongGong\\sequences\\{0}\\lighting\\render_data\\{1}\\{2}_{3}.json".format(
+            self.seq_name, self.shot_name, self.seq_name, self.shot_name
+        )
+        # write the file to disk
+        try:
+            with open(shot_stats_path, "w") as write_file:
+                json.dump(cached_data, write_file, indent=4)
+        except (IOError, WindowsError, OSError) as e:
+            logger.error("encountered error writing json file {0}. Error is {1}".format(write_file, e))
 
     def _compile_stats(self, layer):
         """
@@ -556,3 +600,4 @@ def run(dept="lighting"):
     log_processor.add_custom_log_info()
     log_processor.move_logs()
     log_processor.move_stats()
+    log_processor.cache_stats_for_shot()
