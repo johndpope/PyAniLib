@@ -16,13 +16,13 @@ import shutil
 CONFIGURATION VARIABLES
 """
 # should be a sequence number that doesn't exist, will increment by one and remove these after testing
-seq_start = 5001
+seq_start = 5002
 # this will get padded with two zeroes
 shot_start = 1
 # this will get padded with 2 zeroes
 render_lyr_start = 1
 # number of sequences to generate data for
-num_sequences = 50
+num_sequences = 1
 # number of shots to generate data for
 num_shots = 50
 # number of frames to generate data for
@@ -30,7 +30,7 @@ num_frames = 150
 # number of render layers to generate data for
 num_render_layers = 5
 # number of history to generate data for
-num_history = 5
+num_history = 1
 """
 END CONFIG
 """
@@ -44,7 +44,7 @@ temp_output_path = os.path.join(tempfile.gettempdir(), "PyRenderDataViewer")
 shot_template_stats_file = os.path.join(temp_output_path, "shot_template_stats.json")
 sequence_list_json = os.path.join(temp_output_path, "sequences.json")
 # build fake history
-history_list = [str(count) for count in range(1,num_history+1)]
+history_list = [str(count) for count in range(1, num_history+1)]
 # build fake sequences
 seq_names_list = ["Seq{0}".format(str(count)) for count in range(seq_start, seq_start+num_sequences)]
 # build fake shots
@@ -88,16 +88,18 @@ def make_sequence_list():
 
 def setup_directories():
     """
-    Make the render data directories, ie Z:\LongGong\sequences\Seq###\lighting\render_data\Shot###\Seq###_Shot###.json
+    Make the render data directories, ie Z:\LongGong\sequences\Seq###\lighting\render_data\Shot###\history\Seq###_Shot###.json
     """
     for seq_name in seq_names_list:
         print "Creating {0}".format(seq_name)
         for shot in shot_names_list:
-            print "Creating {0}".format(shot)
-            path = os.path.join(seq_root, seq_name, "lighting\\render_data", shot)
-            os.makedirs(path)
-            stats_file_name = os.path.join(path, "{0}_{1}.json".format(seq_name, shot))
-            shutil.copy2(shot_template_stats_file, stats_file_name)
+            print "\tCreating {0}".format(shot)
+            for history in history_list:
+                print "\t\tCreating history: {0}".format(history)
+                path = os.path.join(seq_root, seq_name, "lighting\\render_data", shot, history)
+                os.makedirs(path)
+                stats_file_name = os.path.join(path, "{0}_{1}.json".format(seq_name, shot))
+                shutil.copy2(shot_template_stats_file, stats_file_name)
 
 
 def cleanup():
@@ -136,18 +138,15 @@ def make_stat_file(input_data_file, output_data_file, num_frames):
     ''' now build dict in format
     {
         <render lyr> : {
-            <history> : {
                 <frame> : {
                     stats
                 },...
-            },...
         },...
     '''
     for render_lyr in render_lyrs_list:
         if render_lyr not in shot_data:
             shot_data[render_lyr] = {}
-        for history in history_list:
-            shot_data[render_lyr][history] = frames_data
+        shot_data[render_lyr] = frames_data
     # write data to disk
     error = pyani.core.util.write_json(output_data_file, shot_data, indent=4)
     if error:

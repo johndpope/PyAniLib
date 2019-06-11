@@ -18,7 +18,6 @@ import json
 import maya.cmds as cmds
 import maya.app.renderSetup.model.renderSetup as renderSetup
 
-
 logger = logging.getLogger()
 
 
@@ -46,22 +45,37 @@ class AniLogProcessor:
     """
     Class that processes logs and render stats produced by Arnold. Moves logs to the shot directory and adds some
     custom log data. Also combines the stats json files in a shot into one large json file for the shot to reduce load
-    times for the viewer. Stored in:
-    Z:\LongGong\sequences\{sequence}\{dept}\render_data\{shot}\
-    ex: Z:\LongGong\sequences\Seq040\lighting\render_data\Shot260\
+    times for the viewer. There is one stat json file per history for a shot. It contains all render layers stats for
+    all frames. Note we also keep the stat files from each render layer. If you don't then history gets incremented
+    for stats every time you run. Instead we save the render stats per render layer and track history for that. After
+    moving the stats, we then search through history of each render layer and combine.
 
     Maya / Arnold writes logs and stats to :
     Z:\LongGong\sequences\{sequence}\{shot}\{dept}\render_data\
+        log filename: {seq}_{shot}_{render_layer}.frame.log
+        stat filename: {seq}_{shot}_{render_layer}.frame.json
     ex: Z:\LongGong\sequences\Seq040\Shot260\lighting\render_data\
+        Seq040_Shot260_Char_Qian.1002.log
+        Seq040_Shot260_Char_Qian.1002.json
 
     Show logs are stored in:
     Z:\LongGong\sequences\{sequence}\{shot}\{dept}\render_data\{render layer}\history
     ex: Z:\LongGong\sequences\Seq040\Shot260\lighting\render_data\env\1
+            log filename: {seq}_{shot}_{render_layer}.frame.log
+                          Seq040_Shot260_Char_Qian.1002.log
 
-    Stat files are stored in one json file per render layer for each shot in a sequence (Note the difference from logs
-    is we store all frames in one file, instead of a file per frame):
+    Show stat files are stored in:
     Z:\LongGong\sequences\{sequence}\{dept}\render_data\{shot}\{render layer}\history
     ex: Z:\LongGong\sequences\Seq040\lighting\render_data\Shot260\env\1
+            log filename: {seq}_{shot}_{render_layer}.frame.log
+                          Seq040_Shot260_Char_Qian.1002.log
+
+    Stat files used by the render log viewer are stored in one json file per shot for each history.
+    The json file contains all render layers and the frames at that history.
+    Z:\LongGong\sequences\{sequence}\{dept}\render_data\{shot}\history\
+    ex: Z:\LongGong\sequences\Seq040\lighting\render_data\Shot260\1\
+            stat filename: {seq}_{shot}.json
+                           Seq040_Shot260.json
 
     Format of stat file is:
     {
@@ -83,6 +97,7 @@ class AniLogProcessor:
 
 
     """
+
     def __init__(self, seq, shot, dept, maya_file_name):
         self.maya_file_name = maya_file_name
         self.seq_name = seq
@@ -104,7 +119,7 @@ class AniLogProcessor:
         ]
 
         # store each render layers log and stats paths
-        self.log_stat_loc_info = {}
+        self.log_stat_loc_info = dict()
 
         # these are the same for all render layers
         # maya log and stats path - where arnold is writing the logs
@@ -129,18 +144,16 @@ class AniLogProcessor:
             # Without "rs_" prefix
             render_layer_name = render_layer.name()
             if render_layer.isRenderable() and 'defaultRenderLayer' not in render_layer_name:
-                    # remove any 'rs_' or 'rl_'
-                    formatted_render_layer = render_layer_name.replace("rs_", "")
-                    formatted_render_layer = formatted_render_layer.replace("rl_", "")
-                    self.render_layers.append(formatted_render_layer)
+                # remove any 'rs_' or 'rl_'
+                formatted_render_layer = render_layer_name.replace("rs_", "")
+                formatted_render_layer = formatted_render_layer.replace("rl_", "")
+                self.render_layers.append(formatted_render_layer)
 
+        # make log file names, per render layer
         for layer in self.render_layers:
             self.log_stat_loc_info[layer] = {}
             # name of the log and stat files
             self.log_stat_loc_info[layer]['log name'] = "{0}_{1}_{2}".format(
-                self.seq_name, self.shot_name, layer
-            )
-            self.log_stat_loc_info[layer]['stat name'] = "{0}_{1}_{2}".format(
                 self.seq_name, self.shot_name, layer
             )
             # show log and stats path - where show logs and stats are kept
@@ -151,17 +164,23 @@ class AniLogProcessor:
                     self.dept,
                     layer
                 )
+
+            # name of stat file for the render layer
+            self.log_stat_loc_info[layer]['stat name'] = "{0}_{1}_{2}".format(
+                self.seq_name, self.shot_name, layer
+            )
+            # location where stats are stored - one json file with all render layer's frame data per history
             self.log_stat_loc_info[layer]['show stat dir'] = \
                 r"Z:\LongGong\sequences\{0}\{1}\render_data\{2}\{3}".format(
-                self.seq_name,
-                self.dept,
-                self.shot_name,
-                layer
-            )
+                    self.seq_name,
+                    self.dept,
+                    self.shot_name,
+                    layer
+                )
 
         logger.info(
             "seq:{0}\nshot:{1}\ndept:{2}\nrender layers:{3}".format
-            (
+                (
                 self.seq_name,
                 self.shot_name,
                 self.dept,
@@ -241,9 +260,8 @@ class AniLogProcessor:
         Creates any file paths that don't exist, Arnold won't create folders and will error if they don't exist. Run
         this in Pre-Render mel in render globals
         """
-        # move logs for each render layer to the show location for logs
+        # make directories for logs for each render layer
         for layer in self.render_layers:
-
             # if the render_data folder doesn't exist for a render layer, make it
             if not os.path.exists(self.log_stat_loc_info[layer]['show log dir']):
                 try:
@@ -285,10 +303,11 @@ class AniLogProcessor:
             # any logs to process
             if logs:
                 self.logs[layer] = logs
+
             stats = [
-                os.path.join(self.log_stat_loc_info['arnold stat dir'], log)
-                for log in os.listdir(self.log_stat_loc_info['arnold stat dir'])
-                if log.endswith(".json") and layer in log
+                os.path.join(self.log_stat_loc_info['arnold stat dir'], stat_file)
+                for stat_file in os.listdir(self.log_stat_loc_info['arnold stat dir'])
+                if stat_file.endswith(".json") and layer in stat_file
             ]
             # if there are stats for the render layer, add, otherwise don't add, makes it easy to know if there are
             # any stats to process
@@ -315,9 +334,9 @@ class AniLogProcessor:
             # a list of paths to each history folder
             history_dirs = self._get_history(self.log_stat_loc_info[layer]['show log dir'])
             logger.info("Found {0} history folders in {1}".format(
-                    len(history_dirs),
-                    self.log_stat_loc_info[layer]['show log dir']
-                )
+                len(history_dirs),
+                self.log_stat_loc_info[layer]['show log dir']
+            )
             )
             self._update_history(history_dirs)
 
@@ -367,7 +386,7 @@ class AniLogProcessor:
             logger.info("Found {0} history folders in {1}".format(
                 len(history_dirs),
                 self.log_stat_loc_info[layer]['show stat dir']
-                )
+            )
             )
 
             self._update_history(history_dirs)
@@ -378,7 +397,7 @@ class AniLogProcessor:
             os.mkdir(first_history_path, 0777)
 
             # combine all frames stats into one json and write to the first history folder
-            compiled_stats = self._compile_stats(layer)
+            compiled_stats = self._compile_render_layer_stats(layer)
             json_path = os.path.join(first_history_path, self.log_stat_loc_info[layer]['stat name'] + ".json")
             logging.info("writing shot stats json file to {0}".format(json_path))
             try:
@@ -399,52 +418,61 @@ class AniLogProcessor:
             logger.info("Looking for stats named : {0}".format(self.log_stat_loc_info[layer]['stat name']))
             logger.info("Moving stats to : {0}".format(first_history_path))
 
-    def cache_stats_for_shot(self):
+    def cache_stats(self):
         """
-        Takes the shot's stat data that is broken down by render layer and history and combines into one json to
-        reduce the number of files to load by render data viewer
+        This copies, for a given history, all the render layer stat data into one json file
         """
-        cached_data = {}
-        # go through every render layer on disk
-        for layer in self.render_layers:
-            # add key id doesn't exist
-            if layer not in cached_data:
-                cached_data[layer] = {}
-            # get a list of the history
-            history_dirs = os.listdir(self.log_stat_loc_info[layer]['show stat dir'])
-            # go through all history folders to get stats
-            for history in history_dirs:
-                # add key if doesn't exist
-                if history not in cached_data[layer]:
-                    cached_data[layer][history] = {}
-                # the file path to the json stat data on disk
-                path_to_data = os.path.join(
-                    self.log_stat_loc_info[layer]['show stat dir'],
-                    history,
-                    (self.log_stat_loc_info[layer]['stat name'] + ".json")
-                )
-                # open the stats file
-                try:
-                    with open(path_to_data, "r") as json_data:
-                        stat_frame_data = json.load(json_data)
-                        cached_data[layer][history] = stat_frame_data
-                except (IOError, WindowsError, OSError) as e:
-                    logger.error("encountered error reading json file {0}. Error is {1}".format(path_to_data, e))
-        # path to write the cached stats to, contains all the shots render layer's stat data for all history anf frame.
-        # its a cache of all the render data for the shot in one file
-        shot_stats_path = "Z:\\LongGong\\sequences\\{0}\\lighting\\render_data\\{1}\\{2}_{3}.json".format(
-            self.seq_name, self.shot_name, self.seq_name, self.shot_name
-        )
-        # write the file to disk
-        try:
-            with open(shot_stats_path, "w") as write_file:
-                json.dump(cached_data, write_file, indent=4)
-        except (IOError, WindowsError, OSError) as e:
-            logger.error("encountered error writing json file {0}. Error is {1}".format(write_file, e))
 
-    def _compile_stats(self, layer):
+        # if the render_layer folder doesn't exist for a shot, make it, ie
+        # does Z:\LongGong\sequences\Seq040\lighting\render_data\Shot260\ exist
+        shot_stats_dir_path = "Z:\\LongGong\\sequences\\{0}\\{1}\\render_data\\{2}".format(
+            self.seq_name, self.dept, self.shot_name
+        )
+        if not os.path.exists(shot_stats_dir_path):
+            os.makedirs(self.log_stat_loc_info['show stat dir'])
+
+        # loop through all possible history
+        for history in range(1, self.__max_history + 1):
+            shot_stats = dict()
+            # check every render layer for stats at this history, if no history then doesn't add
+            # an entry for that render layer
+            for render_lyr in self.render_layers:
+
+                history_list = os.listdir(self.log_stat_loc_info[render_lyr]['show stat dir'])
+                # check for data at this history
+                if str(history) in history_list:
+                    json_path = os.path.join(
+                        self.log_stat_loc_info[render_lyr]['show stat dir'],
+                        str(history),
+                        self.log_stat_loc_info[render_lyr]['stat name'] + ".json")
+                    try:
+                        with open(json_path, "r") as read_file:
+                            shot_stats[render_lyr] = json.load(read_file)
+                    except (IOError, WindowsError, OSError) as e:
+                        logger.error("encountered error reading json file {0}. Error is {1}".format(read_file, e))
+
+            # if there is render data at this history, write the cache file that has all render layers data in one file
+            if shot_stats:
+                shot_stats_history_path = os.path.join(shot_stats_dir_path, str(history))
+                if not os.path.exists(shot_stats_history_path):
+                    os.makedirs(shot_stats_history_path)
+                json_path = os.path.join(shot_stats_history_path, "{0}_{1}.json".format(self.seq_name, self.shot_name))
+                print json_path
+                try:
+                    print json.dumps(shot_stats, indent=4)
+                    with open(json_path, "w") as write_file:
+                        json.dump(shot_stats, write_file, indent=4)
+                except (IOError, WindowsError, OSError) as e:
+                    logger.error("encountered error writing json file {0}. Error is {1}".format(write_file, e))
+
+    def _compile_render_layer_stats(self, layer):
         """
-        Combines stat data from each frame of a render layer into one json.
+        Combines stat data from each frame of a render layer into one json. So we have:
+        {
+            frame : { stats},
+            frame : { stats },
+            ....
+        }
         Uses member variable __arnold_stat_categories to determine what stats to grab
         :param layer: a render layer name in maya as a string
         :return: combined stat data in json format for a single render layer
@@ -466,11 +494,11 @@ class AniLogProcessor:
         :param history_path: a path containing render data history
         :return: a list of absolute paths to the render data history or None
         """
-        # list contents of render_data folder - ie the history folders
+        # list contents of render_data folder - ie the history folders. Skips any folders that aren't a number
         history_dirs = sorted(
             [
                 os.path.join(history_path, folder) for folder in os.listdir(history_path)
-                if os.path.isdir(os.path.join(history_path, folder))
+                if os.path.isdir(os.path.join(history_path, folder)) and folder.isdigit()
             ]
         )
         logger.info("Found {0} history folders in {1}".format(len(history_dirs), history_path))
@@ -600,4 +628,4 @@ def run(dept="lighting"):
     log_processor.add_custom_log_info()
     log_processor.move_logs()
     log_processor.move_stats()
-    log_processor.cache_stats_for_shot()
+    log_processor.cache_stats()

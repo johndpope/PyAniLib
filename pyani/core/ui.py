@@ -1510,7 +1510,7 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
     Qt tree custom class with check boxes. Supports multiple columns. Only supports one level deep, ie parent->child
     not parent->child->child....
     """
-    def __init__(self, tree_items=None, columns=None, expand=True):
+    def __init__(self, tree_items=None, columns=None, expand=True, checked=False):
         """
         Builds a self.tree of checkboxes with control over text color. Note allows creation without building tree
         for when tree is built later using user selections.
@@ -1518,19 +1518,21 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
         { root = CheckboxTreeWidgetItem, children = list of CheckboxTreeWidgetItems }
         :param columns: number of columns in a tree row
         :param expand: show the tree in expanded view
+        :param checked: whether the checkboxes should be checked on by default
         """
         super(CheckboxTreeWidget, self).__init__()
         # spacing between columns
         self.__col_space = 50
-        self.build_checkbox_tree(tree_items, columns, expand)
+        self.build_checkbox_tree(tree_items, columns, expand, checked)
 
-    def build_checkbox_tree(self, tree_items, columns, expand=True):
+    def build_checkbox_tree(self, tree_items, columns, expand=True, checked=False):
         """
         Builds a self.tree of checkboxes with control over text color
         :param tree_items: a list of dicts, where dict is:
         { root = CheckboxTreeWidgetItem, children = list of CheckboxTreeWidgetItems }
         :param columns: number of columns in a tree row
         :param expand: show the tree in expanded view, default true
+        :param checked: whether the checkboxes should be checked on by default
         """
         # root doesn't have any info, hide it
         self.header().hide()
@@ -1555,9 +1557,15 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
                         for col_index in range(0, child_item.col_count()):
                             child.setTextColor(col_index, child_item.color(col_index))
                             child.setText(col_index, child_item.text(col_index))
-                        child.setCheckState(0, QtCore.Qt.Unchecked)
+                        if checked:
+                            child.setCheckState(0, QtCore.Qt.Checked)
+                        else:
+                            child.setCheckState(0, QtCore.Qt.Unchecked)
                 else:
-                    parent.setCheckState(0, QtCore.Qt.Unchecked)
+                    if checked:
+                        parent.setCheckState(0, QtCore.Qt.Checked)
+                    else:
+                        parent.setCheckState(0, QtCore.Qt.Unchecked)
             if expand:
                 self.expandAll()
             # resize columns to fit contents better, but skip last column

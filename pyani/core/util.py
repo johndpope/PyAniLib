@@ -29,6 +29,12 @@ SUPPORTED_IMAGE_FORMATS = ("exr", "jpg", "jpeg", "tif", "png")  # tuple to work 
 SUPPORTED_MOVIE_FORMATS = ("mp4")  # tuple to work with endswith of scandir
 
 
+class CGTError(Exception):
+    """
+    Custom exception for CGT download errors
+    """
+    pass
+
 class WinTaskScheduler:
     """Wrapper around windows task scheduler command line tool named schtasks. Provides functionality to create,
     enable/disable, and query state
@@ -643,12 +649,15 @@ def call_ext_py_api(command, interpreter=None):
     if not isinstance(command, list):
         # no output, but an error
         return None, "Invalid command format. Should be a list."
-    py_command = [interpreter]
+    # use -u to help with buffer
+    py_command = [interpreter, "-u"]
     py_command.extend(command)
     logger.info("Command is: {0}".format(' '.join(py_command)))
+
     p = subprocess.Popen(py_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     output, error = p.communicate()
+
     if p.returncode != 0:
         error = "Problem executing command {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
             command,
@@ -661,7 +670,10 @@ def call_ext_py_api(command, interpreter=None):
         return None, error
     # look for None or an empty string or a callback
     if "None" not in output and not "".join(output.split()) == "":
-        # output but no errors
+        # check for the word error in output
+        for line in output.split("\n"):
+            if "Error" in line or "error" in line:
+                raise CGTError(line)
         return output, None
     # no output and no errors
     return None, None
@@ -768,15 +780,51 @@ def convert_to_sRGB(red, green, blue):
     return red, green, blue
 
 
-def find_val_in_nested_dict(dictionary, key_path):
+def find_val_in_nested_dict(dictionary, key_path, keys=True):
     """
-    Finds a value in a nested dictionary provided a list of keys
+    Finds a value in a nested dictionary provided a list of keys. To get root level keys, pass [] or None. Returns
+    only the keys at that value, unless keys=False is provided. For example:
+    { 'key1':
+        { 'key2a':
+            { key3a':
+                ...
+            }
+        },
+        { 'key2b':
+            { key3b':
+                ...
+            }
+        }
+    }
+    if we ask for 'key1' and  keys=True, we will get just ['key2a', 'key2b'] back. If keys=False, we get back:
+        { 'key2a':
+            { key3a':
+                ...
+            }
+        },
+        { 'key2b':
+            { key3b':
+                ...
+            }
+        }
     :param dictionary: the dictionary to look through
-    :param key_path: a list of the keys
+    :param key_path: a list of the keys. To get root level keys, pass [] or None
+    :param keys: boolean indicating whether to return the keys or the keys and any values they have. Note this could
+    return a large nested dict.
     :return: the value or None if not found
     """
     try:
-        return reduce(operator.getitem, key_path, dictionary)
+        if not key_path:
+            return dictionary.keys()
+        result = reduce(operator.getitem, key_path, dictionary)
+        if keys:
+            # handle case when at end of nested dict, and get a value back, won't have keys
+            try:
+                return result.keys()
+            except AttributeError:
+                return result
+        else:
+            return result
     except KeyError:
         return None
 
