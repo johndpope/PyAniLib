@@ -368,13 +368,15 @@ class AniShoot:
         To change pad color use :color=color_name, see https://ffmpeg.org/ffmpeg-filters.html#pad
         '''
         rescale = "pad=ceil(iw/2)*2:ceil(ih/2)*2"
+        color_matrix = "colormatrix=bt601:bt709"
+        vf_options = rescale + "," + color_matrix
 
         try:
             (
                 ffmpeg
-                    .input(in_path, start_number=user_frame_start, apply_trc='iec61966_2_1')
+                    .input(in_path, start_number=user_frame_start, apply_trc='linear')
                     .output(out_path, crf=quality, preset=preset, video_size=formatted_size, pix_fmt='yuv420p',
-                            tune='animation', format='mp4', acodec='aac', vf=rescale)
+                            tune='animation', format='mp4', acodec='aac', vf=vf_options)
                     .overwrite_output()
                     .run(cmd=self.movie_create_app)
             )
