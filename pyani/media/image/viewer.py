@@ -2,12 +2,13 @@ import logging
 import os
 import multiprocessing
 from PIL import Image
-import pyani.core.appmanager
+import pyani.core.appvars
 import pyani.media.image.core
 import pyani.media.image.seq
 import pyani.core.ui
 from pyani.core.ui import FileDialog
 from pyani.media.image.exr import AniExr
+import pyani.core.mngr.tools
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -1133,18 +1134,28 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
     """
 
     def __init__(self, error_logging):
-        self.app_name = "PyExrViewer"
-        self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
+        self.tools_mngr = pyani.core.mngr.tools.AniToolsMngr()
+        app_name = "pyExrViewer"
+        app_vars = pyani.core.appvars.AppVars()
+        tool_metadata = {
+            "name": app_name,
+            "dir": app_vars.local_pyanitools_apps_dir,
+            "type": "pyanitools",
+            "category": "apps"
+        }
+
         # pass win title, icon path, app manager, width and height
         super(AniExrViewerGui, self).__init__(
             "Py Exr Viewer",
             "images\pyexrviewer.ico",
-            self.app_mngr,
+            tool_metadata,
+            self.tools_mngr,
             width=1920,
             height=1000,
             has_tabs=True,
             error_logging=error_logging
         )
+
         # check if logging was setup correctly in main()
         if error_logging.error_log_list:
             errors = ', '.join(error_logging.error_log_list)

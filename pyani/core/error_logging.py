@@ -2,6 +2,7 @@ import logging
 import os
 import datetime
 import pyani.core.util
+import pyani.core.appvars
 
 
 class ErrorLogging:
@@ -19,9 +20,10 @@ class ErrorLogging:
         self.__days_to_keep_log = 7
 
         # setup log file name
+        app_vars = pyani.core.appvars.AppVars()
         now = datetime.datetime.now()
         time_stamp = now.strftime("%Y-%m-%d_%H-%M")
-        self.__tools_dir = os.path.normpath("C:\PyAniTools")
+        self.__tools_dir = os.path.normpath(app_vars.tools_dir)
         self.__root_log_dir = os.path.join(self.__tools_dir, "logs")
         self.__app_log_dir = os.path.join(self.__root_log_dir, app_name)
         self.__log_file_name = "{0}\\{1}_{2}.txt".format(self.__app_log_dir, app_name, time_stamp)

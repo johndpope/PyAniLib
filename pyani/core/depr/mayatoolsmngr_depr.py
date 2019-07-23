@@ -261,7 +261,7 @@ class AniMayaTools:
             else:
                 download_list.append(self.get_tool_root_directory(tool))
 
-        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "server_download.py")
         # need to convert python lists to strings, separated by commas, so that it will pass through in the shell
         # so if there are multiple paths, the list [path1, path2] becomes 'path1,path2'
         dl_command = [
@@ -275,9 +275,9 @@ class AniMayaTools:
 
         # use threading to display progress
         if use_progress_monitor:
-            # set the command to execute and start download - runs in separate thread
+            # set the command to execute and start_task_list download - runs in separate thread
             download_monitor.download_cmd = dl_command
-            download_monitor.start()
+            download_monitor.start_task_list()
         # no threading
         else:
             output, error = pyani.core.util.call_ext_py_api(dl_command)

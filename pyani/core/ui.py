@@ -8,6 +8,7 @@ import numpy as np
 from subprocess import Popen, PIPE, STDOUT
 import pyani.core.util
 import pyani.core.error_logging
+import pyani.core.appvars
 
 
 logger = logging.getLogger()
@@ -25,12 +26,21 @@ from PyQt4.QtCore import pyqtSlot, pyqtSignal
 from PyQt4.QtCore import QThread
 
 
+'''
+CORE UI ELEMENTS
+'''
+
+# COLORS
 GOLD = "#be9117"
 GREEN = "#397d42"
 CYAN = "#429db6"
 WHITE = "#ffffff"
 YELLOW = QtGui.QColor(234, 192, 25)
 RED = QtGui.QColor(216, 81, 81)
+
+# FONTS
+FONT_FAMILY = "Century Gothic"
+FONT_SIZE_DEFAULT = 10
 
 
 # try to set to unicode - based reset what QDesigner does
@@ -138,11 +148,11 @@ class CGTDownloadMonitor(QThread):
 
         if isinstance(data, basestring):
             if "file_total" in data:
-                self.progress_label.setText("Downloading {0} files.".format(data.split(":")[1]))
+                self.step_label.setText("Downloading {0} files.".format(data.split(":")[1]))
             elif "file_size" in data:
-                self.progress_label.setText("Downloading {0}.".format(data.split(":")[1]))
+                self.step_label.setText("Downloading {0}.".format(data.split(":")[1]))
             elif "done" in data:
-                self.progress_label.hide()
+                self.step_label.hide()
                 self.progress_bar.hide()
                 self.progress_bar.setValue(0)
 
@@ -794,8 +804,11 @@ class AniQMainWindow(QtWidgets.QMainWindow):
     Builds a QMain Window with the given title, icon and optional width and height
     Provides the main window widget, called self.main_win
     Provides the main layout for the window - self.main_layout which is a QVBoxlayout
-    Adds two ui elements, version as a Qlabel and a help link to documentation as a Qlabel at the top of the window
-    Handles version management displaying a message when updates are available
+    Adds two ui elements, version as a Qlabel and a help link to documentation as a custom image button class
+    at the top of the window.
+
+    Handles version management displaying a message when out of date or no version available
+
     Drag and drop support - also supports drag and drop into tabs with custom widgets. To use this functionality:
         1. create a method as usual that is given to the drop_event_wrapper in this class
         2. In that wrapper call the tabs class (pyani.core.ui.TabsWidgets) drag_and_drop method
@@ -828,14 +841,29 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         self.title_vert_spacer = QSpacerItem 15 px high
     :param win_title : the window's title as a string
     :param win_icon : absolute path to a png or icon (.ico) file
-    :param app_mngr : an AniAppMngr class object for managing applications
+    :param tool_metadata : information for tool
+    :param tool_mngr : a pyani.core.mngr.tool object for opening help doc
     :param width : optional width of the window
     :param height: optional height of the window
     :param has_tabs: optional parameter enabling tab support
     :param error_logging : optional error log (pyani.core.error_logging.ErrorLogging object) from trying
            to create logging in main program
+    :param show_help: optional boolean whether to show a link to a confluence help page
+    :param disable_version: optional boolean if True doesn't show or get version info.
     """
-    def __init__(self, win_title, win_icon, app_mngr, width=600, height=600, has_tabs=False, error_logging=None):
+    def __init__(
+            self,
+            win_title,
+            win_icon,
+            tool_metadata,
+            tool_mngr,
+            width=600,
+            height=600,
+            has_tabs=False,
+            error_logging=None,
+            show_help=True,
+            disable_version=False
+    ):
         super(AniQMainWindow, self).__init__()
 
         # if no error logging object, create a dummy object to grab the root log dir. Don't need a real app name
@@ -846,21 +874,15 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         else:
             log_name = error_logging.log_file_name
 
-        # setup version management
-        self.app_manager = app_mngr
-        self.version = self.app_manager.user_version
-        self.vers_label = QtWidgets.QLabel()
-        self.vers_update = QtWidgets.QLabel()
+        self.tool_name = tool_metadata['name']
+        self.tool_dir = tool_metadata['dir']
+        self.tool_type = tool_metadata['type']
+        self.tool_category = tool_metadata['category']
+        self.tool_mngr = tool_mngr
+        self.show_help = show_help
+        app_vars = pyani.core.appvars.AppVars()
 
-        # help links - http://172.18.10.11:8090/display/KB/{app name} - spaces use +, so Py+Shoot or Py+App+Mngr
-        self.help_page_label = QtWidgets.QLabel(
-            "<a href=\"{0}\"><span style=\" text-decoration: none; color:{1}\">"
-            "Click here for the application documentation</a>".format(self.app_manager.app_doc_page, WHITE)
-        )
-        # path to help icon
-        self.help_icon = os.path.normpath(
-            "C:\Users\Patrick\PycharmProjects\PyAniTools\Resources_Shared\help_icon_32.png"
-        )
+        # COMMON UI ELEMENTS
 
         # setup title and icon
         self.win_utils = QtWindowUtil(self)
@@ -877,40 +899,15 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         self.msg_win = QtMsgWindow(self)
         self.progress_win = QtMsgWindow(self)
 
-        logging.info(
-            "User version: {0}, Latest Version {1}".format(
-                self.app_manager.user_version,
-                self.app_manager.latest_version
-            )
-        )
-        # version management - check version data
-        # check if app manager had an error loading version data. If so then display message to user.
-        if self.version is None or self.app_manager.latest_version is None:
-            self.vers_update.setText("")
-            self.vers_label.setText("Could not load version data. See log.")
-            self.vers_label.setStyleSheet("color:{0};".format(RED.name()))
-            self.msg_win.show_warning_msg(
-                "Version Warning",
-                "There was a problem loading the version information. You can continue, but please "
-                "file a jira and attach the latest log file from here {0}.".format(log_name)
-            )
-        # check if the app manager is the latest version, if not show message for update
-        elif not self.app_manager.is_latest():
-            self.vers_update.setText(
-                "<a href=\"#update\"><span style=\" text-decoration: none; color:{0}\">There is a newer version, "
-                "click here to update.</span></a>".format(RED.name())
-            )
-            self.vers_label.setText("Version {0}".format(self.version))
-            self.vers_label.setStyleSheet("color:{0};".format(RED.name()))
-        # latest version
-        else:
-            self.vers_update.setText("")
-            self.vers_label.setText("Version {0}".format(self.version))
+        # text font to use for ui
+        self.font_family = pyani.core.ui.FONT_FAMILY
+        self.font_size = pyani.core.ui.FONT_SIZE_DEFAULT
 
-        # error and message logging
-        self.log = []
+        # version info
+        self.vers_label = QtWidgets.QLabel()
 
-        # common ui elements
+        # main layout
+        self.main_layout = QtWidgets.QVBoxLayout()
 
         # set font size and style for title labels
         self.titles = QtGui.QFont()
@@ -924,8 +921,80 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         self.horizontal_spacer = QtWidgets.QSpacerItem(50, 0)
         self.title_vert_spacer = QtWidgets.QSpacerItem(0, 15)
 
-        # main layout
-        self.main_layout = QtWidgets.QVBoxLayout()
+        # help doc button
+        if show_help:
+            self.btn_help_doc = pyani.core.ui.ImageButton(
+                "{0}\help_off.png".format(app_vars.local_pyanitools_core_dir),
+                "{0}\help_on.png".format(app_vars.local_pyanitools_core_dir),
+                "{0}\help_on.png".format(app_vars.local_pyanitools_core_dir),
+                size=(148, 38)
+            )
+            self.btn_help_doc.clicked.connect(self._open_help_doc)
+
+        # VERSION MANAGEMENT
+
+        # check if version should be shown
+        if not disable_version:
+            # try to load cgt meta data for tool type which has version info for the local files, this is the
+            # version on disk locally, could be different than cloud version
+            try:
+                self.local_version = self.tool_mngr.get_tool_local_version(self.tool_dir, self.tool_name)
+                self.cgt_version = self.tool_mngr.get_tool_newest_version(
+                    self.tool_type,
+                    self.tool_category,
+                    self.tool_name
+                )
+                if self.local_version == self.cgt_version:
+                    self.vers_label.setText(
+                        "<span style='font-size:{0}pt; font-family:{1}; color:#ffffff;'>Version: {2}</span>".format(
+                            self.font_size,
+                            self.font_family,
+                            self.local_version
+                        )
+                    )
+                else:
+
+                    if not self.cgt_version:
+                        self.cgt_version = "server version: n/a"
+
+                    self.vers_label.setText(
+                        "<span style='font-size:{0}pt; font-family:{1}; color:#ffffff;'>Version (out of date): </span>"
+                        "<span style='font-size:{0}pt; font-family:{1}; color:{2};'>local version: {3}</span>"
+                        "<span style='font-size:{0}pt; font-family:{1}; color:#ffffff;'> / {4}</span>".format(
+                            self.font_size,
+                            self.font_family,
+                            RED.name(),
+                            self.local_version,
+                            self.cgt_version
+                        )
+                    )
+                logging.info(
+                    "User version: {0}, Latest Version {1}".format(
+                        self.local_version,
+                        self.cgt_version
+                    )
+                )
+            except (TypeError, KeyError, ValueError) as e:
+                logger.exception("Type, Key, or Value error loading version info: {0}".format(e))
+                self.vers_label.setText(
+                    "<span style='font-size:{0}pt; font-family:{1}; color:{2};'>Version Data Unavailable</span>".format(
+                        self.font_size,
+                        self.font_family,
+                        RED.name()
+                    )
+                )
+
+                self.msg_win.show_warning_msg(
+                    "Version Warning",
+                    "There was a problem loading the version information. You can continue, but please "
+                    "file a jira and attach the latest log file from here {0}. The error reported is: {1}".format(
+                        log_name,
+                        e
+                    )
+                )
+        else:
+            self.vers_label.setText("")
+
         # create the layout and add version, plus create signals/slots
         self._build_ui()
         # set default window size
@@ -991,68 +1060,32 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         else:
             e.ignore()
 
-    def _update_app(self):
-        """Launches external app updater and closes this app.
-        displays error if encountered, otherwise exits application
+    def _open_help_doc(self):
+        """Open help doc
         """
-        error_msg = pyani.core.util.launch_app(self.app_manager.updater_app, "")
-        if error_msg:
-            self.msg_win.show_error_msg("Update Error", error_msg)
-        else:
-            sys.exit(0)
-
-    def _help_link(self):
-        """Launch default browser and load application doc page
-        """
-        link = QtCore.QUrl(self.app_manager.app_doc_page)
-        QtGui.QDesktopServices.openUrl(link)
+        error = self.tools_mngr.open_help_doc(self.tool_name)
+        if error:
+            self.msg_win.show_error_msg("Confluence Error", error)
 
     def _build_ui(self):
         """Builds the UI widgets, slots and layout
         """
         self._create_layout()
-        self._set_slots()
         self.setCentralWidget(self.main_win)
 
     def _create_layout(self):
-        """Adds version widget to main layout
+        """Adds version widget and help doc button to main layout
         """
         # add version to right side of screen
-        # set font size and style for title labels
-        version_font = QtGui.QFont()
-        version_font.setPointSize(10)
-        version_font.setBold(True)
-        help_font = QtGui.QFont()
-        help_font.setPointSize(10)
-
-        self.vers_label.setFont(version_font)
-        self.help_page_label.setFont(help_font)
         h_layout_vers = QtWidgets.QHBoxLayout()
 
-        pic = QtWidgets.QLabel()
-        pic.setPixmap(QtGui.QPixmap(self.help_icon))
-        h_layout_vers.addWidget(pic)
-        h_layout_vers.addWidget(self.help_page_label)
+        if self.show_help:
+            h_layout_vers.addWidget(self.btn_help_doc)
+
         h_layout_vers.addStretch(1)
         h_layout_vers.addWidget(self.vers_label)
         self.main_layout.addLayout(h_layout_vers)
-        h_layout_vers_update = QtWidgets.QHBoxLayout()
-        h_layout_vers_update.addStretch(1)
-        h_layout_vers_update.addWidget(self.vers_update)
-        self.main_layout.addLayout(h_layout_vers_update)
-
-    def _set_slots(self):
-        """Set the link clicked signal for version update text and help link
-        """
-        self.vers_update.linkActivated.connect(self._update_app)
-        self.help_page_label.linkActivated.connect(self._help_link)
-
-    def _log_error(self, error):
-        """
-        Simple utility to format errors and append to a list
-        :param error: the error as a string
-        """
-        self.log.append("<font color={0}>{1}</font>".format(pyani.core.ui.RED.name(), error))
+        self.main_layout.addItem(QtWidgets.QSpacerItem(1, 30))
 
 
 class FileDialog(QFileDialog):
@@ -1137,16 +1170,24 @@ class QHLine(QtWidgets.QFrame):
 
 class QVLine(QtWidgets.QFrame):
     """
-    Creates a vertical line
-    :arg: a color in qt css style
+    Creates a vertical line. Takes a color and optional size, defaults to width 1
     """
-    def __init__(self, color):
+    def __init__(self, color, size=None):
+        """
+        :param color: a color in qt css style
+        :param size: optional size
+        """
         super(QVLine, self).__init__()
         # override behavior of style sheet
         self.setFrameShape(QtWidgets.QFrame.VLine)
         self.setFrameShadow(QtWidgets.QFrame.Plain)
         self.setStyleSheet("background-color:{0};".format(color))
         self.setLineWidth(1)
+        if size:
+            self.resize(size[0], size[1])
+        else:
+            self.setMinimumWidth(1)
+            self.setMaximumWidth(1)
 
 
 class QtMsgWindow(QtWidgets.QMessageBox):
@@ -1191,6 +1232,7 @@ class QtMsgWindow(QtWidgets.QMessageBox):
         :return: True if user presses Yes, False if user presses No
         """
         response = self.msg_box.question(self, title, msg, self.Yes | self.No)
+        center(self.msg_box)
         if response == self.Yes:
             return True
         else:
@@ -1235,6 +1277,7 @@ class QtMsgWindow(QtWidgets.QMessageBox):
         self.msg_box.setText(msg)
         self.msg_box.setStandardButtons(self.msg_box.Ok)
         self.msg_box.show()
+        center(self.msg_box)
 
 
 class QtInputDialogMenu(QtWidgets.QDialog):
@@ -1469,17 +1512,19 @@ class CheckboxTreeWidgetItem(object):
     """
     def __init__(self, items, colors=None):
         self.__columns = []
+
         for index in range(0, len(items)):
             # make sure colors given and not None
             if colors:
                 # get the color
-                color = colors[index]
+                color = QtGui.QColor(colors[index])
                 # if color is none, set to white
                 if not color:
                     color = QtCore.Qt.white
             # no colors given set to white
             else:
                 color = QtCore.Qt.white
+
             item = {"text": items[index], "color": color}
             self.__columns.append(item)
 
@@ -1515,7 +1560,7 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
         Builds a self.tree of checkboxes with control over text color. Note allows creation without building tree
         for when tree is built later using user selections.
         :param tree_items: a list of dicts, where dict is:
-        { root = CheckboxTreeWidgetItem, children = list of CheckboxTreeWidgetItems }
+        { root = CheckboxTreeWidgetItem, children = [list of CheckboxTreeWidgetItems] }
         :param columns: number of columns in a tree row
         :param expand: show the tree in expanded view
         :param checked: whether the checkboxes should be checked on by default
@@ -1524,6 +1569,7 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
         # spacing between columns
         self.__col_space = 50
         self.build_checkbox_tree(tree_items, columns, expand, checked)
+        self.itemExpanded.connect(self._resize_on_expand)
 
     def build_checkbox_tree(self, tree_items, columns, expand=True, checked=False):
         """
@@ -1573,6 +1619,53 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
                 self.resizeColumnToContents(col)
                 self.setColumnWidth(col, self.columnWidth(col) + self.__col_space)
 
+    def set_checked(self, items_to_check):
+        """
+        Checks on the specified items. Handles flat trees and trees with parent/child
+        :param items_to_check: a list of dict objects in format:
+        {
+            'parent': None if flat tree, otherwise give parent name
+            'item name': text to find
+        }
+        """
+        iterator = QtWidgets.QTreeWidgetItemIterator(self)
+        while iterator.value():
+            item = iterator.value()
+            for item_to_check in items_to_check:
+                # check if there is a parent, ie item to check is a child
+                if item_to_check['parent']:
+                    # see if the text matches and parent matches for the item
+                    if item_to_check['item name'] == str(item.text(0)) and \
+                            str(item.parent().text(0)) == item_to_check['parent']:
+                        item.setCheckState(0, QtCore.Qt.Checked)
+                # no parent
+                else:
+                    if item_to_check['item name'] == str(item.text(0)):
+                        item.setCheckState(0, QtCore.Qt.Checked)
+            iterator += 1
+
+    @staticmethod
+    def get_item_at_position(item, column):
+        """
+        Returns the text of the row/column clicked on
+        :param item: the row, ie tree item as pyqt4 QTreeWidget item
+        :param column: the column as an integer
+        :return: the text as a string
+        """
+        return str(item.text(column))
+
+    @staticmethod
+    def get_parent(item):
+        """
+        Gets the parent of the row/item
+        :param item: the row, ie tree item as pyqt4 QTreeWidget item
+        :return: the parent name as a string or none if no parent
+        """
+        try:
+            return str(item.parent().text(0))
+        except AttributeError:
+            return None
+
     def get_tree_checked(self):
         """
         Finds the selected tree members
@@ -1585,6 +1678,32 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
             checked.append(str(item.text(0)))
             iterator += 1
         return checked
+
+    def get_tree_unchecked(self):
+        """
+        Finds the non selected tree members
+        :return: a list of the un-checked items
+        """
+        unchecked = []
+        iterator = QtWidgets.QTreeWidgetItemIterator(self, QtWidgets.QTreeWidgetItemIterator.NotChecked)
+        while iterator.value():
+            item = iterator.value()
+            unchecked.append(item)
+            iterator += 1
+        return unchecked
+
+    def expand_all(self):
+        """
+        Simply expands the tree
+        """
+        self.expandAll()
+        self._resize_on_expand()
+
+    def collapse_all(self):
+        """
+        Collapse Tree
+        """
+        self.collapseAll()
 
     def update_item(self, existing_text, updated_item):
         """
@@ -1615,29 +1734,45 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
 
     def hide_items(self, item_list):
         """
-        Hides rows based reset the list given
-        :param item_list: a list of strings where the string is the tree's first column text
+        Hides rows based on the list given
+        :param item_list: a list of pyqt4 Tree Widget items - more robust, don't have to worry about parents and same
+        named children
         """
         iterator = QtWidgets.QTreeWidgetItemIterator(self)
         while iterator.value():
             tree_item = iterator.value()
             for item in item_list:
-                if tree_item.text(0) == item:
+                if tree_item == item:
                     tree_item.setHidden(True)
             iterator += 1
 
-    def show_items(self, item_list):
+    def show_items(self, item_list, show_all=False):
         """
-        Shows rows based reset the list given
-        :param item_list: a list of strings where the string is the tree's first column text
+        Shows rows based on the list given
+        :param item_list: a list of pyqt4 Tree Widget items - more robust, don't have to worry about parents and same
+        named children
+        :param show_all: optional boolean indicating all items should be shown. Ignores item_list when this flag
+        is True
         """
         iterator = QtWidgets.QTreeWidgetItemIterator(self)
         while iterator.value():
             tree_item = iterator.value()
-            for item in item_list:
-                if tree_item.text(0) == item:
-                    tree_item.setHidden(False)
+            if show_all:
+                tree_item.setHidden(False)
+            else:
+                for item in item_list:
+                    if tree_item == item:
+                        tree_item.setHidden(False)
             iterator += 1
+
+    def _resize_on_expand(self):
+        """
+        Resize when children shown, otherwise text may be clipped
+        """
+        # resize columns to fit contents better, but skip last column
+        for col in range(0, self.columnCount() - 1):
+            self.resizeColumnToContents(col)
+            self.setColumnWidth(col, self.columnWidth(col) + self.__col_space)
 
 
 class TabContentWidget(QtWidgets.QWidget):
@@ -1918,11 +2053,13 @@ def build_checkbox(label, state, directions):
 
 def center(win):
     """
-    Center the window on screen where the mouse is
+    Center the window on screen where the mouse is.
     :param win: the qt window to center
     """
     frame_gm = win.frameGeometry()
+    # Use the screenNumber function to determine which screen the mouse is current active on.
     screen = QtWidgets.QApplication.desktop().screenNumber(QtWidgets.QApplication.desktop().cursor().pos())
+    # Find the screenGeometry of that monitor and the center point of that screen
     center_point = QtWidgets.QApplication.desktop().screenGeometry(screen).center()
     frame_gm.moveCenter(center_point)
     win.move(frame_gm.topLeft())

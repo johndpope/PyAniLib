@@ -10,8 +10,9 @@ import pyani.media.movie.create.core
 import pyani.core.util
 from pyani.core.ui import QtMsgWindow
 from pyani.core.ui import FileDialog
-from pyani.core.appmanager import AniAppMngr
 import pyani.core.anivars
+import pyani.core.appvars
+import pyani.core.mngr.tools
 
 logger = logging.getLogger()
 
@@ -33,12 +34,26 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
     :param error_logging : error log class from trying to create logging in main program
     """
     def __init__(self, movie_generation, movie_playback, strict_pad, error_logging):
-        # build main window structure
-        self.app_name = "PyShoot"
-        self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
+        # managers for handling tools
+        self.tools_mngr = pyani.core.mngr.tools.AniToolsMngr()
+        app_name = "pyShoot"
+        app_vars = pyani.core.appvars.AppVars()
+        tool_metadata = {
+            "name": app_name,
+            "dir": app_vars.local_pyanitools_apps_dir,
+            "type": "pyanitools",
+            "category": "apps"
+        }
+
         # pass win title, icon path, app manager, width and height
         super(AniShootGui, self).__init__(
-            "Py Shoot Movie Creator", "Resources\\pyshoot_icon.ico", self.app_mngr, 1000, 400, error_logging
+            "Py Shoot Movie Creator",
+            "Resources\\pyshoot_icon.ico",
+            tool_metadata,
+            self.tools_mngr,
+            1000,
+            400,
+            error_logging
         )
 
         # check if logging was setup correctly in main()
@@ -475,6 +490,7 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         """returns a list of qt urls to directories in the os"""
         return [QtCore.QUrl.fromLocalFile(place) for place in self.ani_vars.places]
 
+
 class AniShootCLI:
     """
     Command line version of the shoot movie creation app. Does not support multiple movie creation like
@@ -485,9 +501,6 @@ class AniShootCLI:
     """
 
     def __init__(self,  movie_generation, movie_playback, strict_pad):
-        app_manager = AniAppMngr("PyShoot")
-        self.version = app_manager.user_version
-
         # setup data
         self.ani_vars = pyani.core.anivars.AniVars()
         self.shoot = pyani.media.movie.create.core.AniShoot(movie_generation, movie_playback, strict_pad)
@@ -513,7 +526,11 @@ class AniShootCLI:
         run the app
         :return log : an errors
         """
-        self.show_msg("__Version__ : {0}".format(self.version), Fore.GREEN)
+        tools_mngr = pyani.core.mngr.tools.AniToolsMngr()
+        app_vars = pyani.core.appvars.AppVars()
+
+        version = tools_mngr.get_tool_local_version(app_vars.local_pyanitools_apps_dir, "pyShoot")
+        self.show_msg("__Version__ : {0}".format(version), Fore.GREEN)
 
         # process user input and setup the image sequence, if errors exit
         if not self.process_user_input():

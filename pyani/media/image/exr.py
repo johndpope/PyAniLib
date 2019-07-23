@@ -5,7 +5,6 @@ import array
 import logging
 from PIL import Image
 import pyani.media.image.core
-import pyani.core.appmanager
 import multiprocessing
 import numpy as np
 

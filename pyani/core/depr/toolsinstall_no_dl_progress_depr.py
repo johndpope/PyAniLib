@@ -8,7 +8,7 @@ import pyani.core.ui
 import pyani.core.anivars
 import pyani.core.appvars
 import pyani.core.util
-import pyani.core.mayatoolsmngr
+import pyani.core.mayatoolsmngr_depr
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -33,8 +33,8 @@ class AniToolsSetup:
         :return: None if removed without errors, or an error as a string if an error occurs
         """
         # clean up any temp files related to downloading of files from cgt
-        if os.path.exists(self.app_vars.download_path_cgt):
-            error = pyani.core.util.rm_dir(self.app_vars.download_path_cgt)
+        if os.path.exists(self.app_vars.cgt_download_path):
+            error = pyani.core.util.rm_dir(self.app_vars.cgt_download_path)
             if error:
                 return error
         # clean up any temp files from updating pyanitools
@@ -87,11 +87,11 @@ class AniToolsSetup:
         :returns: True if downloaded, False if no updates to download, error if encountered.
         """
         # download json file
-        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "server_download.py")
         dl_command = [
             py_script,
             self.app_vars.server_update_json_path,
-            self.app_vars.download_path_cgt,
+            self.app_vars.cgt_download_path,
             self.app_vars.cgt_ip,
             self.app_vars.cgt_user,
             self.app_vars.cgt_pass
@@ -114,11 +114,11 @@ class AniToolsSetup:
         if self.updates_exist(server_data, client_data) or skip_update_check:
             logging.info("Running Update")
             # download the file
-            py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+            py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "server_download.py")
             dl_command = [
                 py_script,
                 self.app_vars.cgt_path_pyanitools,
-                self.app_vars.download_path_cgt,
+                self.app_vars.cgt_download_path,
                 self.app_vars.cgt_ip,
                 self.app_vars.cgt_user,
                 self.app_vars.cgt_pass
@@ -136,7 +136,7 @@ class AniToolsSetup:
         :returns: None if installed, errors if encountered
         """
         # move file to tempdir
-        src = os.path.join(self.app_vars.download_path_cgt, self.app_vars.tools_package)
+        src = os.path.join(self.app_vars.cgt_download_path, self.app_vars.tools_package)
         dest = os.path.join(self.app_vars.download_path_pyanitools, self.app_vars.tools_package)
         # check if directory exists
         if not os.path.exists(self.app_vars.download_path_pyanitools):
@@ -179,7 +179,7 @@ class AniToolsSetup:
 
     def update_show_info(self):
         """
-        Calls cgt api to update the list of show info - sequences, shots, frame start/end
+        Calls cgt api to update the list of show info - sequences, shots, frame start_task_list/end
         :return: error if encountered, otherwise None
         """
         # download the file
@@ -458,7 +458,7 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         # functionality to install apps and update tools
         self.tools_setup = AniToolsSetup()
         # functionality to install maya plugins
-        self.maya_tools = pyani.core.mayatoolsmngr.AniMayaTools()
+        self.maya_plugins = pyani.core.mayatoolsmngr_depr.AniMayaTools()
 
         # create a task scheduler object
         self.task_scheduler = pyani.core.util.WinTaskScheduler(
@@ -491,21 +491,6 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         # indicates if an error occured
         self.error_occurred = False
         self.progress_steps = 0
-
-        # download monitor - we create here, and set slot to receive signal. When receive signal we process. When
-        # a plugin is ready to download pass this object to the maya plugins class object so it can set the cmd to
-        # execute and start the process. Then the event loop for QT will run here and call the slot function to process
-        # the output.
-        self.download_monitor_maya_install = pyani.core.ui.CGTDownloadMonitor()
-        self.download_monitor_maya_update = pyani.core.ui.CGTDownloadMonitor()
-        self.download_monitor_pyanitools_update = pyani.core.ui.CGTDownloadMonitor()
-
-        # progress bar widgets
-        self.progress_download_bar = QtWidgets.QProgressBar(self)
-        self.progress_download_label = QtWidgets.QLabel("Download Progress:")
-        # only show when showing download progress
-        self.progress_download_bar.hide()
-        self.progress_download_label.hide()
 
         self.create_layout()
         self.set_slots()
@@ -540,13 +525,6 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         h_layout_progress.addWidget(self.progress)
         h_layout_progress.addStretch(1)
         main_layout.addLayout(h_layout_progress)
-        h_layout_dl_progress = QtWidgets.QHBoxLayout()
-        h_layout_dl_progress.addStretch(1)
-        h_layout_dl_progress.addWidget(self.progress_download_label)
-        h_layout_dl_progress.addItem(QtWidgets.QSpacerItem(10, 0))
-        h_layout_dl_progress.addWidget(self.progress_download_bar)
-        h_layout_dl_progress.addStretch(1)
-        main_layout.addLayout(h_layout_dl_progress)
         h_layout_btn = QtWidgets.QHBoxLayout()
         h_layout_btn.addStretch(1)
         h_layout_btn.addWidget(self.close_btn)
@@ -562,62 +540,6 @@ class AniToolsSetupGui(QtWidgets.QDialog):
 
     def set_slots(self):
         self.close_btn.clicked.connect(self.close)
-        self.download_monitor_maya_install.data_downloaded.connect(self.progress_received_maya_plugins_install)
-        self.download_monitor_maya_update.data_downloaded.connect(self.progress_received_maya_plugins_update)
-        self.download_monitor_pyanitools_update.data_downloaded.connect(self.progress_received_pyanitools_update)
-
-    def progress_received_maya_plugins_install(self, data):
-        """
-        Gets progress from CGTDownloadMonitor class via slot/signals
-        :param data: a string or int
-        """
-        # check for string message or download progress (int)
-        if isinstance(data, basestring):
-            # get the total number of files being downloaded - only get this data if downloading multiple files
-            if "file_total" in data:
-                self.progress_download_label.setText("Downloading {0} files.".format(data.split(":")[1]))
-            # get the total file size of the download - only get this data if downloading one file
-            elif "file_size" in data:
-                self.progress_download_label.setText("Downloading {0}.".format(data.split(":")[1]))
-            elif "done" in data or "no_updates" in data:
-                self.progress_download_label.hide()
-                self.progress_download_bar.hide()
-                self.progress_download_bar.setValue(0)
-
-                plugins_list = self.maya_tools.get_tools_list()
-                if isinstance(plugins_list, list):
-                    plugins_list = ','.join(plugins_list)
-
-                if "done" in data:
-                    logging.info("Installed maya plugins: {0}".format(plugins_list))
-                    self.log.append("Installed Maya plugins.")
-                else:
-                    logging.info("Maya plugins are up to date. Plugins are: {0}".format(plugins_list))
-                    self.log.append("Maya plugins are already installed.")
-
-                # update install_apps date
-                if not self.testing:
-                    error = self.tools_setup.set_install_date()
-                else:
-                    error = None
-                if error:
-                    self.log.append(self.format_error(error))
-
-                # if no errors show success message in green
-                if not self.error_occurred:
-                    self.log.append(
-                        "<font color={0}>Installation Completed Successfully!</font>".format(pyani.core.ui.GREEN)
-                    )
-                else:
-                    self.log.append(
-                        self.format_error("Installation Completed With Errors. See Above Log.")
-                    )
-
-                # finish
-                self.finish_install()
-        else:
-            # update progress
-            self.progress_download_bar.setValue(data)
 
     def progress_received_maya_plugins_update(self, data):
         """
@@ -656,57 +578,19 @@ class AniToolsSetupGui(QtWidgets.QDialog):
     def run(self, force_update=False):
         """
         starts the install or update process.
-
-        process for install is:
-        run() -> run_install -> maya.plugins.download_plugins -> progress_received_maya_plugins_install() -> finish_install()
-                      |
-                      v
-                    run() : if maya plugins install fails
-                      |
-                      v
-                finish_install()
-
-        process for update is:
-        run() -> run_update -> tools_setup.download_updates -> progress_received_pyanitools_update -> update_maya_plugins() -> progress_received_maya_plugins_update() -> finish_install()
-                                          |                                                                     |
-                                          |  (failed or no updates)                                             |  (failed)
-                                          |                                                                     |
-                                          |                                                                     v
-                                          |                                                               finish_install()
-                                          v
-                                        run_update() -> update_maya_plugins() -> progress_received_maya_plugins_update() -> finish_install()
-                                                                |
-                                                                |
-                                                            run_update()
-                                                                |
-                                                                V
-                                                              run()
-                                                                |
-                                                                v
-                                                        finish_install()
-
         NOTE: exits on a successful installation or update if the flag
         'close_on_success was passed'. Otherwise shows report of the install or update via the finish_install method
         :param force_update: optional flag to force an update regardless of user version
         """
         # determine if this is an install_apps or update
         if self.run_type == "setup":
-            # check if installation failed, if so cleanup
-            if not self.run_install():
-                # finish install
-                self.finish_install()
+            self.run_install()
         else:
-            # check if update failed, if so cleanup
-            if not self.run_update(force_update=force_update):
-                # finish install
-                self.finish_install()
+            self.run_update(force_update=force_update)
 
     def run_install(self):
         """
-        Does the complete installation of the tools - note that we have a slot function,
-        progress_received_maya_plugins_install() that handles maya plugins install because it receives feedback from
-        a subprocess that calls the cgt download that outputs download progress
-        :return: exits early if error scheduling task or can't find app data for maya plugins
+        Does the complete installation of the tools
         """
         # schedule tools update to run, if it is already scheduled skips. If scheduling errors then informs user
         # but try to install apps
@@ -733,28 +617,47 @@ class AniToolsSetupGui(QtWidgets.QDialog):
             self.error_occurred = True
 
         # run maya plugins install - will run regardless of whether pyanitools installs successfully
-        self.progress_label.setText("Adding Maya Tools  ")
+        self.progress_label.setText("Adding Maya Plugins")
+        QtWidgets.QApplication.processEvents()
         self.progress.setValue(90)
         # run this here, because we need the app data installed first. plugin data is in app_data/shared/app_list.json
-        error = self.maya_tools.build_tool_data()
+        error = self.maya_plugins.build_tool_data()
         if error:
             self.log.append(self.format_error(error))
             # at end of installation, couldn't install maya plugins
             self.error_occurred = True
-            return False
         else:
             # download from CGT
-            self.progress_download_bar.show()
-            self.progress_download_label.show()
-            """
-            **********************************************************************************************
-            NOTE: because we are using threads, a signal is fired when this completes and the rest of the
-            install completes in the method progress_received_maya_plugins_install
-            **********************************************************************************************
-            """
-            self.maya_tools.download_tools(self.maya_tools.get_tools_list(), self.download_monitor_maya_install)
-            # installation continues, return true
-            return True
+            error = self.maya_plugins.download_tools(
+                self.maya_plugins.get_tools_list(), None, use_progress_monitor=False
+            )
+            if error:
+                self.log.append(self.format_error(error))
+                # at end of installation, couldn't install maya plugins
+                self.error_occurred = True
+            else:
+                self.log.append("Added maya plugins: {0}".format(', '.join(self.maya_plugins.get_tools_list())))
+
+                # update install_apps date
+                if not self.testing:
+                    error = self.tools_setup.set_install_date()
+                else:
+                    error = None
+                if error:
+                    self.log.append(self.format_error(error))
+
+        # if no errors show success message in green
+        if not self.error_occurred:
+            self.log.append(
+                "<font color={0}>Installation Completed Successfully!</font>".format(pyani.core.ui.GREEN)
+            )
+        else:
+            self.log.append(
+                self.format_error("Installation Completed With Errors. See Above Log.")
+            )
+
+        # finish
+        self.finish_install()
 
     def run_update(self, force_update=False):
         """
@@ -791,19 +694,12 @@ class AniToolsSetupGui(QtWidgets.QDialog):
 
         # ----------------------------------------------------------------
         # update tools - doesn't exit if fails, just record and try to download maya plugins
-        self.progress_label.setText("Checking for tool updates...File is several hundred MBs")
+        self.progress_label.setText("Checking and downloading tool updates. Package is 495 MB, this may take "
+                                    "several minutes....")
         # update progress bar
         self.progress.setValue(self.progress.value() + self.progress_steps)
         QtWidgets.QApplication.processEvents()
 
-        """
-        **********************************************************************************************
-        NOTE: if the timestamp file can't be retrieved or there are no updates, then we get back an error or false
-        from tools_setup.download_updates. Otherwise tools_setup.download_updates launches subprocess and 
-        progress_recieved_pyanitools_update() recieves the output from subprocess via signal/slots. Execution
-        comes back here regardless since signals and slots are done via threads
-        **********************************************************************************************
-        """
         if not self.testing:
             error = self.tools_setup.download_updates(skip_update_check=force_update)
         else:
@@ -814,29 +710,10 @@ class AniToolsSetupGui(QtWidgets.QDialog):
             self.log.append(self.format_error(msg))
             logging.error(msg)
             self.error_occurred = True
-
-            # ----------------------------------------------------------------------------------------
-            # downloading maya plugins - remember the download runs in a thread, so execution returns
-            # here regardless
-            if not self.update_maya_plugins():
-                # not downloading
-                return False
-            else:
-                # maya plugins are downloading successfully
-                return True
         # returned False, means nothing downloaded
         elif not error:
             self.log.append("No updates to download.")
             logging.info("No updates to download.")
-            # ----------------------------------------------------------------------------------------
-            # downloading maya plugins - remember the download runs in a thread, so execution returns
-            # here regardless
-            if not self.update_maya_plugins():
-                # not downloading
-                return False
-            else:
-                # maya plugins are downloading successfully
-                return True
         # returned true so pyanitools downloaded
         else:
             # unzips and sets directory where the unzipped files are
@@ -854,6 +731,24 @@ class AniToolsSetupGui(QtWidgets.QDialog):
                     self.log.append(log)
                     self.error_occurred = True
 
+        # Update Maya Plugins
+        error = self.maya_plugins.build_tool_data()
+        if error:
+            self.log.append(self.format_error(error))
+            # at end of installation, couldn't install maya plugins
+            self.error_occurred = True
+        else:
+            # download from CGT
+            error = self.maya_plugins.download_tools(
+                self.maya_plugins.get_tools_list(), None, use_progress_monitor=False
+            )
+            if error:
+                self.log.append(self.format_error(error))
+                # at end of installation, couldn't install maya plugins
+                self.error_occurred = True
+            else:
+                self.log.append("Added maya plugins: {0}".format(', '.join(self.maya_plugins.get_tools_list())))
+
                 # update install_apps date
                 if not self.testing:
                     # only set date if no errors installing
@@ -867,13 +762,18 @@ class AniToolsSetupGui(QtWidgets.QDialog):
                 else:
                     logging.info("Apps update ran with success")
 
-            if not self.update_maya_plugins():
-                self.log.append(self.format_error("Update Completed With Errors. See Above Log."))
-                # finish install
-                self.finish_install()
-            else:
-                # progress_received_maya_updates is active so do nothing
-                return True
+        # if no errors show success message in green
+        if not self.error_occurred:
+            self.log.append(
+                "<font color={0}>Update Completed Successfully!</font>".format(pyani.core.ui.GREEN)
+            )
+        else:
+            self.log.append(
+                self.format_error("Update Completed With Errors. See Above Log.")
+            )
+
+        # finish install
+        self.finish_install(completion_msg="Updates Complete")
 
     def finish_install(self, completion_msg="Installation Complete"):
         """
@@ -881,10 +781,6 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         complete. Defaults to Installation Complete
         Finishes the installation regardless of success or error. Shows messages and cleans up temp dirs
         """
-        # FINISH -----------------------------------------------------------------------
-        self.progress_download_bar.hide()
-        self.progress_download_label.hide()
-
         self.progress_label.setText(completion_msg)
         self.progress.setValue(100)
         QtWidgets.QApplication.processEvents()
@@ -905,7 +801,7 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         Runs the maya plugin update
         :return: False if can't build plugin data, True otherwise - means attempting download
         """
-        error = self.maya_tools.build_tool_data()
+        error = self.maya_plugins.build_tool_data()
         if error:
             self.log.append(self.format_error(error))
             # at end of installation, couldn't install maya plugins
@@ -914,17 +810,12 @@ class AniToolsSetupGui(QtWidgets.QDialog):
 
         self.progress.setValue(90)
         self.progress_label.setText(
-            "Updating Maya Plugins: {0}".format(', '.join(self.maya_tools.get_tools_list()))
+            "Updating Maya Plugins: {0}".format(', '.join(self.maya_plugins.get_tools_list()))
         )
 
-        # download from CGT
-        self.progress_download_bar.show()
-        self.progress_download_label.show()
-        self.progress_download_label.setText("Downloading Plugins")
-
         if not self.testing:
-            self.maya_tools.download_tools(
-                self.maya_tools.get_tools_list(),
+            self.maya_plugins.download_tools(
+                self.maya_plugins.get_tools_list(),
                 self.download_monitor_maya_update
             )
         else:
@@ -1007,7 +898,7 @@ class AniToolsSetupGui(QtWidgets.QDialog):
 
         if not self.testing:
             # ----> make sure shortcut link is on desktop, if not copy
-            if not os.path.exists(self.tools_setup.app_vars.tools_shortcuts):
+            if not os.path.exists(self.tools_setup.app_vars.pyanitools_desktop_shortcut_path):
                 shortcut_to_move = os.path.join(self.tools_setup.app_vars.setup_installed_path, "PyAniTools.lnk")
                 logging.info(
                     "Step: Moving: {0} to {1}".format(self.tools_setup.app_vars.setup_installed_path + "\\PyAniTools.lnk",

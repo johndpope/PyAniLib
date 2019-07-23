@@ -35,6 +35,7 @@ class CGTError(Exception):
     """
     pass
 
+
 class WinTaskScheduler:
     """Wrapper around windows task scheduler command line tool named schtasks. Provides functionality to create,
     enable/disable, and query state
@@ -122,7 +123,7 @@ class WinTaskScheduler:
         """
         Gets the task state, uses syntax:
         schtasks /query /tn "task name" /v /fo list
-        :returns: true if enbaled, false if not, or returns error as string
+        :returns: true if enabled, false if not, or returns error as string
         """
         is_scheduled, error = self.is_task_scheduled()
         if error:
@@ -258,7 +259,6 @@ class WinTaskScheduler:
             logger.error(error)
             return error
         return None
-
 
 """
 Threaded copy - faster than multi proc copy, and 2-3x speed up over sequential copy
@@ -538,6 +538,21 @@ def natural_sort(iterable):
     return sorted(iterable, key=alphanum_key)
 
 
+def read_file(file_path):
+    """
+    Loads a file off disk
+    :param file_path: the path to the file data
+    :return: a tuple (data, error) where the data is a string and error if occurred is a string, otherwise is None
+    """
+    try:
+        with open(file_path, "r") as file_data:
+            return file_data.read(), None
+    except (IOError, OSError, EnvironmentError, ValueError) as e:
+        error_msg = "Problem loading {0}. Error reported is {1}".format(file_path, e)
+        logger.error(error_msg)
+        return None, error_msg
+
+
 def load_json(json_path):
     """
     Loads a json file
@@ -553,12 +568,12 @@ def load_json(json_path):
         return error_msg
 
 
-def write_json(json_path, user_data, indent=0):
+def write_json(json_path, user_data, indent=4):
     """
     Write to a json file
     :param json_path: the path to the file
     :param user_data: the data to write
-    :param indent: optional indent
+    :param indent: optional indent, defaults to 4 spaces for each line
     :return: None if wrote to disk, error if couldn't write
     """
     try:
@@ -593,6 +608,7 @@ def launch_app(app, args, open_shell=False, wait_to_complete=False, open_as_new_
                                  stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE)
             output, error = p.communicate()
+            print output, error
             if p.returncode != 0:
                 error = "Problem executing command {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
                     cmd,
@@ -638,10 +654,16 @@ def call_ext_py_api(command, interpreter=None):
     :param command: External python file to run with any arguments, leave off python interpreter,
     ie just script.py arguments, not python.exe script.py arguments. Must be a list:
     ["script.py", "arg1", ...., "arg n"]
+
+    HINT: To pass python lists as arguments in the command, do a join ",".join(list), then the python
+    script being called can parse that as sys.argv[n].split(",") to convert back to a list. Note the ",".join has no
+    spaces between comma
+
     :param interpreter: the python interpreter, i.e. the full path to pyhton.exe.
     if none defaults to cg teamworks python exe
-    :return: the output from the script and any errors encountered. If no output returns None and if no
-    errors returns None
+    :return: the output from the script and any errors (from subprocess, not CGT) encountered.
+    If no output returns None and if no errors (from subprocess not CGT) returns None
+    :raises: CGTError: means an error occurred connecting or accessing CGT, contains the error
     """
     if not interpreter:
         interpreter = os.path.normpath("C:\cgteamwork\python\python.exe")
@@ -672,7 +694,9 @@ def call_ext_py_api(command, interpreter=None):
     if "None" not in output and not "".join(output.split()) == "":
         # check for the word error in output
         for line in output.split("\n"):
-            if "Error" in line or "error" in line:
+            # check for both error and cgt in same line to ensure don't grab a file with the word error in path or
+            # file name
+            if ("Error" in line or "error" in line) and ("cgt" in line or "CGT" in line):
                 raise CGTError(line)
         return output, None
     # no output and no errors
@@ -825,7 +849,7 @@ def find_val_in_nested_dict(dictionary, key_path, keys=True):
                 return result
         else:
             return result
-    except KeyError:
+    except (TypeError, KeyError):
         return None
 
 

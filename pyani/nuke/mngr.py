@@ -2,8 +2,9 @@ import os
 import logging
 import pyani.core.util
 import pyani.core.ui
-import pyani.core.appmanager
+import pyani.core.appvars
 import pyani.core.anivars
+import pyani.core.mngr.tools
 
 
 # set the environment variable to use a specific wrapper
@@ -71,14 +72,22 @@ class AniNukeMngr(object):
 
 class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
     def __init__(self, error_logging):
-        # build main window structure
-        app_name = "PyNukeMngr"
-        app_mngr = pyani.core.appmanager.AniAppMngr(app_name)
+        self.tools_mngr = pyani.core.mngr.tools.AniToolsMngr()
+        app_name = "pyNukeMngr"
+        app_vars = pyani.core.appvars.AppVars()
+        tool_metadata = {
+            "name": app_name,
+            "dir": app_vars.local_pyanitools_apps_dir,
+            "type": "pyanitools",
+            "category": "apps"
+        }
+
         # pass win title, icon path, app manager, width and height
         super(AniNukeMngrGui, self).__init__(
             "Py Nuke Manager",
             "Resources\\pynukemngr.png",
-            app_mngr,
+            tool_metadata,
+            self.tools_mngr,
             1000,
             1000,
             error_logging

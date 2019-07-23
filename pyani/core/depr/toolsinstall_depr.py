@@ -8,7 +8,7 @@ import pyani.core.ui
 import pyani.core.anivars
 import pyani.core.appvars
 import pyani.core.util
-import pyani.core.mayatoolsmngr
+import pyani.core.mayatoolsmngr_depr
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -33,8 +33,8 @@ class AniToolsSetup:
         :return: None if removed without errors, or an error as a string if an error occurs
         """
         # clean up any temp files related to downloading of files from cgt
-        if os.path.exists(self.app_vars.download_path_cgt):
-            error = pyani.core.util.rm_dir(self.app_vars.download_path_cgt)
+        if os.path.exists(self.app_vars.cgt_download_path):
+            error = pyani.core.util.rm_dir(self.app_vars.cgt_download_path)
             if error:
                 return error
         # clean up any temp files from updating pyanitools
@@ -87,11 +87,11 @@ class AniToolsSetup:
         :returns: True if downloaded, False if no updates to download, error if encountered.
         """
         # download json file
-        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "server_download.py")
         dl_command = [
             py_script,
             self.app_vars.server_update_json_path,
-            self.app_vars.download_path_cgt,
+            self.app_vars.cgt_download_path,
             self.app_vars.cgt_ip,
             self.app_vars.cgt_user,
             self.app_vars.cgt_pass
@@ -114,11 +114,11 @@ class AniToolsSetup:
         if self.updates_exist(server_data, client_data) or skip_update_check:
             logging.info("Running Update")
             # download the file
-            py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+            py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "server_download.py")
             dl_command = [
                 py_script,
                 self.app_vars.cgt_path_pyanitools,
-                self.app_vars.download_path_cgt,
+                self.app_vars.cgt_download_path,
                 self.app_vars.cgt_ip,
                 self.app_vars.cgt_user,
                 self.app_vars.cgt_pass
@@ -136,7 +136,7 @@ class AniToolsSetup:
         :returns: None if installed, errors if encountered
         """
         # move file to tempdir
-        src = os.path.join(self.app_vars.download_path_cgt, self.app_vars.tools_package)
+        src = os.path.join(self.app_vars.cgt_download_path, self.app_vars.tools_package)
         dest = os.path.join(self.app_vars.download_path_pyanitools, self.app_vars.tools_package)
         # check if directory exists
         if not os.path.exists(self.app_vars.download_path_pyanitools):
@@ -179,7 +179,7 @@ class AniToolsSetup:
 
     def update_show_info(self):
         """
-        Calls cgt api to update the list of show info - sequences, shots, frame start/end
+        Calls cgt api to update the list of show info - sequences, shots, frame start_task_list/end
         :return: error if encountered, otherwise None
         """
         # download the file
@@ -458,7 +458,7 @@ class AniToolsSetupGui(QtWidgets.QDialog):
         # functionality to install apps and update tools
         self.tools_setup = AniToolsSetup()
         # functionality to install maya plugins
-        self.maya_plugins = pyani.core.mayatoolsmngr.AniMayaTools()
+        self.maya_plugins = pyani.core.mayatoolsmngr_depr.AniMayaTools()
 
         # create a task scheduler object
         self.task_scheduler = pyani.core.util.WinTaskScheduler(
@@ -898,7 +898,7 @@ class AniToolsSetupGui(QtWidgets.QDialog):
 
         if not self.testing:
             # ----> make sure shortcut link is on desktop, if not copy
-            if not os.path.exists(self.tools_setup.app_vars.tools_shortcuts):
+            if not os.path.exists(self.tools_setup.app_vars.pyanitools_desktop_shortcut_path):
                 shortcut_to_move = os.path.join(self.tools_setup.app_vars.setup_installed_path, "PyAniTools.lnk")
                 logging.info(
                     "Step: Moving: {0} to {1}".format(self.tools_setup.app_vars.setup_installed_path + "\\PyAniTools.lnk",

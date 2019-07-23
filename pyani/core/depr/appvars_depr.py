@@ -11,15 +11,36 @@ class AppVars:
     To see a list of App Vars:
     print AppVars_instance
     """
+
     def __init__(self):
         self.ani_vars = pyani.core.anivars.AniVars()
-
-        # BASIC / GENERAL
-
-        # max errors to be displayed
-        self.max_errors_to_display = 20
         # notes formats supported
         self.notes_format_supported = ["txt", "json"]
+        # the directory where the unzipped files are for installation
+        self.tools_package = "PyAniToolsPackage.zip"
+        # to debug, unzip to downloads folder and set this to "C:\\Users\\Patrick\\Downloads\\PyAniToolsPackage"
+        self.setup_dir = ""
+        self.setup_app_data_path = os.path.join(self.setup_dir, "PyAniTools\\app_data")
+        self.setup_packages_path = os.path.join(self.setup_dir, "PyAniTools\\packages")
+        self.setup_installed_path = os.path.join(self.setup_dir, "PyAniTools\\installed")
+        self.setup_apps_shortcut_dir = os.path.join(self.setup_dir, "PyAniTools\\installed\\shortcuts")
+        self.setup_nuke_scripts_path = os.path.join(self.setup_dir, "PyAniTools\\install_scripts\\")
+        # directory where installed files go
+        self.tools_dir = "C:\\PyAniTools"
+        self.app_data_dir = self.tools_dir + "\\app_data"
+        self.packages_dir = self.tools_dir + "\\packages"
+        self.apps_dir = self.tools_dir + "\\installed"
+        self.tools_list = self.app_data_dir + "\\Shared\\app_list.json"
+        self.setup_exe = "PyAniToolsSetup.exe"
+        self.update_exe = "PyAniToolsUpdate.exe"
+        self.update_path = os.path.join(self.apps_dir, self.update_exe)
+        self.iu_assist_exe = "PyAniToolsIUAssist.exe"
+        self.iu_assist_path = os.path.join(self.apps_dir, self.iu_assist_exe)
+        self.apps_shortcut_dir = self.apps_dir + "\\shortcuts"
+        self.install_scripts_dir = self.tools_dir + "\\install_scripts"
+        self.app_mngr_path = os.path.join(self.apps_dir, "PyAppMngr")
+        self.app_mngr_exe = os.path.join(self.app_mngr_path, "PyAppMngr.exe")
+        self.app_mngr_shortcut = os.path.normpath("C:\PyAniTools\installed\shortcuts\PyAppMngr.lnk")
         # users path i.e. C:\Users\{username}\
         homepath = os.path.join("C:", os.environ["HOMEPATH"])
         # user desktop
@@ -32,7 +53,7 @@ class AppVars:
         self.persistent_data_path = "{0}\\.PyAniTools".format(homepath)
         # base temp dir
         self.local_temp_dir = os.path.normpath(tempfile.gettempdir())
-        
+
         # this holds the seq and shot set in PySession app
         self.session_file = os.path.join(self.persistent_data_path, "session_env.json")
 
@@ -40,19 +61,12 @@ class AppVars:
         self.wiki_user = "Patrick"
         self.wiki_pass = "evan0510"
 
-        # CACHES
+        # tools general
+        self.cgt_tools_cache_path = "{0}\\cgt_tools_cache.json".format(self.persistent_data_path)
+        self.tool_ignore_list = ["json", "txt"]
+        self.tools_temp_dir = os.path.join(self.local_temp_dir, "pyanitools")
 
-        # sequence/shot list cache
-        self.sequence_list_json = os.path.join(self.persistent_data_path, "sequences.json")
-        # cgt asset info cache
-        self.cgt_asset_info_cache_path = "{0}\\cgt_asset_info_cache.json".format(self.persistent_data_path)
-
-        # CONFIGURATION / PREFERENCES
-
-        # update config file used during updating to determine assets to update
-        self.update_config_file = "{0}\\update_config.json".format(self.persistent_data_path)
-
-        # CGT
+        # cgt cloud
         self.cgt_metadata_filename = "cgt_metadata.json"
         self.cgt_tools_online_path = "/LongGong/tools/"
         self.cgt_pyanitools_app_dir = "/LongGong/tools/pyanitools/apps"
@@ -61,30 +75,24 @@ class AppVars:
         self.cgt_pyanitools_shortcuts_dir = "/LongGong/tools/pyanitools/shortcuts"
         self.cgt_maya_script_dir = "/LongGong/tools/maya/scripts"
         self.cgt_maya_plugins_dir = "/LongGong/tools/maya/plugins"
+
         self.cgt_download_path = os.path.join(self.local_temp_dir, "CGT")
-        self.cgt_bridge_api_dir = "app_bridge"
-        # to test: os.path.normpath("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\PyAniToolsAppBridge\\venv")
-        self.cgt_bridge_api_path = os.path.normpath("C:\\PyAniTools\\lib\\{0}".format(self.cgt_bridge_api_dir))
+        self.cgt_path_pyanitools = os.path.join(self.cgt_tools_online_path, self.tools_package)
+        # TODO: os.path.normpath("C:\PyAniTools\lib\app_bridge")
+        self.cgt_bridge_api_path = os.path.normpath(
+            "C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\PyAniToolsAppBridge\\venv")
         self.cgt_user = "Patrick"
         self.cgt_pass = "longgong19"
         self.cgt_ip = "172.18.100.246"
 
-        # TOOLS
-
-        # tools general
-        self.cgt_tools_cache_path = "{0}\\cgt_tools_cache.json".format(self.persistent_data_path)
-        self.tool_ignore_list = ["json", "txt"]
-        self.tools_temp_dir = os.path.join(self.local_temp_dir, "pyanitools")
-
         # pyanitools
-        self.tools_dir = "C:\\PyAniTools"
         self.local_pyanitools_apps_dir = self.tools_dir + "\\apps"
         self.local_pyanitools_lib_dir = self.tools_dir + "\\lib"
         self.local_pyanitools_core_dir = self.tools_dir + "\\core"
         self.local_pyanitools_shortcuts_dir = self.tools_dir + "\\shortcuts"
         self.pyanitools_support_launcher_name = "pyAppRoamingLauncher.exe"
         self.pyanitools_support_launcher_path = os.path.join(
-            self.persistent_data_path,  self.pyanitools_support_launcher_name
+            self.persistent_data_path, self.pyanitools_support_launcher_name
         )
         self.pyanitools_update_app_name = "update.exe"
         self.pyanitools_setup_app_name = "setup.exe"
@@ -92,6 +100,10 @@ class AppVars:
         self.pyanitools_desktop_shortcut_path = os.path.join(self.user_desktop, self.pyanitools_desktop_shortcut_name)
 
         # maya tools
+        # json file name to find the plugin version, this file will be in the plugins directory
+        self.maya_tools_vers_json_name = "plugin_version.json"  # todo remove
+        self.maya_tools_restore_dir = "restore"  # todo remove
+
         self.maya_scripts_local_dir = "Z:\\LongGong\\tools\\maya\\scripts"
         self.maya_plugins_local_dir = "Z:\\LongGong\\tools\\maya\\plugins"
 
@@ -157,6 +169,14 @@ class AppVars:
             "pyanitools": "PyAniTools"
         }
 
+        # download vars
+        self.client_install_data_json = os.path.join(self.app_data_dir, "Shared\\install_data.json")
+        self.sequence_list_json = os.path.join(self.persistent_data_path, "sequences.json")
+        self.server_update_json_name = "last_update.json"
+        self.server_update_json_path = os.path.join(self.cgt_tools_online_path, self.server_update_json_name)
+        self.server_update_json_download_path = os.path.join(self.cgt_download_path, self.server_update_json_name)
+        self.download_path_pyanitools = os.path.join(os.path.normpath(tempfile.gettempdir()), "PyAniTools")
+
         # asset management vars -
         # asset types are the supported show and shot assets. The first key is the asset type, which is unique, and then
         # the component, which is not unique and may belong to multiple asset types.
@@ -207,6 +227,10 @@ class AppVars:
                 }
             }
         }
+        # cgt asset info cache
+        self.cgt_asset_info_cache_path = "{0}\\cgt_asset_info_cache.json".format(self.persistent_data_path)
+        # update config file used during updating to determine assets to update
+        self.update_config_file = "{0}\\update_config.json".format(self.persistent_data_path)
 
     # produce better output
     def __str__(self):
@@ -214,3 +238,15 @@ class AppVars:
 
     def __repr__(self):
         return '<pyani.core.appvars.AppVars>'
+
+    def update_setup_dir(self, new_setup_dir):
+        """
+        Updates member variables to point to a ne setup directory than the one set during init
+        :param new_setup_dir: file path to location of unzipped tool files
+        """
+        self.setup_dir = new_setup_dir
+        self.setup_app_data_path = os.path.join(self.setup_dir, "PyAniTools\\app_data")
+        self.setup_packages_path = os.path.join(self.setup_dir, "PyAniTools\\packages")
+        self.setup_installed_path = os.path.join(self.setup_dir, "PyAniTools\\installed")
+        self.setup_apps_shortcut_dir = os.path.join(self.setup_dir, "PyAniTools\\installed\\shortcuts")
+        self.setup_nuke_scripts_path = os.path.join(self.setup_dir, "PyAniTools\\install_scripts\\")

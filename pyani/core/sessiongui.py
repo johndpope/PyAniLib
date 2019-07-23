@@ -2,9 +2,10 @@ import os
 import logging
 import pyani.core.util
 import pyani.core.ui
-import pyani.core.appmanager
-from pyani.core.appsession import AniSession
+import pyani.core.appvars
+from pyani.core.session import AniSession
 import pyani.core.anivars
+import pyani.core.mngr.tools
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -25,16 +26,22 @@ class AniSessionGui(pyani.core.ui.AniQMainWindow):
     to create logging in main program
     """
     def __init__(self, error_logging):
-        self.log = []
+        self.tools_mngr = pyani.core.mngr.tools.AniToolsMngr()
+        app_name = "pySession"
+        app_vars = pyani.core.appvars.AppVars()
+        tool_metadata = {
+            "name": app_name,
+            "dir": app_vars.local_pyanitools_apps_dir,
+            "type": "pyanitools",
+            "category": "apps"
+        }
 
-        # build main window structure
-        self.app_name = "PySession"
-        self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
         # pass win title, icon path, app manager, width and height
         super(AniSessionGui, self).__init__(
             "Py Session",
             "Resources\pysession.png",
-            self.app_mngr,
+            tool_metadata,
+            self.tools_mngr,
             600,
             400,
             error_logging
@@ -71,7 +78,7 @@ class AniSessionGui(pyani.core.ui.AniQMainWindow):
             self._update_session_label()
             self.seq_select_menu = QtWidgets.QComboBox()
             self.seq_select_menu.addItem("------")
-            self.seq_select_menu.addItem("non-prod")
+            self.seq_select_menu.addItem("show")
             for seq in sorted(self.ani_vars.get_sequence_list()):
                 self.seq_select_menu.addItem(seq)
             self.shot_select_menu = QtWidgets.QComboBox()
@@ -127,7 +134,7 @@ class AniSessionGui(pyani.core.ui.AniQMainWindow):
         Build the shot menu
         """
         seq = str(self.seq_select_menu.currentText())
-        if not seq == "non-prod" and not self.seq_select_menu.currentIndex() == 0:
+        if not seq == "show" and not self.seq_select_menu.currentIndex() == 0:
             self.ani_vars.update(seq)
             self.shot_select_menu.clear()
             self.shot_select_menu.addItem("------")
@@ -137,14 +144,14 @@ class AniSessionGui(pyani.core.ui.AniQMainWindow):
             self.shot_select_menu.clear()
 
     def set_environment_vars(self):
-        """sets the session object. Displays warnign if invalid selection or if session could not be created
+        """sets the session object. Displays warning if invalid selection or if session could not be created
         """
         # make sure both launch methods aren't selected
         seq_index = self.seq_select_menu.currentIndex()
         shot_index = self.shot_select_menu.currentIndex()
-        if str(self.seq_select_menu.currentText()) == "non-prod":
-            seq = "non-prod"
-            shot = "non-prod"
+        if str(self.seq_select_menu.currentText()) == "show":
+            seq = "show"
+            shot = "show"
         else:
             if (seq_index == 0 or seq_index == -1) or (shot_index == 0 or shot_index == -1):
                 self.msg_win.show_error_msg("Error", "Please select a sequence and a shot")
@@ -163,16 +170,10 @@ class AniSessionGui(pyani.core.ui.AniQMainWindow):
         Gets the session and stores in the label so user knows what the current session is
         """
         # get session
-        current_session = self.session.get_session()
-        if not isinstance(current_session, dict):
-            error = "Could not get session. Error is {0}".format(current_session)
-            logger.error(error)
-            self.current_session_label.setText("<b>Current Session:</b> Could not get active session data.")
+        sequence, shot = self.session.get_core_session()
+
+        if sequence == "show" or not sequence:
+            self.current_session_label.setText("<b>Current Session: </b>Shot environment not yet set. "
+                                               "Will use show level data for session.")
         else:
-            sequence = current_session['core']['seq']
-            shot = current_session['core']['shot']
-            if sequence == "non-prod":
-                self.current_session_label.setText("<b>Current Session:</b> Not in a shot environment. Will use show "
-                                                   "level data for session.")
-            else:
-                self.current_session_label.setText("<b>Current Session:</b> {0}, {1}".format(sequence, shot))
+            self.current_session_label.setText("<b>Current Session:</b> {0}, {1}".format(sequence, shot))

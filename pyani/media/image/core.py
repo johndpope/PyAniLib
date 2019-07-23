@@ -196,10 +196,10 @@ class AniImage(str):
             # image must not have a frame
             self.__frame = None
 
-        # the start and end are at the . in file name, or whatever separates frame number from extension and image name
+        # the start_and end are at the . in file name, or whatever separates frame number from extension and image name
         # subtract one from start to get image name no '.' and add one to get extension no '.'
         if self.frame:
-            self.__base_name = self.name[:self.frame.start-1]
+            self.__base_name = self.name[:self.frame.start - 1]
             self.__ext = self.name[self.frame.end+1:]
         else:
             # no frame in image name, split at extension

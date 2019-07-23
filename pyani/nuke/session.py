@@ -1,6 +1,6 @@
 import os
 from functools import partial
-import pyani.core.appsession
+import pyani.core.session
 import tempfile
 import logging
 import operator
@@ -23,7 +23,8 @@ class AniNukeCmds:
         self.nuke_gui = None
         self.plugins = None
         self.templates = None
-        self.session = pyani.core.appsession.AniSession()
+        self.session = pyani.core.session.AniSession()
+
         # the move tool to call to create the movie
         self.movie_tool = movie_tool
 
@@ -31,20 +32,10 @@ class AniNukeCmds:
         """Loads all sequence and shot plugin paths. Validates the plugins are there, if not displays warning
         using nuke.message
         """
-        session = self.session.get_session()
-        # could not set session, fall back to show plugins
-        if not isinstance(session, dict):
-            nuke.message("Could not load session. Using the show plugins. If you think this is an error, please "
-                         "file a jira.")
-            sequence = "non-prod"
-            shot = "non-prod"
-        # set session
-        else:
-            sequence = session['core']['seq']
-            shot = session['core']['shot']
+        sequence, shot = self.session.get_core_session()
 
         # show based plugins and templates since not in shot envir
-        if sequence == "non-prod":
+        if sequence == "show":
             # check that plugin paths exist
             if not os.path.exists(self.ani_vars.plugin_show):
                 nuke.message("Could not load show plugins {0}. Please check they exist. If not see Installing Show "
@@ -58,7 +49,6 @@ class AniNukeCmds:
             nuke.pluginAddPath(self.ani_vars.templates_show)
         # sequence and shot based plugins since in shot envir
         else:
-
             # do this first, update func needs this set
             self.ani_vars.load_seq_shot_list()
             self.ani_vars.update(sequence, shot)
@@ -335,7 +325,7 @@ class AniNukeGui:
         self.tempDir = os.path.join(tempfile.gettempdir(), "Nuke")
         # commands class - an AniNukeCmds object, pass blank string for movie tool, don't need that part of commands
         self.cmds = AniNukeCmds("")
-        self.session = pyani.core.appsession.AniSession()
+        self.session = pyani.core.session.AniSession()
 
 
     @staticmethod
@@ -352,13 +342,11 @@ class AniNukeGui:
         doesn't add templates, those are shot centric. Shot menu contains plugins, templates, and create shot camera.
         If a shot has plugins, shows those as well
         """
-        session = self.session.get_session()
-        sequence = session['core']['seq']
-        shot = session['core']['shot']
+        sequence, shot = self.session.get_core_session()
         self.ani_vars.load_seq_shot_list()
 
         # show based plugins and templates since not in shot envir
-        if sequence == "non-prod":
+        if sequence == "show":
             plugins = utils.load_json(os.path.join(self.ani_vars.plugin_show,
                                                    self.ani_vars.plugins_json_name))
             if not isinstance(plugins, list):
@@ -382,7 +370,7 @@ class AniNukeGui:
         shot_plugins = None
         self.custom_menu.clearMenu()
 
-        # see if we are in a shot env, if so load sequence plugins, otherwise load show plugins
+        # see if we are in a shot env
         if self.ani_vars.is_valid_seq(sequence) and self.ani_vars.is_valid_shot(shot):
             self.ani_vars.update(sequence, shot)
             self._build_template_data(templates)
@@ -399,6 +387,11 @@ class AniNukeGui:
                     shot_plugins = [
                         p for p in os.listdir(self.ani_vars.shot_comp_plugin_dir) if not p.endswith('json')
                     ]
+
+        if not isinstance(plugins, dict):
+            nuke.message("Problem building plugin menu. Error is {0}".format(plugins))
+            self.custom_menu.addCommand("Errors Occurred, Menu Could Not Be Built", "nuke.tprint('')")
+            return
 
         # show the plugins - available for shot and non shot environments
         for plugin in plugins.keys():

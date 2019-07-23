@@ -31,8 +31,6 @@ class AniVars(object):
         self.app_data_shared ="C:\\PyAniTools\\app_data\\Shared"
         # os.path.join has issues, maybe due to .nuke? String concat works
         self.nuke_custom_dir = "C:\\PyAniTools\\lib\\"
-        # this holds the seq and shot set in PySession app
-        self.session_vars_json = os.path.join(self.app_data_shared, "session_env.json")
         self.plugins_json_name = "plugins.json"
         self.templates_json_name = "templates.json"
         # movie directories

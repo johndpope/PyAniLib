@@ -2,10 +2,10 @@ import logging
 import os
 import pyani.core.appvars
 import pyani.core.util
-import pyani.core.appmanager
 import pyani.core.ui
 import pyani.core.anivars
 import pyani.render.log.data
+import pyani.core.mngr.tools
 
 
 # set the environment variable to use a specific wrapper
@@ -87,13 +87,21 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
 
     """
     def __init__(self, error_logging):
-        self.app_name = "PyRenderDataViewer"
-        self.app_mngr = pyani.core.appmanager.AniAppMngr(self.app_name)
-        # pass win title, icon path, app manager, width and height
+        app_name = "pyRenderDataViewer"
+        app_vars = pyani.core.appvars.AppVars()
+        tool_metadata = {
+            "name": app_name,
+            "dir": app_vars.local_pyanitools_apps_dir,
+            "type": "pyanitools",
+            "category": "apps"
+        }
+        self.tools_mngr = pyani.core.mngr.tools.AniToolsMngr()
+
         super(AniRenderDataViewer, self).__init__(
             "Py Render Data Viewer",
             "images\pyrenderdataviewer.png",
-            self.app_mngr,
+            tool_metadata,
+            self.tools_mngr,
             1800,
             1000,
             error_logging
@@ -150,8 +158,8 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             ]
 
             # text font to use for ui
-            self.font_family = "Century Gothic"
-            self.font_size_menus = 10
+            self.font_family = pyani.core.ui.FONT_FAMILY
+            self.font_size_menus = pyani.core.ui.FONT_SIZE_DEFAULT
             self.font_size_nav_crumbs = 11
 
             # load user data option
@@ -469,7 +477,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self.shot,
             self.history
         )
-        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "server_download.py")
         # need to convert python lists to strings, separated by commas, so that it will pass through
         # in the shell so if there are multiple paths, the list [path1, path2] becomes 'path1,path2'
         dl_command = [
@@ -549,7 +557,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                     shot,
                     self.history
                 )
-                py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+                py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "server_download.py")
                 # need to convert python lists to strings, separated by commas, so that it will pass through
                 # in the shell so if there are multiple paths, the list [path1, path2] becomes 'path1,path2'
                 dl_command = [
@@ -878,112 +886,6 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         else:
             return None
 
-    def build_graph_data_depr(self):
-        """
-        Makes the data dict and color dict needed by the bar graph
-        :return: The x axis labels, the data dict of float data and the color dict of pyqt colors
-        corresponding to the data. If there isn't render data, then returns None
-        """
-        # colors for the main stat number i.e. the total
-        colors = {
-            'total': QtGui.QColor(100, 100, 100),
-            'components': []
-        }
-
-        # the data we pass to the bar graph, expects the format:
-        # { 'total': [;list of floats], 'components':[nested list of floats, where each element is a frame, shot, or
-        # sequence of data] }
-        graph_data = {}
-        graph_data['total'] = []
-        graph_data['components'] = []
-
-        # build data for sequence
-        if self.current_level is 0:
-            # check if the menu is the first entry, which is all render layers
-            if self.render_layer_menu.currentIndex() == 0:
-                x_axis_labels = self.render_data.get_shots(self.seq)
-                for shot in x_axis_labels:
-                    # sum of stat for all render layers
-                    graph_data['total'].append(
-                        self.render_data.stat_data[self.seq][shot]['average'][self.selected_stat]['total'])
-                    graph_data['components'].append(
-                        self.render_data.stat_data[self.seq][shot]['average'][self.selected_stat]['components'])
-            # specific render layer selected
-            else:
-                x_axis_labels = self.render_data.get_shots(self.seq, render_layer=self.render_layer)
-                for shot in x_axis_labels:
-                    # sum of stat for all render layers
-                    graph_data['total'].append(
-                        self.render_data.stat_data[self.seq][shot][self.render_layer][self.history]['average'][self.selected_stat]['total'])
-                    graph_data['components'].append(
-                        self.render_data.stat_data[self.seq][shot][self.render_layer][self.history]['average'][self.selected_stat]['components'])
-
-        # build data for shot
-        else:
-            x_axis_labels = []
-            # check if the menu is the first entry, which is all render layers, if so find the render layer
-            # with the most frames, and use that as the x axis label
-            if self.render_layer_menu.currentIndex() == 0:
-                # get the render layer with the most frames
-                for render_layer in self.render_data.get_render_layers(self.seq, self.shot, history=self.history):
-                    frames = self.render_data.get_frames(self.seq, self.shot, render_layer, history=self.history)
-                    if len(frames) > len(x_axis_labels):
-                        x_axis_labels = frames
-            else:
-                x_axis_labels = self.render_data.get_frames(
-                    self.seq, self.shot, self.render_layer, history=self.history
-                )
-
-            # for every frame build data
-            for frame in x_axis_labels:
-                # check if the menu is the first entry, which is all render layers, if so process all render layers
-                # in the shot
-                if self.render_layer_menu.currentIndex() == 0:
-                    total = 0.0
-                    component_total = [0.0] * len(self.render_data.get_stat_components(self.selected_stat))
-                    render_layers = self.render_data.get_render_layers(self.seq, self.shot, history=self.history)
-                    for render_layer in render_layers:
-                        # need to add up the stat for every render layer - note frame data may not exist, since we
-                        # use the frame count from the render layer that has the most frames. If the data isn't there,
-                        # use the first existing frame's data
-                        if frame not in self.render_data.stat_data[self.seq][self.shot][render_layer][self.history]:
-                            # take the first frame's value
-                            frame = self.render_data.get_frames(self.seq, self.shot, render_layer, history=self.history)[0]
-                        total += self.render_data.stat_data[self.seq][self.shot][render_layer][self.history][frame][self.selected_stat]['total']
-                        for i, component in enumerate(self.render_data.stat_data[self.seq][self.shot][render_layer][self.history][frame][self.selected_stat]['components']):
-                            component_total[i] += component
-
-                    # treat cpu utilization specially, because just summing it doesn't make much sense. Consider
-                    # render layer 1 uses 93%, and render layer 2 is 90%, seeing 183% doesn't really help. Averaging
-                    # is a slightly better help
-                    if "cpu utilization" in self.selected_stat:
-                        total /= len(render_layers)
-
-                    graph_data['total'].append(total)
-                    graph_data['components'].append(component_total)
-                else:
-                    graph_data['total'].append(
-                        self.render_data.stat_data[self.seq][self.shot][self.render_layer][self.history][frame][self.selected_stat]['total'])
-                    graph_data['components'].append(
-                        self.render_data.stat_data[self.seq][self.shot][self.render_layer][self.history][frame][self.selected_stat]['components'])
-
-        # find color set to use
-        if graph_data['total']:
-            if self.render_data.get_stat_type(self.selected_stat) == "min":
-                colors_to_use = self.color_set_cool
-            elif self.render_data.get_stat_type(self.selected_stat) == 'gb':
-                colors_to_use = self.color_set_warm
-            else:
-                colors_to_use = None
-                colors['total'] = pyani.core.ui.YELLOW
-            # set colors for the components
-            for index in xrange(0, len(graph_data['components'][0])):
-                colors['components'].append(colors_to_use[index])
-
-            return x_axis_labels, graph_data, colors
-        else:
-            return None
-
     def build_averages_sidebar(self):
         """
         Makes the side bar that displays averages for the stats. The sidebar lists the main stat first, then
@@ -1070,99 +972,6 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self.averages_layout.addItem(QtWidgets.QSpacerItem(0, 15))
         self.averages_layout.addStretch(1)
 
-    def build_averages_sidebar_depr(self):
-        """
-        Makes the side bar that displays averages for the stats. The sidebar lists the main stat first, then
-        any sub-component averages
-        """
-        # clear side bar layout
-        pyani.core.ui.clear_layout(self.averages_layout)
-
-        # push sidebar down
-        self.averages_layout.addItem(QtWidgets.QSpacerItem(0, 75))
-
-        # figure out if its measured in time, size, or percent
-        stat_type = self.render_data.get_stat_type(self.selected_stat)
-
-        # set the color set based off stat type
-        if stat_type is 'gb':
-            color_set = self.color_set_warm
-        else:
-            color_set = self.color_set_cool
-
-        # average based off level - ie sequence, shot, or frame
-        if self.levels[self.current_level] == "Frame":
-            # check if the menu is the first entry, which is all render layers, if so process all render layers
-            # in the shot
-            if self.render_layer_menu.currentIndex() == 0:
-                # average stat for all the frames of all render layers in this shot - can just grab the shot average
-                # since its already an average of the stat for all render layers for every frame in the shot. Need
-                # to build the data first though
-                self.render_data.process_data(self.selected_stat, self.seq, self.shot)
-                main_total = self.render_data.stat_data[self.seq][self.shot]['average'][self.selected_stat]["total"]
-                component_totals = self.render_data.stat_data[self.seq][self.shot]['average'][self.selected_stat][
-                    "components"]
-            else:
-                # average stat for all the frames of a single render layer in this shot
-                main_total = \
-                self.render_data.stat_data[self.seq][self.shot][self.render_layer][self.history]['average'][
-                    self.selected_stat]["total"]
-                component_totals = \
-                self.render_data.stat_data[self.seq][self.shot][self.render_layer][self.history]['average'][
-                    self.selected_stat]["components"]
-        else:
-            # check if the menu is the first entry, which is all render layers, if so process all render layers
-            # in the shot
-            if self.render_layer_menu.currentIndex() == 0:
-                # get average for stat for all shots in sequence
-                main_total = self.render_data.stat_data[self.seq]['average'][self.selected_stat]["total"]
-                component_totals = self.render_data.stat_data[self.seq]['average'][self.selected_stat]["components"]
-            else:
-                # get average for stat for shots that have the specified render layer
-                main_total = self.render_data.stat_data[self.seq]['average'][self.render_layer][self.selected_stat][
-                    "total"]
-                component_totals = \
-                self.render_data.stat_data[self.seq]['average'][self.render_layer][self.selected_stat]["components"]
-
-        # format the total - the average followed by the type such as seconds. Then add a '/' followed by level
-        # examples: 25.5s / frame or 30gb / shot
-        average_total = QtWidgets.QLabel()
-        average_total.setText(
-            "<span style='font-size:30pt; font-family:{3};'><b>{0:.2f}</span></b>"
-            "<span style='font-size:12pt; font-family:{3};'> {1} / {2}</span>"
-                .format(main_total, stat_type, self.levels[self.current_level], self.font_family)
-        )
-        # add subtitle displaying stat name
-        average_total_subtitle = QtWidgets.QLabel()
-        average_total_subtitle.setText(
-            "<span style='font-size:12pt; font-family:{1};'><b>{0}</b></span>".format(
-                self.selected_stat, self.font_family
-            )
-        )
-        average_total_subtitle.setAlignment(QtCore.Qt.AlignCenter)
-        self.averages_layout.addWidget(average_total)
-        self.averages_layout.addWidget(average_total_subtitle)
-        self.averages_layout.addItem(QtWidgets.QSpacerItem(0, 50))
-
-        # now add any components, and format the same as the main total
-        for index, component_name in enumerate(self.render_data.get_stat_components(self.selected_stat)):
-            label = QtWidgets.QLabel()
-            label.setText(
-                "<span style='font-size:25pt; font-family:{3};'><b>{0:.2f}</span></b>"
-                "<span style='font-size:12pt; font-family:{3};'> {1} / {2}</span>"
-                    .format(component_totals[index], stat_type, self.levels[self.current_level], self.font_family)
-            )
-            label_subtitle = QtWidgets.QLabel()
-            label_subtitle.setText(
-                "<span style='font-size:12pt; color:{0}; font-family:{2};'><b>{1}</b></span>"
-                    .format(color_set[index].name(), component_name, self.font_family)
-            )
-            label_subtitle.setAlignment(QtCore.Qt.AlignCenter)
-            self.averages_layout.addWidget(label)
-            self.averages_layout.addWidget(label_subtitle)
-            self.averages_layout.addItem(QtWidgets.QSpacerItem(0, 15))
-        self.averages_layout.addStretch(1)
-
     def get_log(self, frame):
         """
         Gets the log for the frame clicked on in the graph and opens in the system's default text editor. Typically
@@ -1182,7 +991,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                                              "log will open in the default system text editor")
         QtWidgets.QApplication.processEvents()
         app_vars = pyani.core.appvars.AppVars()
-        py_script = os.path.join(app_vars.cgt_bridge_api_path, "cgt_download.py")
+        py_script = os.path.join(app_vars.cgt_bridge_api_path, "server_download.py")
         # cgt path
         log_cgt_path = r"/LongGong/sequences/{0}/{1}/{2}/render_data/{3}/{4}/{5}_{6}_{7}.{8}.log".format(
                     self.seq,
@@ -1366,7 +1175,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                 self.seq,
                 self.shot
             )
-            py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+            py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "server_download.py")
             # need to convert python lists to strings, separated by commas, so that it will pass through
             # in the shell so if there are multiple paths, the list [path1, path2] becomes 'path1,path2'
             dl_command = [

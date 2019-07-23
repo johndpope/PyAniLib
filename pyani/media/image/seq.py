@@ -358,7 +358,7 @@ class AniImageSeq(list):
             for i in range(0, len(l1)):
                 m1 = l1.pop(0)
                 m2 = l2.pop(0)
-                # check if its the same file name, if it is the same file, start() should match.
+                # check if its the same file name, if it is the same file, start should match.
                 # Also check if the digits match, if they do its part of the file name or the same frame
                 # (i.e tex_v012_09.1001.exr, want to ignore the v012 and 09 part - group != group does that
                 if (m1.start() == m2.start()) and (m1.group() != m2.group()):
