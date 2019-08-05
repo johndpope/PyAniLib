@@ -5,7 +5,6 @@ import pyani.core.mngr.assets
 import pyani.core.mngr.tools
 import pyani.core.mngr.ui.core
 
-
 logger = logging.getLogger()
 
 
@@ -100,6 +99,32 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
             )
             progress_list.append("Checking for asset updates")
 
+        # add update config sync step
+        self.task_list.append(
+            {
+                'func': self.tools_mngr.update_config_file_after_sync,
+                'params': [],
+                'finish signal': self.tools_mngr.finished_signal,
+                'error signal': self.tools_mngr.error_thread_signal,
+                'thread task': False,
+                'desc': "Checking update config file for old tools or missing new tools."
+            }
+        )
+        progress_list.append("Syncing update config file with server.")
+
+        # add cleanup step
+        self.task_list.append(
+            {
+                'func': self.tools_mngr.remove_files_not_on_server,
+                'params': [],
+                'finish signal': self.tools_mngr.finished_signal,
+                'error signal': self.tools_mngr.error_thread_signal,
+                'thread task': False,
+                'desc': "Removed out-dated tools."
+            }
+        )
+        progress_list.append("Removing any out-of-date tools.")
+
         # create a ui (non-interactive) to run setup
         super(AniUpdateGui, self).__init__(
             error_logging,
@@ -118,9 +143,19 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
                                           "Could not load update configuration file. Error is {0}".format(error))
 
     def run(self):
+        """
+        Starts the update process
+        """
         self.start_task_list()
 
     def load_tracked_assets(self):
+        """
+        Loads assets in the update config, checks for empty asset lists
+        :return:
+        """
+        # for finding assets
+        class Found(Exception): pass
+
         # load the assets that we want to update - includes tool assets, show assets, and shot assets
         assets_to_update = self.core_mngr.read_update_config()
         if not isinstance(assets_to_update, dict):
@@ -128,10 +163,34 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
 
         # get tools to update
         if 'tools' in assets_to_update:
-            self.tool_assets = assets_to_update['tools']
+            potential_assets = assets_to_update['tools']
+            # could be empty, make sure there are assets, not just types or categories
+            try:
+                for asset_type in potential_assets:
+                    for asset_component in potential_assets[asset_type]:
+                        if potential_assets[asset_type][asset_component]:
+                            # found an asset, so can quit looking, just need one
+                            raise Found
+            except Found:
+                self.tool_assets = potential_assets
+            # in case no assets, these would be thrown
+            except (KeyError, TypeError):
+                pass
 
         # all show and shot assets
-        self.show_and_shot_assets = {key: value for key, value in assets_to_update.items() if not key == 'tools'}
+        potential_assets = {key: value for key, value in assets_to_update.items() if not key == 'tools'}
+        # could be empty, make sure there are assets, not just types or components
+        try:
+            for asset_type in potential_assets:
+                for asset_component in potential_assets[asset_type]:
+                    if potential_assets[asset_type][asset_component]:
+                        # found an asset, so can quit looking, just need one
+                        raise Found
+        except Found:
+            self.show_and_shot_assets = potential_assets
+        # in case no assets, these would be thrown
+        except (KeyError, TypeError):
+            pass
 
         return None
 

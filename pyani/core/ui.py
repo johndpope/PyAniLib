@@ -37,6 +37,7 @@ CYAN = "#429db6"
 WHITE = "#ffffff"
 YELLOW = QtGui.QColor(234, 192, 25)
 RED = QtGui.QColor(216, 81, 81)
+GRAY_MED = "#999999"
 
 # FONTS
 FONT_FAMILY = "Century Gothic"
@@ -1704,6 +1705,19 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
         Collapse Tree
         """
         self.collapseAll()
+
+    def collapse_item(self, item_name):
+        """
+        Checks on the specified items. Handles flat trees and trees with parent/child
+        :param item_name: string to find
+        """
+        iterator = QtWidgets.QTreeWidgetItemIterator(self)
+        while iterator.value():
+            item = iterator.value()
+            # check if there is a parent, ie item to check is a child
+            if item_name == str(item.text(0)):
+                self.collapseItem(item)
+            iterator += 1
 
     def update_item(self, existing_text, updated_item):
         """

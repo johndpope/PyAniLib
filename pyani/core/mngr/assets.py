@@ -384,26 +384,27 @@ class AniAssetMngr(AniCoreMngr):
         except (KeyError, ValueError) as e:
             return "Could not update the local cache. Error is {0}".format(e)
 
-    def sync_local_cache_with_server_and_download(self, update_data_dict):
+    def sync_local_cache_with_server_and_download_gui(self, update_data_dict):
         """
-         Updates the cache on disk with the current server data. If no parameters are filled the entire cache will
-         be rebuilt.
-         :param update_data_dict: a dict in format:
-         {
-             asset type: {
-                 asset component(s): [
-                     asset name(s)
-                 ]
-                 }, more asset types...
-         }
+        used with gui asset mngr
+        Updates the cache on disk with the current server data. If no parameters are filled the entire cache will
+        be rebuilt.
+        :param update_data_dict: a dict in format:
+        {
+         asset type: {
+             asset component(s): [
+                 asset name(s)
+             ]
+             }, more asset types...
+        }
 
-         There can be one or more asset types. Asset components and asset names are optional.
-         Asset components require an asset type. Asset Names require both an asset type and asset component.
-         a list of the type of asset(s) to update - see pyani.core.appvars.py for asset types and asset components
+        There can be one or more asset types. Asset components and asset names are optional.
+        Asset components require an asset type. Asset Names require both an asset type and asset component.
+        a list of the type of asset(s) to update - see pyani.core.appvars.py for asset types and asset components
 
-         :return: None if updated cache, an error string if couldn't update. Note for an entire cache rebuild, use
-         the signal finished to check for errors, since its multi-threaded
-         """
+        :return: None if updated cache, an error string if couldn't update. Note for an entire cache rebuild, use
+        the signal finished to check for errors, since its multi-threaded
+        """
         # no asset types, so can't set any other values in data struct, so rebuild entire cache
         if not update_data_dict:
             return "At least one asset must be provided to update."
@@ -458,6 +459,7 @@ class AniAssetMngr(AniCoreMngr):
 
     def server_download_from_gui(self, assets_dict):
         """
+        used with gui asset mngr
         downloads files for the assets in the asset dict, and updates the meta data on disk for that file. Uses
         multi-threading.
         :param assets_dict: a dict in format:
@@ -622,6 +624,7 @@ class AniAssetMngr(AniCoreMngr):
                         # make sure the sequence shot list loads
                         error = self.ani_vars.load_seq_shot_list()
                         if error:
+
                             return error
                         else:
                             # build a list of asset names as Seq###_Shot###
@@ -630,15 +633,17 @@ class AniAssetMngr(AniCoreMngr):
                                 # fire off method in thread per sequence to get audio for shots
                                 for shot in self.ani_vars.get_shot_list():
                                     asset_names.append("{0}/{1}".format(seq, shot))
+
                     # show assets
                     else:
                         # get all assets in the directory
                         asset_names = self.server_get_dir_list(asset_type_root_path)
+
                 # asset names given so only update these assets
                 else:
                     # grab the assets corresponding to the asset type
                     asset_names = assets_dict[asset_type][asset_component]
-
+                
                 # now use multi-threading to check each asset for version, components, and files
                 for asset_name in asset_names:
                     worker = pyani.core.ui.Worker(

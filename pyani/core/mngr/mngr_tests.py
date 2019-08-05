@@ -56,8 +56,14 @@ class TestWindow(QtWidgets.QDialog):
         self.btn_show_tools_cache = QtWidgets.QPushButton("show tools cache unit test")
         self.btn_show_tools_cache.pressed.connect(self.show_tool_data)
 
-        self.btn_build_tools_cache = QtWidgets.QPushButton("start tools cache build unit test")
+        self.btn_build_tools_cache = QtWidgets.QPushButton("start tools cache build (complete rebuild) unit test")
         self.btn_build_tools_cache.pressed.connect(self.start_build_tools_cache_unit_test)
+
+        self.btn_update_tools_cache = QtWidgets.QPushButton("start tools cache update (update existing tools) unit test")
+        self.btn_update_tools_cache.pressed.connect(self.start_update_tools_cache_unit_test)
+
+        self.btn_update_config_new_tools = QtWidgets.QPushButton("start tools update config with new tools unit test")
+        self.btn_update_config_new_tools.pressed.connect(self.start_update_config_new_tools_unit_test)
 
         self.btn_download_tools = QtWidgets.QPushButton("start tools download unit test")
         self.btn_download_tools.pressed.connect(self.start_tools_download_unit_test)
@@ -90,6 +96,8 @@ class TestWindow(QtWidgets.QDialog):
         layout.addWidget(QtWidgets.QLabel("<b>Tools Unit Tests</b>"))
         layout.addWidget(self.btn_show_tools_cache)
         layout.addWidget(self.btn_build_tools_cache)
+        layout.addWidget(self.btn_update_tools_cache)
+        layout.addWidget(self.btn_update_config_new_tools)
         layout.addWidget(self.btn_download_tools)
         layout.addWidget(self.btn_tools_cleanup)
         layout.addWidget(self.btn_get_tools_version)
@@ -110,6 +118,7 @@ class TestWindow(QtWidgets.QDialog):
         self.tools_mngr.error_thread_signal.connect(self.show_multithreaded_error)
         self.tools_mngr.finished_cache_build_signal.connect(self.finished_building)
         self.tools_mngr.finished_signal.connect(self.finished_building)
+        self.tools_mngr.finished_sync_and_download_signal.connect(self.finished_building)
 
     def show_multithreaded_error(self, error):
         self.tools_mngr.progress_win.close()
@@ -142,6 +151,43 @@ class TestWindow(QtWidgets.QDialog):
 
     def start_build_tools_cache_unit_test(self):
         self.tools_mngr.sync_local_cache_with_server()
+
+    def start_update_tools_cache_unit_test(self):
+        """
+        Tests updating selected tools. Also ensures sync works when tool no longer is on server
+        """
+        tools_to_update = {
+            'pyanitools': {
+                'core': ['help_doc_icons', 'setup', 'update', 'pyAppRoamingLauncher', 'tool_suite_icon']
+            }
+        }
+        # if not visible then no other function called this, so we can show progress window
+        if not self.tools_mngr.progress_win.isVisible():
+            # reset progress
+            self.tools_mngr.init_progress_window("Sync Progress", "Updating tools...")
+        # bypass sync_local_cache_with_server because need to give the active type and save method
+        self.tools_mngr.server_build_local_cache(
+                tools_dict=tools_to_update,
+                thread_callback=self.tools_mngr._thread_server_sync_complete,
+                thread_callback_args=['Maya Tools', self.tools_mngr.server_save_local_cache]
+        )
+
+    def start_update_config_new_tools_unit_test(self):
+        """
+        Tests update config file syncs properly when new tools added, or removed
+        """
+        # set up test data:
+        # this is the tools cache after sync
+        self.tools_mngr.load_local_tool_cache_data()
+        # this is tools cache before sync
+        self.tools_mngr._existing_tools_before_sync = \
+            pyani.core.util.load_json("C:\\Users\\Patrick\\.PyAniTools\\cgt_tools_cache_orig.json")
+
+        if not isinstance(self.tools_mngr._existing_tools_before_sync, dict):
+            print self.tools_mngr._existing_tools_before_sync
+            return
+
+        self.tools_mngr.update_config_file_after_sync(debug=True)
 
     def start_tools_download_unit_test(self):
         self.tools_mngr.server_download_no_sync()

@@ -385,7 +385,7 @@ class AniCoreMngr(QtCore.QObject):
         py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_show_info.py")
         dl_command = [
             py_script,
-            self.app_vars.sequence_list_json,
+            self.ani_vars.sequence_shot_list_json,
             self.app_vars.cgt_ip,
             self.app_vars.cgt_user,
             self.app_vars.cgt_pass
@@ -506,8 +506,9 @@ class AniCoreMngr(QtCore.QObject):
         """
         print ("virutal method, implement")
 
-    def sync_local_cache_with_server_and_download(self, update_data_dict):
+    def sync_local_cache_with_server_and_download_gui(self, update_data_dict):
         """
+        used with gui asset mngr
         Updates the cache on disk with the current server data and downloads files.
         :param update_data_dict: a dict of update data, see child class doc string
         """
@@ -545,6 +546,7 @@ class AniCoreMngr(QtCore.QObject):
         :param walk_dirs: whether to walk sub directories
         :param absolute_paths: whether to get absolute path or just file name
         :return: a list of files or directories, or an error string
+        :exception: CGTError if can't connect or CGT returns an error
         """
         # the python script to call that connects to cgt
         py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
@@ -555,9 +557,9 @@ class AniCoreMngr(QtCore.QObject):
             "",  # getting a file list so no download paths
             self.app_vars.cgt_ip,
             self.app_vars.cgt_user,
-            self.app_vars.cgt_pass,
+            self.app_vars.cgt_pass
         ]
-        # the actual paramter in app bridge file is get_file_list_no_walk, so we set to the opposite of the value
+        # the actual parameter in app bridge file is get_file_list_no_walk, so we set to the opposite of the value
         # passed in
         if walk_dirs:
             command.append("False")
@@ -601,6 +603,100 @@ class AniCoreMngr(QtCore.QObject):
             self.send_thread_error(error_fmt)
             return error_fmt
 
+    def server_is_file(self, server_path):
+        """
+        Checks if the path on the server is a file or a directory
+        :param server_path: the path on the server
+        :return: True if a file, False if its a directory
+        :exception: CGTError if can't connect or CGT returns an error
+        """
+        # the python script to call that connects to cgt
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        # the command that subprocess will execute
+        command = [
+            py_script,
+            server_path,  # path to directory to get file list
+            "",  # getting a file list so no download paths
+            self.app_vars.cgt_ip,
+            self.app_vars.cgt_user,
+            self.app_vars.cgt_pass
+        ]
+        # expects these optional parameters for recursion and files or directories for listing, not used but
+        # since we didn't do keywords, have to provide
+        command.append("False")
+        command.append("files_and_dirs")
+        # this says check if file or dir
+        command.append("True")
+
+        try:
+            output, error = pyani.core.util.call_ext_py_api(command)
+
+            # check for subprocess errors
+            if error:
+                error_fmt = "Error occurred launching subprocess. Error is {0}".format(error)
+                self.send_thread_error(error_fmt)
+                return error_fmt
+
+            # check for output
+            if output:
+                if output.strip() == "True":
+                    return True
+                else:
+                    return False
+        # CGT errors
+        except pyani.core.util.CGTError as error:
+            error_fmt = "Error occurred connecting to CGT. Error is {0}".format(error)
+            self.send_thread_error(error_fmt)
+            return error_fmt
+
+    def server_file_exists(self, server_path):
+        """
+        Checks if the file path on the server exists
+        :param server_path: the path on the server
+        :return: True if exists, False if not
+        :exception: CGTError if can't connect or CGT returns an error
+        """
+        # the python script to call that connects to cgt
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        # the command that subprocess will execute
+        command = [
+            py_script,
+            server_path,  # path to directory to get file
+            "",  # getting a file list so no download paths
+            self.app_vars.cgt_ip,
+            self.app_vars.cgt_user,
+            self.app_vars.cgt_pass
+        ]
+        # expects these optional parameters for recursion and files or directories for listing, not used but
+        # since we didn't do keywords, have to provide
+        command.append("False")
+        command.append("files_and_dirs")
+        # this says check if file or dir - not interested in this so False
+        command.append("False")
+        # check if path exists
+        command.append("True")
+
+        try:
+            output, error = pyani.core.util.call_ext_py_api(command)
+
+            # check for subprocess errors
+            if error:
+                error_fmt = "Error occurred launching subprocess. Error is {0}".format(error)
+                self.send_thread_error(error_fmt)
+                return error_fmt
+
+            # check for output
+            if output:
+                if output.strip() == "True":
+                    return True
+                else:
+                    return False
+        # CGT errors
+        except pyani.core.util.CGTError as error:
+            error_fmt = "Error occurred connecting to CGT. Error is {0}".format(error)
+            self.send_thread_error(error_fmt)
+            return error_fmt
+
     def server_download(self, server_file_paths, local_file_paths=None, update_local_version=False):
         """
         Downloads files from server
@@ -609,6 +705,7 @@ class AniCoreMngr(QtCore.QObject):
         :param update_local_version: a boolean indicating whether the version file on disk should be updated after
         a successful download
         :return: error as string or None
+        :exception: CGTError if can't connect or CGT returns an error
         """
 
         # we need a list, if a single path was passed, then convert to a list
@@ -827,6 +924,7 @@ class AniCoreMngr(QtCore.QObject):
         # makes sure progress shows over window, as windows os will place it under cursor behind other windows if
         # user moves mouse off off app
         pyani.core.ui.center(self.progress_win)
+        QtWidgets.QApplication.processEvents()
 
     def _thread_server_download_complete(self):
         """
@@ -836,15 +934,17 @@ class AniCoreMngr(QtCore.QObject):
         if not self.thread_error_occurred:
             # a thread finished, increment our count
             self.threads_done += 1.0
+            if self.threads_done > self.thread_total:
+                return
+            else:
+                # get the current progress percentage
+                progress = (self.threads_done / self.thread_total) * 100.0
 
-            # get the current progress percentage
-            progress = (self.threads_done / self.thread_total) * 100.0
-
-            self.progress_win.setValue(progress)
-            # check if we are finished
-            if progress >= 100.0:
-                # done, let any listening objects/classes know we are finished
-                self.finished_signal.emit(None)
+                self.progress_win.setValue(progress)
+                # check if we are finished
+                if progress >= 100.0:
+                    # done, let any listening objects/classes know we are finished
+                    self.finished_signal.emit(None)
 
     def _thread_server_sync_complete(self, page_id=None, save_method=None):
         """
@@ -857,18 +957,22 @@ class AniCoreMngr(QtCore.QObject):
         if page_id and save_method and not self.thread_error_occurred:
             # a thread finished, increment our count
             self.threads_done += 1.0
-            # get the current progress percentage
-            progress = (self.threads_done / self.thread_total) * 100.0
-            self.progress_win.setValue(progress)
-            # check if we are finished
-            if progress >= 100.0:
-                # save the cache locally
-                error = save_method()
-                if error:
-                    self.send_thread_error(error)
-                else:
-                    # done, let any listening objects/classes know we are finished
-                    self.finished_sync_and_download_signal.emit(page_id)
+            if self.threads_done > self.thread_total:
+                return
+            else:
+                # get the current progress percentage
+                progress = (self.threads_done / self.thread_total) * 100.0
+
+                self.progress_win.setValue(progress)
+                # check if we are finished
+                if progress >= 100.0:
+                    # save the cache locally
+                    error = save_method()
+                    if error:
+                        self.send_thread_error(error)
+                    else:
+                        # done, let any listening objects/classes know we are finished
+                        self.finished_sync_and_download_signal.emit(page_id)
 
     def _thread_server_cache_complete(self, save_method=None):
         """
@@ -880,15 +984,18 @@ class AniCoreMngr(QtCore.QObject):
         if save_method and not self.thread_error_occurred:
             # a thread finished, increment our count
             self.threads_done += 1.0
-            # get the current progress percentage
-            progress = (self.threads_done / self.thread_total) * 100.0
-            self.progress_win.setValue(progress)
-            # check if we are finished
-            if progress >= 100.0:
-                # save the cache locally
-                error = save_method()
-                if error:
-                    self.send_thread_error(error)
-                else:
-                    # done, let any listening objects/classes know we are finished
-                    self.finished_cache_build_signal.emit(None)
+            if self.threads_done > self.thread_total:
+                return
+            else:
+                # get the current progress percentage
+                progress = (self.threads_done / self.thread_total) * 100.0
+                self.progress_win.setValue(progress)
+                # check if we are finished
+                if progress >= 100.0:
+                    # save the cache locally
+                    error = save_method()
+                    if error:
+                        self.send_thread_error(error)
+                    else:
+                        # done, let any listening objects/classes know we are finished
+                        self.finished_cache_build_signal.emit(None)

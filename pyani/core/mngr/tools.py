@@ -86,6 +86,8 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         self.exclude_removal = [
             "cgt_metadata.json"
         ]
+        # list of existing tools so we can compare after a sync for newly added tools
+        self._existing_tools_before_sync = dict()
 
     @property
     def active_type(self):
@@ -139,6 +141,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             error = self.load_local_tool_cache_data()
             if error:
                 return None
+
         if display_name:
             return self.app_vars.tool_types_display_names.values()
         else:
@@ -274,9 +277,9 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
     def get_tool_description(self, tool_type, tool_category, tool_name):
         """
         Gets the tools description
-        :param tool_type: the type of tool as a string, see class doctsring for more information
+        :param tool_type: the type of tool as a string, see class docstring for more information
         or run method get_tool_types
-        :param tool_category: the category of tool, see class doctsring for more information
+        :param tool_category: the category of tool, see class docstring for more information
         :param tool_name: the name of the tool as a string
         :return: the description as a string, or none if no description
         """
@@ -343,6 +346,118 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         except KeyError:
             return None
 
+    def update_config_file_after_sync(self, debug=False):
+        """
+        Adds new tools added to the server to the update config. Removes tools from update config if they are
+        removed off the server. If the user removes a tool(s) from being auto updated, the behavior is the following:
+        ( NOTE: includes if user removes all tools from being updated):
+        - if a new tool type is added on server, gets added to update config
+        - if a new tool category is added on server, gets added to update config
+        - if a new tool name (i.e. a tool) is added on server, gets added to update config (even if all tools were
+          removed for a given type and category)
+        - doesn't re-add existing tools removed from update config
+        :param debug: doesn't save auto update config file, just prints to screen
+        :return error as string if can't load or write update config, otherwise returns None. Also emits a finished
+        signal to indicate complete if being threaded.
+        """
+        # pull the config data off disk
+        existing_config_data = pyani.core.util.load_json(self.app_vars.update_config_file)
+        # check if config data loaded
+        if not isinstance(existing_config_data, dict):
+            error = "Error loading update config file from disk. Error is: {0}".format(existing_config_data)
+            self.send_thread_error(error)
+            return error
+
+        # check for new tools
+        for tool_type in self._tools_info:
+            # find new tool types
+            if not pyani.core.util.find_val_in_nested_dict(self._existing_tools_before_sync, [tool_type]):
+                # add type to update config
+                if debug:
+                    print "add type: {0} ".format(tool_type)
+                # get categories and their tools
+                categories_and_tools = {
+                    category: pyani.core.util.find_val_in_nested_dict(self._tools_info, [tool_type, category])
+                    for category in pyani.core.util.find_val_in_nested_dict(self._tools_info, [tool_type])
+                }
+                existing_config_data['tools'][tool_type] = categories_and_tools
+            else:
+                for tool_cat in self._tools_info[tool_type]:
+                    # first make sure the tool type and category exist in old tools list, possible got added
+                    if not pyani.core.util.find_val_in_nested_dict(
+                            self._existing_tools_before_sync,
+                            [tool_type, tool_cat]
+                    ):
+                        # add type and cat to update config
+                        if debug:
+                            print "add type: {0} and cat: {1}".format(tool_type, tool_cat)
+
+                        existing_config_data['tools'][tool_type][tool_cat] = \
+                            pyani.core.util.find_val_in_nested_dict(self._tools_info, [tool_type, tool_cat])
+                    else:
+                        # check all tool names in sync'd tools list against tools list before sync to find new tools
+                        for tool_name in self._tools_info[tool_type][tool_cat]:
+                            if tool_name not in self._existing_tools_before_sync[tool_type][tool_cat]:
+                                # new tool, add to config file
+                                if debug:
+                                    print "add tool: {0}".format(tool_name)
+
+                                # check if the category exists in config
+                                if tool_cat not in existing_config_data['tools'][tool_type]:
+                                    existing_config_data['tools'][tool_type][tool_cat] = list()
+                                existing_config_data['tools'][tool_type][tool_cat].append(tool_name)
+
+        # check for tools removed
+        for tool_type in self._existing_tools_before_sync:
+            # first make sure the tool type exists in new tools list, possible got removed
+            if not pyani.core.util.find_val_in_nested_dict(self._tools_info, [tool_type]):
+                # type removed, remove from update config
+                if debug:
+                    print "remove type: {0}".format(tool_type)
+                existing_config_data['tools'].pop(tool_type, None)
+            else:
+                for tool_cat in self._existing_tools_before_sync[tool_type]:
+                    #  make sure the tool category exist in new tools list, possible got removed
+                    if not pyani.core.util.find_val_in_nested_dict(self._tools_info, [tool_type, tool_cat]):
+                        # type and cat removed, remove from update config
+                        if debug:
+                            print "remove type: {0} and cat: {1}".format(tool_type, tool_cat)
+                        # category may not be in existing config data, user could have removed, so check
+                        if pyani.core.util.find_val_in_nested_dict(
+                                existing_config_data,
+                                ['tools', tool_type, tool_cat]
+                        ):
+                            existing_config_data['tools'][tool_type].pop(tool_cat, None)
+                    else:
+                        # check all tool names in old tools list against tools list after sync to find tools removed
+                        for tool_name in self._existing_tools_before_sync[tool_type][tool_cat]:
+                            if tool_name not in self._tools_info[tool_type][tool_cat]:
+                                # tool removed, remove from config file
+                                if debug:
+                                    print "remove tool: {0}".format(tool_name)
+                                # category may not be in existing config data, user could have removed, so check before
+                                # removing
+                                if pyani.core.util.find_val_in_nested_dict(
+                                        existing_config_data,
+                                        ['tools', tool_type, tool_cat]
+                                ):
+                                    # tool name may not be in existing config data, user could have removed,
+                                    # so check before removing
+                                    if tool_name in existing_config_data['tools'][tool_type][tool_cat]:
+                                        existing_config_data['tools'][tool_type][tool_cat].remove(tool_name)
+        if debug:
+            print "Updated Config Data Is Now:"
+            print existing_config_data
+        else:
+            error = pyani.core.util.write_json(self.app_vars.update_config_file, existing_config_data, indent=4)
+            if error:
+                error_fmt = "Could not save sync'd update config file. Error is {0}".format(error)
+                self.send_thread_error(error_fmt)
+                return error_fmt
+
+        self.finished_signal.emit(None)
+        return None
+
     def update_config_file_by_tool_type(self, config_data):
         """
         Updates the update config file with new tools and removes tools that are de-selected (not in
@@ -385,6 +500,12 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                         existing_config_data['tools'][tool_type] = config_data[tool_type]
                         continue
 
+                    # check if tool category removed in updated config data, if so remove from config file, use
+                    # list for python 3 compatibility. allows us to remove dict keys during iteration
+                    for tool_category in list(existing_config_data['tools'][tool_type].keys()):
+                        if tool_category not in config_data[tool_type]:
+                            existing_config_data['tools'][tool_type].pop(tool_category, None)
+
                     # when tool category doesn't exist but the type does, so can just add
                     for tool_category in config_data[tool_type]:
                         if tool_category not in existing_config_data['tools'][tool_type]:
@@ -421,10 +542,6 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         Tool types require a tool active_type. Tool names require both a tool active_type and tool type.
         a list of the type of tool(s) to update - see pyani.core.appvars.py
         """
-        # reset threads counters
-        self.thread_total = 0.0
-        self.threads_done = 0.0
-
         # no tool types, so can't set any other values in data struct, so rebuild entire cache
         if not update_data_dict:
             self.server_build_local_cache()
@@ -435,9 +552,9 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                 thread_callback_args=[self.active_type, self.server_save_local_cache]
             )
 
-    def sync_local_cache_with_server_and_download(self, update_data_dict):
+    def sync_local_cache_with_server_and_download_gui(self, update_data_dict):
         """
-        Updates the cache on disk with the current server data. Also downloads latest tools
+        Updates the cache on disk with the current server data. Also downloads latest tools. used with gui asset mngr
         :param update_data_dict: a dict in format:
         {
          tool active_type: {
@@ -466,11 +583,12 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             thread_callback=self._thread_server_sync_complete,
             thread_callback_args=[self.active_type, self.server_save_local_cache]
         )
-        # download files from gui, which requires knowing which tool type was run
+        # download files
         self.server_download_from_gui(update_data_dict)
 
     def server_download_from_gui(self, tools_dict=None):
         """
+        used with gui asset mngr
         downloads files for the tools in the tools dict, and updates the meta data on disk for that tool. Uses
         multi-threading.
         :param tools_dict: a dict in format:
@@ -509,10 +627,25 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         for tool_type in tools_dict:
             for tool_category in tools_dict[tool_type]:
                 for tool_name in tools_dict[tool_type][tool_category]:
+                    # only process tools that exist - need to check in case server data changed from local cache
+                    # first get the folder or file to check, then check with server
+
+                    if self._tools_info[tool_type][tool_category][tool_name]["is dir"]:
+                        cgt_path = "{0}/{1}".format(
+                            self._tools_info[tool_type][tool_category][tool_name]["cgt cloud dir"],
+                            tool_name
+                        )
+                    else:
+                        cgt_path = self._tools_info[tool_type][tool_category][tool_name]["files"][0]
+
+                    if not self.server_file_exists(cgt_path):
+                        continue
+
                     # some tools are folders, some are multiple files, so get folder or files
                     files_to_download = [
                         file_name for file_name in self._tools_info[tool_type][tool_category][tool_name]["files"]
                     ]
+
                     # need to download the cgt metadata as well
                     files_to_download.append(self.app_vars.cgt_metadata_filename)
 
@@ -740,6 +873,9 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             tools_dict = None
             self._tools_info = dict()
 
+        # get a list of existing tools
+        self._existing_tools_before_sync = self._tools_info.copy()
+
         # if no thread callback then normal cgt cache creation so show progress, otherwise there should be
         # a progress window already running
         if not thread_callback:
@@ -773,7 +909,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                     False,
                     tool_type,
                     tool_category,
-                    tool_names=tool_names
+                    tool_names_to_update=tool_names
                 )
                 self.thread_total += 1.0
                 self.thread_pool.start(worker)
@@ -795,28 +931,33 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                     )
                 worker.signals.error.connect(self.send_thread_error)
 
-    def server_get_tool_info(self, tool_type, tool_category, tool_names=None):
+    def server_get_tool_info(self, tool_type, tool_category, tool_names_to_update=None):
         """
         Gets tool info from server where data stored
         :param tool_type: the type of tool as a string, see pyani.core.appvars.AppVars tool types
         or run method get_tool_types
         :param tool_category: the category, see pyani.core.appavrs.AppVars for tool categories in self.tool_types
-        :param tool_names: a list of tool names where the name of the tool is a string
+        :param tool_names_to_update: a list of tool names where the name of the tool is a string
         :return: None or error if occurred. If this function is called in a threaded environment, connect to the
-        pyani.core.mngrcore thread error signal to get the error
+        pyani.core.mngr.core thread error signal to get the error
         """
-        cgt_tool_names_and_files = {
+
+        '''
+        Get Server Information
+        '''
+
+        server_tool_names_and_files = {
             tool_type: dict()
         }
 
-        cgt_tool_names_and_files[tool_type][tool_category] = dict()
+        server_tool_names_and_files[tool_type][tool_category] = dict()
 
         # this removes the existing dir if it exists before making
         error = pyani.core.util.make_all_dir_in_path(
             self.app_vars.tool_types[tool_type][tool_category]['local temp path']
         )
         if error:
-            error_fmt = "Could not read cgt tool metadata. Error is {0}".format(error)
+            error_fmt = "Could not remove temp folder for cgt tool metadata. Error is {0}".format(error)
             self.send_thread_error(error_fmt)
             return error_fmt
 
@@ -829,18 +970,22 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         tools_no_extension = []
         # remove any extensions and non tool files
         for tool in tools_found:
-            tool_name_parts = tool.split(".")
-            # only get extension if the name is a file, i.e. has a .ext
-            if len(tool_name_parts) > 1:
+            # only get extension if the name is a file
+            server_path = "{0}/{1}".format(self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir'], tool)
+
+            # check if path is a file or directory
+            if self.server_is_file(server_path):
+                tool_name_parts = tool.split(".")
                 tool_ext = tool_name_parts[-1]
                 tool_no_ext = '.'.join(tool_name_parts[:-1])
             else:
                 tool_ext = None
                 tool_no_ext = tool
 
-            # make sure this is a tool, not metadata or something else
+            # only include tools, not metadata or something else
             if tool_ext not in self.app_vars.tool_ignore_list or not tool_ext:
                 tools_no_extension.append(tool_no_ext)
+
         # remove any duplicate names, can happen when plugins for instance have multiple names
         # since its in a flat structure
         tools_no_duplicates = list(set(tools_no_extension))
@@ -883,7 +1028,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                     file_list[0] = self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir'] + "/" + \
                                    file_list[0]
 
-            cgt_tool_names_and_files[tool_type][tool_category][tool_name] = {
+            server_tool_names_and_files[tool_type][tool_category][tool_name] = {
                 "is dir": is_dir,
                 "files": file_list
             }
@@ -892,7 +1037,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         server_metadata_paths = [self.app_vars.tool_types[tool_type][tool_category]['cgt cloud metadata path']]
         local_temp_metadata_dir = [self.app_vars.tool_types[tool_type][tool_category]['local temp path']]
 
-        # download the scripts and plugins metadata which has version and release notes
+        # download the metadata which has version and release notes
         error = self.server_download(server_metadata_paths, local_temp_metadata_dir)
         if error:
             error_fmt = "Could not read cgt tool metadata. Error is {0}".format(error)
@@ -917,17 +1062,70 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             self.send_thread_error(error)
             return error
 
+        '''
+        Build Cache Locally -- Note that self._tools_info will have been loaded prior to this function call,
+        so it represents whats on disk
+        '''
+
         # build local cache, make keys if don't exist for active_type and type
         if tool_type not in self._tools_info:
             self._tools_info[tool_type] = dict()
         if tool_category not in self._tools_info[tool_type]:
             self._tools_info[tool_type][tool_category] = dict()
 
+        # if tool names were provided then process only those tools, otherwise update all
+        if tool_names_to_update:
+            tool_names = tool_names_to_update
+        else:
+            tool_names = server_tool_names_and_files[tool_type][tool_category]
+
+        # these are the tools on the server
+        server_tool_names = server_tool_names_and_files[tool_type][tool_category].keys()
+
+        # adds new server tool info
+        for tool_name in tool_names:
+            # check if tool name exists on server. Possible user is updating via gui, and server tools changed from
+            # local cache. If the tool is not in server info, i.e. server_tool_names_and_files, then skip adding
+            if tool_name in server_tool_names_and_files[tool_type][tool_category]:
+                # tool is in metadata file, capture metadata such as version
+                if tool_name in metadata:
+                    metadata_info = metadata[tool_name]
+                # tool doesn't have metadata, so set to empty
+                else:
+                    metadata_info = None
+                # add metadata
+                tool_metadata = {
+                    "version info": metadata_info,
+                    "is dir": server_tool_names_and_files[tool_type][tool_category][tool_name]["is dir"],
+                    "files": server_tool_names_and_files[tool_type][tool_category][tool_name]["files"],
+                    "cgt cloud dir": self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir'],
+                    "local path": self.app_vars.tool_types[tool_type][tool_category]['local dir']
+                }
+                self._tools_info[tool_type][tool_category][tool_name] = tool_metadata
+
+        # if tool names were provided then only check those
+        if tool_names_to_update:
+            local_tool_names = tool_names_to_update
+        else:
+            local_tool_names = self._tools_info[tool_type][tool_category].keys()
+
+        # cleanup old tools. Checks either tools provided or if no tools provided checks all tools on disk
+        # against the server tool names. if tool not in server list, remove
+        for tool_name in local_tool_names:
+            if tool_name not in server_tool_names:
+                del self._tools_info[tool_type][tool_category][tool_name]
+
+        '''
         # if no tool names were provided then process all tools
         if not tool_names:
-            tool_names = cgt_tool_names_and_files[tool_type][tool_category]
+            tool_names = server_tool_names_and_files[tool_type][tool_category]
 
+        # adds new server tool info
         for tool_name in tool_names:
+            # check if tool name exists on server. Possible user is updating via gui, and server tools changed from
+            # local cache. If the tool is not in server info, i.e. server_tool_names_and_files, then skip adding
+            if tool_name not in server_tool_names_and_files[tool_type][tool_category]:
+                continue
             # tool is in metadata file, capture metadata such as version
             if tool_name in metadata:
                 metadata_info = metadata[tool_name]
@@ -937,17 +1135,18 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             # add metadata
             tool_metadata = {
                 "version info": metadata_info,
-                "is dir": cgt_tool_names_and_files[tool_type][tool_category][tool_name]["is dir"],
-                "files": cgt_tool_names_and_files[tool_type][tool_category][tool_name]["files"],
+                "is dir": server_tool_names_and_files[tool_type][tool_category][tool_name]["is dir"],
+                "files": server_tool_names_and_files[tool_type][tool_category][tool_name]["files"],
                 "cgt cloud dir": self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir'],
                 "local path": self.app_vars.tool_types[tool_type][tool_category]['local dir']
             }
             self._tools_info[tool_type][tool_category][tool_name] = tool_metadata
-
+    
         # cleanup any old tools - note use list below for python 3 compatibility
         for tool_name in list(self._tools_info[tool_type][tool_category].keys()):
             if tool_name not in tool_names:
                 del self._tools_info[tool_type][tool_category][tool_name]
+        '''
 
     def server_save_local_cache(self):
         """
@@ -992,15 +1191,17 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
 
     def remove_files_not_on_server(self, debug=False):
         """
-        Removes files locally that are not on server
-        :param debug: disables actual file deletion
-        :return: any errors removing files, or None
+        Removes files locally that are not on server.
+        :param debug: disables actual file deletion and prints the files removed
+        :return: any errors removing files, or None. Also sends a finished signal in case this is threaded.
         """
         # a list of files that can't be removed
         errors_removing_files = list()
         # local and server files
         local_file_paths = list()
         server_files = list()
+        # list of files removed
+        files_removed = list()
 
         # load cgt cache to see what is on server
         if not self._tools_info:
@@ -1035,28 +1236,6 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                                 )
                             )
 
-                    '''
-                    # first get server paths, converted to local paths, i.e. from /LongGong/tools/... to Z:\ or C:\...
-                    # get local tool directory from server cache
-                    tool_local_dir = self._tools_info[tool_type][tool_category][tool_name]["local path"]
-                    # convert to a local path to compare server and local
-                    cloud_path_converted_to_local = self.convert_server_path_to_local_server_representation(
-                        self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir']
-                    )
-                    # if paths aren't the same for local and server - i.e. not putting files in Z:\....
-                    if not tool_local_dir == cloud_path_converted_to_local:
-                        for path in self._tools_info[tool_type][tool_category][tool_name]["files"]:
-                            path = self.convert_server_path_to_local_server_representation(path)
-                            server_files.append(path.replace(cloud_path_converted_to_local, tool_local_dir))
-                    # paths are the same for local and server, so putting files in Z:\.....
-                    else:
-                        # convert server paths in server cache to local paths
-                        server_files.extend(
-                            self.convert_server_path_to_local_server_representation(path)
-                            for path in self._tools_info[tool_type][tool_category][tool_name]["files"]
-                        )
-                    '''
-
                     # get local files
                     for path, directories, files in scandir.walk(tool_local_dir):
                         for file_name in files:
@@ -1077,7 +1256,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
 
                 if not exclusion_found:
                     if debug:
-                        errors_removing_files.append(file_path)
+                        files_removed.append(file_path)
                     else:
                         logger.info("Removing file not on server: {0}".format(file_path))
                         error = pyani.core.util.delete_file(file_path)
@@ -1085,6 +1264,11 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                             errors_removing_files.append(file_path)
                         logger.error(error)
 
+        if debug:
+            self.finished_signal.emit(None)
+            return files_removed
+
+        self.finished_signal.emit(None)
         return errors_removing_files
 
     def _reset_thread_counters(self):

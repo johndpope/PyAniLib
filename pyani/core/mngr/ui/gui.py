@@ -167,7 +167,7 @@ class AssetComponentTab(QtWidgets.QWidget):
                 assets_dict[asset_type][asset_component] = list()
             assets_dict[asset_type][asset_component].append(asset_name)
 
-        self.asset_mngr.sync_local_cache_with_server_and_download(update_data_dict=assets_dict)
+        self.asset_mngr.sync_local_cache_with_server_and_download_gui(update_data_dict=assets_dict)
 
     def save_asset_update_config(self):
         """
@@ -507,6 +507,7 @@ class ToolsTab(QtWidgets.QWidget):
         self.font_size_notes_text = 10
 
         # ui variables
+        self._tool_categories_to_collapse = ['lib', 'shortcuts', 'core']
         self.asset_tree = None
         self.tab_description = tab_desc
         self.btn_sync_cgt = pyani.core.ui.ImageButton(
@@ -623,11 +624,17 @@ class ToolsTab(QtWidgets.QWidget):
 
                 self.msg_win.show_warning_msg("File Sync Warning", error_msg)
 
+            # update config file
+            error = self.tools_mngr.update_config_file_after_sync()
+            if error:
+                error_msg = "Could not sync update configuration file. Error is: {0}".format(error)
+                self.msg_win.show_error_msg("File Sync Warning", error_msg)
+
             self.build_tools_tree()
 
     def sync_tools_with_cgt(self):
         """
-        Syncs the selected tools in the ui with CGT. Updates metadata like version and downlaods the latest tools.
+        Syncs the selected tools in the ui with CGT. Updates metadata like version and downloads the latest tools.
         """
         # converts the tree selection to the format {tool type: [list of tool names]}
         tools_by_cat = self._convert_tree_selection_to_tools_list_by_category(self.tools_tree.get_tree_checked())
@@ -653,7 +660,7 @@ class ToolsTab(QtWidgets.QWidget):
                 tools_dict[self.tool_type][tool_cat] = list()
             tools_dict[self.tool_type][tool_cat].append(tool_name)
 
-        self.tools_mngr.sync_local_cache_with_server_and_download(tools_dict)
+        self.tools_mngr.sync_local_cache_with_server_and_download_gui(tools_dict)
 
     def open_confluence_page(self):
         """
@@ -735,6 +742,7 @@ class ToolsTab(QtWidgets.QWidget):
 
             updated_config_data = {self.tool_type: dict()}
 
+            # builds config data to save
             for tool_cat in tools_by_cat:
                 if tool_cat not in updated_config_data[self.tool_type]:
                     updated_config_data[self.tool_type][tool_cat] = list()
@@ -742,7 +750,6 @@ class ToolsTab(QtWidgets.QWidget):
                 for tool_name in tools_by_cat[tool_cat]:
                     updated_config_data[self.tool_type][tool_cat].append(tool_name)
 
-            tool_cats_selected = updated_config_data[self.tool_type].keys()
             error = self.tools_mngr.update_config_file_by_tool_type(updated_config_data)
             if error:
                 self.msg_win.show_error_msg(
@@ -778,6 +785,10 @@ class ToolsTab(QtWidgets.QWidget):
                 expand=True,
                 columns=col_count
             )
+
+        # collpase certain tool categories
+        for tool_cat_to_collapse in self._tool_categories_to_collapse:
+            self.tools_tree.collapse_item(tool_cat_to_collapse)
 
         # check on the assets already listed in the config file
         self.tools_tree.set_checked(existing_tools_in_config_file)
@@ -825,7 +836,7 @@ class ToolsTab(QtWidgets.QWidget):
                 if self.tools_mngr.is_asset_in_update_config(
                         "tools", self.tool_type, tool_name, tool_category
                 ):
-                    row_color = [pyani.core.ui.GREEN, pyani.core.ui.WHITE, pyani.core.ui.WHITE]
+                    row_color = [pyani.core.ui.GREEN, pyani.core.ui.WHITE, pyani.core.ui.GRAY_MED]
                     existing_tools_in_config_file.append(
                         {
                             "parent": tool_category,
@@ -833,7 +844,7 @@ class ToolsTab(QtWidgets.QWidget):
                         }
                     )
                 else:
-                    row_color = [pyani.core.ui.WHITE, pyani.core.ui.WHITE, pyani.core.ui.WHITE]
+                    row_color = [pyani.core.ui.WHITE, pyani.core.ui.WHITE, pyani.core.ui.GRAY_MED]
                 col_count = len(row_text)
 
                 if local_cgt_metadata:
@@ -842,7 +853,7 @@ class ToolsTab(QtWidgets.QWidget):
                         if not local_version == cgt_version:
                             row_text[1] = "{0} / ({1})".format(local_version, cgt_version)
                             # keep the first color, but replace white with red for version
-                            row_color = [row_color[0], pyani.core.ui.RED.name()]
+                            row_color = [row_color[0], pyani.core.ui.RED.name(), pyani.core.ui.GRAY_MED]
                 tools_list.append(pyani.core.ui.CheckboxTreeWidgetItem(row_text, colors=row_color))
             tree_items.append(
                 {
@@ -1136,10 +1147,15 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
             state_label = "Enabled"
         else:
             state_label = "Disabled"
+
         self.auto_dl_label.setText(
-            "Auto-download of updates from server <i><font color='#7d8792'>"
-            "(Currently: {0})</font></i>".format(state_label)
+            "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+            "Auto-download of updates from server "
+            "<font color='{2}'><i>(Currently: {3})</font></i></span>".format(
+                self.font_size, self.font_family, pyani.core.ui.GRAY_MED, state_label
+            )
         )
+
         options_auto_update_enabled_layout = QtWidgets.QHBoxLayout()
         options_auto_update_enabled_layout.addWidget(self.auto_dl_label)
         options_auto_update_enabled_layout.addWidget(self.menu_toggle_auto_dl)
@@ -1154,8 +1170,13 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
             run_time = run_time.strftime("%I:%M %p")
         else:
             run_time = "N/A"
-        self.auto_dl_run_time_label.setText("Change Update Time <i><font color='#7d8792'>"
-                                            "(Current Update Time: {0})</font></i>".format(run_time))
+        self.auto_dl_run_time_label.setText(
+            "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+            "Change Update Time  "
+            "<font color='{2}'><i>(Current Update Time: {3})</font></i></span>".format(
+                self.font_size, self.font_family, pyani.core.ui.GRAY_MED, run_time
+            )
+        )
         options_change_time_layout.addWidget(self.auto_dl_run_time_label)
         options_change_time_layout.addWidget(self.auto_dl_hour)
         options_change_time_layout.addWidget(self.auto_dl_min)
@@ -1214,11 +1235,19 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
                     )
                 )
                 self.auto_dl_label.setText(
-                    "Auto-download of updates from server <i>(Currently: Unknown)</i>"
+                    "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+                    "Auto-download of updates from server "
+                    "<font color='{2}'><i>(Currently: Unknown)</font></i></span>".format(
+                        self.font_size, self.font_family, pyani.core.ui.GRAY_MED
+                    )
                 )
             else:
                 self.auto_dl_label.setText(
-                    "Auto-download of updates from server <i>(Currently: {0})</i>".format(state)
+                    "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+                    "Auto-download of updates from server "
+                    "<font color='{2}'><i>(Currently: {3})</font></i></span>".format(
+                        self.font_size, self.font_family, pyani.core.ui.GRAY_MED, state
+                    )
                 )
 
     def update_auto_dl_time(self):
@@ -1252,8 +1281,13 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
                 run_time = run_time.strftime("%I:%M %p")
             else:
                 run_time = "N/A"
-            self.auto_dl_run_time_label.setText("Change Update Time <i><font color='#7d8792'>"
-                                                "(Current Update Time: {0})</font></i>".format(run_time))
+            self.auto_dl_run_time_label.setText(
+                "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+                "Change Update Time  "
+                "<font color='{2}'><i>(Current Update Time: {3})</font></i></span>".format(
+                    self.font_size, self.font_family, pyani.core.ui.GRAY_MED, run_time
+                )
+            )
         except ValueError:
             self.msg_win.show_warning_msg(
                 "Task Scheduling Error",

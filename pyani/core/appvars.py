@@ -42,10 +42,10 @@ class AppVars:
 
         # CACHES
 
-        # sequence/shot list cache
-        self.sequence_list_json = os.path.join(self.persistent_data_path, "sequences.json")
-        # cgt asset info cache
+        # cgt show and shot asset cache
         self.cgt_asset_info_cache_path = "{0}\\cgt_asset_info_cache.json".format(self.persistent_data_path)
+        # cgt tool asset cache
+        self.cgt_tools_cache_path = "{0}\\cgt_tools_cache.json".format(self.persistent_data_path)
 
         # CONFIGURATION / PREFERENCES
 
@@ -63,16 +63,16 @@ class AppVars:
         self.cgt_maya_plugins_dir = "/LongGong/tools/maya/plugins"
         self.cgt_download_path = os.path.join(self.local_temp_dir, "CGT")
         self.cgt_bridge_api_dir = "app_bridge"
-        # to test: os.path.normpath("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\PyAniToolsAppBridge\\venv")
+        # to test:
+        #self.cgt_bridge_api_path = os.path.normpath("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\PyAniToolsAppBridge\\venv")
         self.cgt_bridge_api_path = os.path.normpath("C:\\PyAniTools\\lib\\{0}".format(self.cgt_bridge_api_dir))
-        self.cgt_user = "Patrick"
-        self.cgt_pass = "longgong19"
+        self.cgt_user = ""
+        self.cgt_pass = ""
         self.cgt_ip = "172.18.100.246"
 
         # TOOLS
 
         # tools general
-        self.cgt_tools_cache_path = "{0}\\cgt_tools_cache.json".format(self.persistent_data_path)
         self.tool_ignore_list = ["json", "txt"]
         self.tools_temp_dir = os.path.join(self.local_temp_dir, "pyanitools")
 
@@ -154,7 +154,7 @@ class AppVars:
         # names to tool_types above
         self.tool_types_display_names = {
             "maya": "Maya Tools",
-            "pyanitools": "PyAniTools"
+            "pyanitools": "PyAni Tools"
         }
 
         # asset management vars -

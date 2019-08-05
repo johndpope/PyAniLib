@@ -1,5 +1,4 @@
 import os
-import re
 import json
 import logging
 import pyani.core.util
@@ -23,12 +22,12 @@ class AniVars(object):
     '''
 
     def __init__(self):
+
         # not dependent on seq or shot
         self.desktop = os.path.expanduser("~/Desktop")
         self.nuke_user_dir = os.path.join(os.path.expanduser("~"), ".nuke")
         self.shot_master_template = "shot_master.nk"
-        self.sequence_shot_list_json = "C:\\PyAniTools\\app_data\\Shared\\sequences.json"
-        self.app_data_shared ="C:\\PyAniTools\\app_data\\Shared"
+        self.sequence_shot_list_json = "{0}\\.PyAniTools\\sequences.json".format(os.path.expanduser("~"))
         # os.path.join has issues, maybe due to .nuke? String concat works
         self.nuke_custom_dir = "C:\\PyAniTools\\lib\\"
         self.plugins_json_name = "plugins.json"
