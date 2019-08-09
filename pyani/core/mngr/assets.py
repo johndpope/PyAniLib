@@ -1,6 +1,7 @@
 import os
 import logging
 import functools
+from datetime import datetime
 import pyani.core.appvars
 import pyani.core.anivars
 import pyani.core.ui
@@ -68,6 +69,10 @@ class AniAssetMngr(AniCoreMngr):
         # identifies which component this mngr is currently responsible for
         self.active_asset_component = None
 
+        # records of changed audio and any errors that occur checking (stores as list of dicts with shot name : error)
+        self.shots_failed_checking_timestamp = list()
+        self.shots_with_changed_audio = list()
+
     @property
     def active_asset_component(self):
         return self._active_asset_component
@@ -75,6 +80,83 @@ class AniAssetMngr(AniCoreMngr):
     @active_asset_component.setter
     def active_asset_component(self, component_name):
         self._active_asset_component = component_name
+
+    def check_for_new_audio(self):
+        self.shots_failed_checking_timestamp = list()
+        self.shots_with_changed_audio = list()
+
+        # set number of threads to max - can do this since running per asset
+        self.set_number_of_concurrent_threads()
+
+        self._reset_thread_counters()
+
+        # if not visible then no other function called this, so we can show progress window
+        if not self.progress_win.isVisible():
+            # reset progress
+            self.init_progress_window("Audio CHeck Progress", "Checking all audio for changes...")
+
+        # check audio for all sequences
+        for seq in self.ani_vars.get_sequence_list():
+            self.ani_vars.update(seq)
+            for shot in self.ani_vars.get_shot_list():
+                worker = pyani.core.ui.Worker(
+                    self.check_shot_audio_timestamp,
+                    False,
+                    seq,
+                    shot,
+                    self.ani_vars.shot_audio_dir
+                )
+                self.thread_total += 1.0
+                self.thread_pool.start(worker)
+                # reset error list
+                self.init_thread_error()
+                # slot that is called when a thread finishes
+                worker.signals.finished.connect(self._thread_audio_timestamp_check_complete)
+
+    def check_shot_audio_timestamp(self, seq, shot, audio_dir):
+        app_vars = pyani.core.appvars.AppVars()
+
+        # set default local date modified, in case the file doesn't exist
+        local_audio_modified_date = datetime.strptime("2000-01-01 00:00:00", "%Y-%b-%d %I:%M:%S")
+        # try to load audio info file which has last modified date, if doesn't exist, create, first time
+        # checking this shot for audio
+        audio_info_path = os.path.join(audio_dir, self.app_vars.audio_info_json_name)
+        audio_info = pyani.core.util.load_json(audio_info_path)
+        # if can't load, create a new audio info from template
+        if not isinstance(audio_info, dict):
+            # made the file, so setup the audio_info for this shot - shallow copy, ok, non nested dict
+            # need to copy in case this is multithreaded. if mt, then various threads would be changing the
+            # value of template at same time
+            audio_info = app_vars.audio_info_template.copy()
+        # file loaded, get the date time
+        else:
+            date_str = audio_info['last_modified']
+            try:
+                local_audio_modified_date = datetime.strptime(date_str, "%Y-%b-%d %I:%M:%S")
+            # couldn't convert date time into date object
+            except ValueError as error:
+                self.shots_failed_checking_timestamp.append({shot: error})
+                return
+
+        # connect to cgt and get last modified date of audio file
+        audio_server_path = "/Longgong/sequences/{0}/{1}/audio/approved/{0}_{1}.wav".format(seq, shot)
+        server_modified_date = self.server_file_modified_date(audio_server_path)
+        if not isinstance(server_modified_date, datetime):
+            self.shots_failed_checking_timestamp.append({shot: server_modified_date})
+            return
+
+        # if audio file is newer, save and update modified date in audio info file
+        if server_modified_date > local_audio_modified_date:
+            # write the server date time to disk and save shot for report
+            timestamp = server_modified_date.strftime("%Y-%b-%d %I:%M:%S")
+            audio_info['last_modified'] = timestamp
+            error = pyani.core.util.write_json(audio_info_path, audio_info)
+            # if an error occurred saving to disk, skip shot, otherwise it was written successfully so we
+            # can record the shot as changed
+            if error:
+                self.shots_failed_checking_timestamp.append({shot: error})
+            else:
+                self.shots_with_changed_audio.append(shot)
 
     def load_server_asset_info_cache(self):
         """
@@ -161,7 +243,7 @@ class AniAssetMngr(AniCoreMngr):
         Gets the release notes for the asset from CGT
         :param asset_component: the asset component - see pyani.core.appvars.py for asset components
         :param asset_name: the asset name as a string
-        :return: a tuple of the notes (string or None ) and error if any (string or None)
+        :return: a tuple of the notes (string) and error if any (string).
         """
         # the python script to call that connects to cgt
         py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_get_notes.py")
@@ -868,3 +950,22 @@ class AniAssetMngr(AniCoreMngr):
         # reset threads counters
         self.thread_total = 0.0
         self.threads_done = 0.0
+
+    def _thread_audio_timestamp_check_complete(self):
+        """
+        Called when a thread that checks an audio's timestamp completes
+        """
+        # a thread finished, increment our count
+        self.threads_done += 1.0
+        if self.threads_done > self.thread_total:
+            return
+        else:
+            # get the current progress percentage
+            progress = (self.threads_done / self.thread_total) * 100.0
+
+            self.progress_win.setValue(progress)
+            # check if we are finished
+            if progress >= 100.0:
+                # todo: make excel report and report on screen
+                # done, let any listening objects/classes know we are finished
+                self.finished_signal.emit(None)

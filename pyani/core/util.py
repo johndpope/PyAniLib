@@ -690,15 +690,17 @@ def call_ext_py_api(command, interpreter=None):
         logger.error(error)
         # no output, but an error
         return None, error
-    # look for None or an empty string or a callback
-    if "None" not in output and not "".join(output.split()) == "":
-        # check for the word error in output
-        for line in output.split("\n"):
-            # check for both error and cgt in same line to ensure don't grab a file with the word error in path or
-            # file name
-            if ("Error" in line or "error" in line) and ("cgt" in line or "CGT" in line):
-                raise CGTError(line)
-        return output, None
+
+    # check for output
+    if output:
+        if not "".join(output.split()) == "":
+            # check for the word error in output
+            for line in output.split("\n"):
+                # check for both error and cgt in same line to ensure don't grab a file with the word error in path or
+                # file name
+                if ("Error" in line or "error" in line) and ("cgt" in line or "CGT" in line):
+                    raise CGTError(line)
+            return output, None
     # no output and no errors
     return None, None
 

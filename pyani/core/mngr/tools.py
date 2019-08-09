@@ -3,6 +3,7 @@ import logging
 import functools
 import scandir
 import requests
+import copy
 import pyani.core.appvars
 import pyani.core.anivars
 import pyani.core.ui
@@ -874,7 +875,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             self._tools_info = dict()
 
         # get a list of existing tools
-        self._existing_tools_before_sync = self._tools_info.copy()
+        self._existing_tools_before_sync = copy.deepcopy(self._tools_info)
 
         # if no thread callback then normal cgt cache creation so show progress, otherwise there should be
         # a progress window already running

@@ -3,6 +3,7 @@ import logging
 import re
 import mmap
 import time
+from datetime import datetime
 import pyani.core.appvars
 import pyani.core.anivars
 import pyani.core.ui
@@ -691,6 +692,57 @@ class AniCoreMngr(QtCore.QObject):
                     return True
                 else:
                     return False
+        # CGT errors
+        except pyani.core.util.CGTError as error:
+            error_fmt = "Error occurred connecting to CGT. Error is {0}".format(error)
+            self.send_thread_error(error_fmt)
+            return error_fmt
+
+    def server_file_modified_date(self, server_path):
+        """
+        Get the last modified date for file from server
+        :param server_path: the path on the server
+        :return: a date/time object or error as string if couldn't get time
+        :exception: CGTError if can't connect or CGT returns an error
+        """
+        # the python script to call that connects to cgt
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        # the command that subprocess will execute
+        command = [
+            py_script,
+            server_path,  # path to directory to get file
+            "",  # getting a file list so no download paths
+            self.app_vars.cgt_ip,
+            self.app_vars.cgt_user,
+            self.app_vars.cgt_pass
+        ]
+        # expects these optional parameters for recursion and files or directories for listing, not used but
+        # since we didn't do keywords, have to provide
+        command.append("False")
+        command.append("files_and_dirs")
+        # this says check if file or dir - not interested in this so False
+        command.append("False")
+        # check if path exists
+        command.append("False")
+        # get modified date
+        command.append("True")
+
+        try:
+            output, error = pyani.core.util.call_ext_py_api(command)
+
+            # check for subprocess errors
+            if error:
+                error_fmt = "Error occurred launching subprocess. Error is {0}".format(error)
+                self.send_thread_error(error_fmt)
+                return error_fmt
+
+            # check for output
+            if output:
+                try:
+                    return datetime.strptime(output, "%Y-%b-%d %I:%M:%S")
+                except ValueError as e:
+                    return e
+
         # CGT errors
         except pyani.core.util.CGTError as error:
             error_fmt = "Error occurred connecting to CGT. Error is {0}".format(error)

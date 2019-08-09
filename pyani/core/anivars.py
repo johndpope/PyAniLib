@@ -54,6 +54,7 @@ class AniVars(object):
         self.shot_comp_plugin_dir = None
         self.shot_cam_dir = None
         self.shot_movie_dir = None
+        self.shot_audio_dir = None
         self.seq_lib = None
         self.seq_comp_lib = None
         self.plugin_seq = None
@@ -209,6 +210,7 @@ class AniVars(object):
         )
         self.shot_comp_file = "{0}_{1}_V001.nk".format(self.seq_name, self.shot_name)
         self.shot_cam_dir = os.path.join(self.shot_dir, "animation/approved/scenes/")
+        self.shot_audio_dir = os.path.join(self.shot_dir, "audio/approved/")
 
         # directories for shot outside shot directory
 

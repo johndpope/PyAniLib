@@ -49,6 +49,10 @@ class TestWindow(QtWidgets.QDialog):
 
         self.btn_update_version_after_dl_unit_test = QtWidgets.QPushButton("start version update after dl unit test")
         self.btn_update_version_after_dl_unit_test.pressed.connect(self.start_update_version_after_dl_unit_test)
+
+        self.btn_audio_changed_unit_test = QtWidgets.QPushButton("start audio changed unit test")
+        self.btn_audio_changed_unit_test.pressed.connect(self.start_audio_changed_unit_test)
+
         '''
         -----------------------------------------------------------------------------------------------------------
         '''
@@ -92,6 +96,7 @@ class TestWindow(QtWidgets.QDialog):
         layout.addWidget(QtWidgets.QLabel("<b>Asset Unit Tests</b>"))
         layout.addWidget(self.btn_build_cache_unit_test)
         layout.addWidget(self.btn_update_version_after_dl_unit_test)
+        layout.addWidget(self.btn_audio_changed_unit_test)
 
         layout.addWidget(QtWidgets.QLabel("<b>Tools Unit Tests</b>"))
         layout.addWidget(self.btn_show_tools_cache)
@@ -109,20 +114,24 @@ class TestWindow(QtWidgets.QDialog):
 
         self.core_mngr = pyani.core.mngr.core.AniCoreMngr()
         self.core_mngr.error_thread_signal.connect(self.show_multithreaded_error)
-        self.core_mngr.finished_signal.connect(self.finished_building)
+        self.core_mngr.finished_signal.connect(self.finished_job)
 
         self.asset_mngr = pyani.core.mngr.assets.AniAssetMngr()
-        self.asset_mngr.finished_cache_build_signal.connect(self.finished_building)
+        self.asset_mngr.finished_cache_build_signal.connect(self.finished_job)
+        self.asset_mngr.finished_signal.connect(self.finished_job)
 
         self.tools_mngr = pyani.core.mngr.tools.AniToolsMngr()
         self.tools_mngr.error_thread_signal.connect(self.show_multithreaded_error)
-        self.tools_mngr.finished_cache_build_signal.connect(self.finished_building)
-        self.tools_mngr.finished_signal.connect(self.finished_building)
-        self.tools_mngr.finished_sync_and_download_signal.connect(self.finished_building)
+        self.tools_mngr.finished_cache_build_signal.connect(self.finished_job)
+        self.tools_mngr.finished_signal.connect(self.finished_job)
+        self.tools_mngr.finished_sync_and_download_signal.connect(self.finished_job)
 
     def show_multithreaded_error(self, error):
         self.tools_mngr.progress_win.close()
         print error
+
+    def finished_job(self):
+        print "finito."
 
     def start_create_setup_dependencies_unit_test(self):
         self.core_mngr.create_setup_dependencies(setup_dir="C:\\Users\\Patrick\\Downloads\\install\\")
@@ -151,6 +160,9 @@ class TestWindow(QtWidgets.QDialog):
 
     def start_build_tools_cache_unit_test(self):
         self.tools_mngr.sync_local_cache_with_server()
+
+    def start_audio_changed_unit_test(self):
+        self.asset_mngr.check_for_new_audio()
 
     def start_update_tools_cache_unit_test(self):
         """
@@ -217,9 +229,6 @@ class TestWindow(QtWidgets.QDialog):
         cgt_path = "/LongGong/assets/char/charAnglerFish/rig/approved/charAnglerFish_rig_high.mb"
         local_path  = r"Z:\LongGong\assets\char\charAnglerFish\rig\approved"
         self.asset_mngr.update_local_version(cgt_path, local_path)
-
-    def finished_building(self):
-        print "finito."
 
 
 def main():

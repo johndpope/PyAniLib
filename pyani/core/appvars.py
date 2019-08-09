@@ -66,8 +66,9 @@ class AppVars:
         # to test:
         #self.cgt_bridge_api_path = os.path.normpath("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\PyAniToolsAppBridge\\venv")
         self.cgt_bridge_api_path = os.path.normpath("C:\\PyAniTools\\lib\\{0}".format(self.cgt_bridge_api_dir))
-        self.cgt_user = ""
-        self.cgt_pass = ""
+        # force a connection to CGT to be open, i.e. CGT app open. That way user's own account is used.
+        self.cgt_user = "publish"
+        self.cgt_pass = "publish"
         self.cgt_ip = "172.18.100.246"
 
         # TOOLS
@@ -75,6 +76,12 @@ class AppVars:
         # tools general
         self.tool_ignore_list = ["json", "txt"]
         self.tools_temp_dir = os.path.join(self.local_temp_dir, "pyanitools")
+
+        # audio tools
+        self.audio_info_json_name = "audio_info.json"
+        self.audio_info_template = {
+            "last_modified": ""
+        }
 
         # pyanitools
         self.tools_dir = "C:\\PyAniTools"
