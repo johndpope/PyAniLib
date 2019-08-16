@@ -16,6 +16,8 @@ class AppVars:
 
         # BASIC / GENERAL
 
+        # type of excel extension to sue when generating excel workbooks
+        self.excel_ext = ".xlsx"
         # max errors to be displayed
         self.max_errors_to_display = 20
         # notes formats supported
@@ -76,12 +78,25 @@ class AppVars:
         # tools general
         self.tool_ignore_list = ["json", "txt"]
         self.tools_temp_dir = os.path.join(self.local_temp_dir, "pyanitools")
-
+        self.preferences_filename = os.path.join(self.persistent_data_path, "pref.json")
+        self.preferences_template = {
+            "asset mngr": {
+                "audio": {
+                    "track updates": False
+                }
+            }
+        }
+        self.audio_metadata_json_name = self.cgt_metadata_filename
         # audio tools
-        self.audio_info_json_name = "audio_info.json"
+        #self.audio_metadata_json_name = "audio_info.json"
+        '''
         self.audio_info_template = {
             "last_modified": ""
         }
+        '''
+        self.audio_excel_report_dir = os.path.join(self.persistent_data_path, "audio_reports")
+        self.audio_excel_report_filename = "report_audio_changes"
+        self.audio_max_report_history = 7
 
         # pyanitools
         self.tools_dir = "C:\\PyAniTools"

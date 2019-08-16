@@ -106,11 +106,26 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
                 'params': [],
                 'finish signal': self.tools_mngr.finished_signal,
                 'error signal': self.tools_mngr.error_thread_signal,
-                'thread task': False,
+                'thread task': True,
                 'desc': "Checking update config file for old tools or missing new tools."
             }
         )
         progress_list.append("Syncing update config file with server.")
+
+        # add asset tracking step for audio
+        self.task_list.append(
+            {
+                'func': self.asset_mngr.check_for_new_assets("audio"),
+                'params': [],
+                'finish signal': self.asset_mngr.finished_tracking,
+                'error signal': self.asset_mngr.error_thread_signal,
+                'thread task': False,
+                'desc': "Checked for any new audio and saved report in {0}.".format(
+                    self.asset_mngr.app_vars.audio_excel_report_dir
+                )
+            }
+        )
+        progress_list.append("Checking all show audio for changes.")
 
         # add cleanup step
         self.task_list.append(
@@ -119,7 +134,7 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
                 'params': [],
                 'finish signal': self.tools_mngr.finished_signal,
                 'error signal': self.tools_mngr.error_thread_signal,
-                'thread task': False,
+                'thread task': True,
                 'desc': "Removed out-dated tools."
             }
         )

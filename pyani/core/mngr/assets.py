@@ -2,6 +2,10 @@ import os
 import logging
 import functools
 from datetime import datetime
+# need to import _strptime for multi-threading, a known python 2.7 bug
+import _strptime
+from openpyxl import Workbook
+from openpyxl.styles import Color, PatternFill, Font
 import pyani.core.appvars
 import pyani.core.anivars
 import pyani.core.ui
@@ -69,9 +73,13 @@ class AniAssetMngr(AniCoreMngr):
         # identifies which component this mngr is currently responsible for
         self.active_asset_component = None
 
-        # records of changed audio and any errors that occur checking (stores as list of dicts with shot name : error)
-        self.shots_failed_checking_timestamp = list()
-        self.shots_with_changed_audio = list()
+        # records of changed audio stored as dict:
+        # { seq name: [ shot name, shot name, ...] }
+        self.shots_with_changed_audio = dict()
+
+        # record of errors that occur checking audio timestamps  as dict
+        # { seq name: {shot name: error}, {shot name: error}, ... }
+        self.shots_failed_checking_timestamp = dict()
 
     @property
     def active_asset_component(self):
@@ -81,82 +89,15 @@ class AniAssetMngr(AniCoreMngr):
     def active_asset_component(self, component_name):
         self._active_asset_component = component_name
 
-    def check_for_new_audio(self):
-        self.shots_failed_checking_timestamp = list()
-        self.shots_with_changed_audio = list()
-
-        # set number of threads to max - can do this since running per asset
-        self.set_number_of_concurrent_threads()
-
-        self._reset_thread_counters()
-
-        # if not visible then no other function called this, so we can show progress window
-        if not self.progress_win.isVisible():
-            # reset progress
-            self.init_progress_window("Audio CHeck Progress", "Checking all audio for changes...")
-
-        # check audio for all sequences
-        for seq in self.ani_vars.get_sequence_list():
-            self.ani_vars.update(seq)
-            for shot in self.ani_vars.get_shot_list():
-                worker = pyani.core.ui.Worker(
-                    self.check_shot_audio_timestamp,
-                    False,
-                    seq,
-                    shot,
-                    self.ani_vars.shot_audio_dir
-                )
-                self.thread_total += 1.0
-                self.thread_pool.start(worker)
-                # reset error list
-                self.init_thread_error()
-                # slot that is called when a thread finishes
-                worker.signals.finished.connect(self._thread_audio_timestamp_check_complete)
-
-    def check_shot_audio_timestamp(self, seq, shot, audio_dir):
-        app_vars = pyani.core.appvars.AppVars()
-
-        # set default local date modified, in case the file doesn't exist
-        local_audio_modified_date = datetime.strptime("2000-01-01 00:00:00", "%Y-%b-%d %I:%M:%S")
-        # try to load audio info file which has last modified date, if doesn't exist, create, first time
-        # checking this shot for audio
-        audio_info_path = os.path.join(audio_dir, self.app_vars.audio_info_json_name)
-        audio_info = pyani.core.util.load_json(audio_info_path)
-        # if can't load, create a new audio info from template
-        if not isinstance(audio_info, dict):
-            # made the file, so setup the audio_info for this shot - shallow copy, ok, non nested dict
-            # need to copy in case this is multithreaded. if mt, then various threads would be changing the
-            # value of template at same time
-            audio_info = app_vars.audio_info_template.copy()
-        # file loaded, get the date time
-        else:
-            date_str = audio_info['last_modified']
-            try:
-                local_audio_modified_date = datetime.strptime(date_str, "%Y-%b-%d %I:%M:%S")
-            # couldn't convert date time into date object
-            except ValueError as error:
-                self.shots_failed_checking_timestamp.append({shot: error})
-                return
-
-        # connect to cgt and get last modified date of audio file
-        audio_server_path = "/Longgong/sequences/{0}/{1}/audio/approved/{0}_{1}.wav".format(seq, shot)
-        server_modified_date = self.server_file_modified_date(audio_server_path)
-        if not isinstance(server_modified_date, datetime):
-            self.shots_failed_checking_timestamp.append({shot: server_modified_date})
-            return
-
-        # if audio file is newer, save and update modified date in audio info file
-        if server_modified_date > local_audio_modified_date:
-            # write the server date time to disk and save shot for report
-            timestamp = server_modified_date.strftime("%Y-%b-%d %I:%M:%S")
-            audio_info['last_modified'] = timestamp
-            error = pyani.core.util.write_json(audio_info_path, audio_info)
-            # if an error occurred saving to disk, skip shot, otherwise it was written successfully so we
-            # can record the shot as changed
-            if error:
-                self.shots_failed_checking_timestamp.append({shot: error})
-            else:
-                self.shots_with_changed_audio.append(shot)
+    def check_for_new_assets(self, asset_component, asset_list=None):
+        """
+        Checks for assets that have changed since last run.
+        :param asset_component: the asset component - see pyani.core.appvars.py for asset components
+        :param asset_list: optional list of assets to check
+        :return:
+        """
+        if asset_component == "audio":
+            self._check_for_new_audio(seqs=asset_list)
 
     def load_server_asset_info_cache(self):
         """
@@ -951,6 +892,154 @@ class AniAssetMngr(AniCoreMngr):
         self.thread_total = 0.0
         self.threads_done = 0.0
 
+    def _check_for_new_audio(self, seqs=None):
+        """
+        Call check_for_asset_updates and pass asset_component=audio to run this. Ensures proper polymorphism.
+        Checks a sequence, or list of sequences, for any changed audio tracks. Checks all show sequences (using the
+        sequences.json cache list in permanent data dir) if no sequence or sequences are provided. Uses mult-threading.
+        Sequences with changed audio are stored in self.shots_with_changed_audio and any errors are stored in
+        self.shots_failed_checking_timestamp.
+        :param seqs: a list of sequences as a python list, where a sequence is Seq###. Also accepts strings. If
+        providing multiple sequences in a string, separate with a comma. ex: "Seq040,Seq050"
+        :return: Nothing
+        """
+
+        self.shots_failed_checking_timestamp = dict()
+        self.shots_with_changed_audio = dict()
+
+        # convert a string sequence name(s) to a list
+        if not isinstance(seqs, list) and seqs:
+            # check if a list of sequences was provided
+            sequences = seqs.split(",")
+            # check if multiple sequences provided
+            if isinstance(sequences, list):
+                # remove any spaces
+                seqs = [seq.strip(" ") for seq in sequences]
+            # just one sequence provided
+            else:
+                seqs = [seqs]
+
+        # load the sequence/shot list
+        error = self.ani_vars.load_seq_shot_list()
+        if error:
+            self.send_thread_error(error)
+            return error
+
+        # no sequences given, load all
+        if not seqs:
+            seqs = self.ani_vars.get_sequence_list()
+
+        # set number of threads to max - can do this since running per asset
+        self.set_number_of_concurrent_threads()
+
+        self._reset_thread_counters()
+
+        # if not visible then no other function called this, so we can show progress window
+        if not self.progress_win.isVisible():
+            # reset progress
+            self.init_progress_window("Audio Check Progress", "Checking all audio for changes...")
+
+        # check audio for all sequences
+        for seq in seqs:
+            # create here, don't create in threads because could get race condition
+            self.shots_failed_checking_timestamp[seq] = dict()
+            self.shots_with_changed_audio[seq] = list()
+
+            self.ani_vars.update(seq)
+            for shot in self.ani_vars.get_shot_list():
+                self.ani_vars.update(seq, shot)
+                worker = pyani.core.ui.Worker(
+                    self._check_shot_audio_timestamp,
+                    False,
+                    seq,
+                    shot,
+                    self.ani_vars.shot_audio_dir
+                )
+                self.thread_total += 1.0
+                self.thread_pool.start(worker)
+                # reset error list
+                self.init_thread_error()
+                # slot that is called when a thread finishes
+                worker.signals.finished.connect(self._thread_audio_timestamp_check_complete)
+
+    def _check_shot_audio_timestamp(self, seq, shot, audio_dir):
+        """
+        This is a separate method so checking for audio changes can be threaded.
+        Checks a shot to see if its audio changed. The first time a shot is checked, a file is stored locally with the
+        server modified date. This starts the process of tracking this shot. The next time this method runs it will
+        load the local file, and check the server modified date. If the server date is newer, that date is saved to
+        the local file and the shot is added to the list of shots with changed audio
+        :param seq: the sequence name, as Seq###
+        :param shot: the shot name, as Shot###
+        :param audio_dir: the local directory where audio is stored
+        :return: Does not return a value, instead stores shots with changed audio in member variable
+        shots_with_changed_audio. Errors are stored in member variable shots_failed_checking_timestamp as
+        dict element in format shot name: 'error msg'
+        """
+        # variable to indicate if this is the first time to start tracking audio for a shot. Don't want to add the
+        # shot to the report of changed audio if its the first time we are starting to track
+        started_tracking = False
+
+        # set default local date modified, in case the file doesn't exist
+        local_audio_modified_date = datetime.strptime("2000-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+        # try to load audio info file which has last modified date, if doesn't exist, create, first time
+        # checking this shot for audio
+        audio_metadata_path = "{0}\\{1}".format(audio_dir, self.app_vars.audio_metadata_json_name)
+        audio_metadata = pyani.core.util.load_json(audio_metadata_path)
+
+        # if can't load, add last modified to file
+        if not isinstance(audio_metadata, dict):
+            audio_metadata = {"last_modified": ""}
+        # file loaded, get the date time
+        else:
+            # check if the key exists in metadata
+            if 'last_modified' not in audio_metadata:
+                audio_metadata['last_modified'] = ""
+            else:
+                date_str = audio_metadata['last_modified']
+                try:
+                    local_audio_modified_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                # couldn't convert date time into date object
+                except ValueError as error:
+                    self.shots_failed_checking_timestamp[seq][shot] = error
+                    return
+
+        # connect to cgt and get last modified date of audio file
+        audio_server_path = "/LongGong/sequences/{0}/{1}/audio/approved/{0}_{1}.wav".format(seq, shot)
+        server_modified_date = self.server_file_modified_date(audio_server_path)
+        if not isinstance(server_modified_date, datetime):
+            # check if shot didn't have audio
+            if not server_modified_date:
+                error = "Shot does not have an audio file."
+            else:
+                error = "Could not convert date from CGT to a datetime object"
+            self.shots_failed_checking_timestamp[seq][shot] = error
+            return
+
+        # if audio file is newer, save and update modified date in audio info file
+        if server_modified_date > local_audio_modified_date:
+            # write the server date time to disk and save shot for report
+            timestamp = server_modified_date.strftime("%Y-%m-%d %H:%M:%S")
+            audio_metadata['last_modified'] = timestamp
+
+            # check if directory exists - because this check doesn't care if the audio file exists locally, just the
+            # audio info file with the timestamp, the directory may not be there
+            if not os.path.exists(audio_metadata_path):
+                error = pyani.core.util.make_all_dir_in_path(audio_dir)
+                if error:
+                    self.shots_failed_checking_timestamp[seq][shot] = error
+                # just created for the first time, flag it
+                started_tracking = True
+
+            error = pyani.core.util.write_json(audio_metadata_path, audio_metadata)
+            # if an error occurred saving to disk, skip shot, otherwise it was written successfully so we
+            # can record the shot as changed
+            if error:
+                self.shots_failed_checking_timestamp[seq][shot] = error
+            # don't want to add newly tracked shots to report
+            elif not started_tracking:
+                self.shots_with_changed_audio[seq].append(shot)
+
     def _thread_audio_timestamp_check_complete(self):
         """
         Called when a thread that checks an audio's timestamp completes
@@ -966,6 +1055,101 @@ class AniAssetMngr(AniCoreMngr):
             self.progress_win.setValue(progress)
             # check if we are finished
             if progress >= 100.0:
-                # todo: make excel report and report on screen
-                # done, let any listening objects/classes know we are finished
-                self.finished_signal.emit(None)
+                # create excel report
+                filename, error = self._generate_report_for_changed_audio()
+                if error:
+                    self.send_thread_error(error)
+                    return error
+                # done, let any listening objects/classes know we are finished, pass "audio" in case listeners want
+                # to know what is sending this signal
+                self.finished_tracking.emit(("audio", filename))
+
+    def _generate_report_for_changed_audio(self):
+        """
+        Generates an excel workbook with a report of the shots with changed audio. Also reports any shots that errored
+        while trying to find if audio changed
+        :return: tuple of filename and error. error is None if created, otherwise error as string if not created
+        """
+        workbook = Workbook()
+        active_sheet = workbook.active
+        # start row
+        row_index = 1
+        # how many cells to merge
+        merge_length = 20
+        # to alternate shot row color between white and gray
+        alternate_row_color = False
+        # filename for saving workbook
+        filename = "{0}\\{1}_{2}{3}".format(
+            self.app_vars.audio_excel_report_dir,
+            self.app_vars.audio_excel_report_filename,
+            datetime.now().strftime("%B_%d_%H_%M"),
+            self.app_vars.excel_ext
+        )
+
+        # setup styles
+        seq_row_fill = PatternFill(patternType='solid', fgColor=Color(rgb="0099cccc"))
+        shot_row_fill_shaded_light = PatternFill(patternType='solid', fgColor=Color(rgb="00f5f5f5"))
+        shot_row_fill_shaded_dark = PatternFill(patternType='solid', fgColor=Color(rgb="00cccccc"))
+        shot_row_fill_error = PatternFill(patternType='solid', fgColor=Color(rgb="00da9694"))
+        seq_font_size = Font(size=20)
+        shot_font_size = Font(size=12)
+
+        # create data
+        for seq in self.shots_with_changed_audio:
+            active_sheet.cell(row_index, column=1).value = seq
+            # apply fill color and font to cell
+            active_sheet.cell(row_index, column=1).fill = seq_row_fill
+            active_sheet.cell(row_index, column=1).font = seq_font_size
+            # merge cells
+            active_sheet.merge_cells(start_row=row_index, start_column=1, end_row=row_index, end_column=merge_length)
+            row_index += 1
+
+            shot_list = self.shots_with_changed_audio[seq]
+
+            # does seq exist in errored list, if so get shots
+            if seq in self.shots_failed_checking_timestamp:
+                # get a list of all shots both errored and changed audio so they can be in order sorted
+                shot_list.extend(self.shots_failed_checking_timestamp[seq].keys())
+
+            for shot in sorted(shot_list):
+                if pyani.core.util.find_val_in_nested_dict(self.shots_failed_checking_timestamp, [seq, shot]):
+                    active_sheet.cell(row_index, column=1).value = "{0} : {1}".format(
+                        shot,
+                        self.shots_failed_checking_timestamp[seq][shot]
+                    )
+                else:
+                    active_sheet.cell(row_index, column=1).value = shot
+                # apply font size
+                active_sheet.cell(row_index, column=1).font = shot_font_size
+                # figure out fill - error, or light or dark color
+                if pyani.core.util.find_val_in_nested_dict(self.shots_failed_checking_timestamp, [seq, shot]):
+                    active_sheet.cell(row_index, column=1).fill = shot_row_fill_error
+                elif alternate_row_color:
+                    active_sheet.cell(row_index, column=1).fill = shot_row_fill_shaded_light
+                else:
+                    active_sheet.cell(row_index, column=1).fill = shot_row_fill_shaded_dark
+
+                # flip the color for next row
+                alternate_row_color = not alternate_row_color
+                # merge cells
+                active_sheet.merge_cells(start_row=row_index, start_column=1, end_row=row_index,
+                                         end_column=merge_length)
+                row_index += 1
+
+        # save report
+        if not os.path.exists(self.app_vars.audio_excel_report_dir):
+            error = pyani.core.util.make_all_dir_in_path(self.app_vars.audio_excel_report_dir)
+            if error:
+                error_fmt = "Error creating directory for audio reports. Error is {0}".format(error)
+                return None, error_fmt
+        workbook.save(filename)
+
+        # remove any old reports - get file listing and check if older than max days to keep
+        for existing_report in os.listdir(self.app_vars.audio_excel_report_dir):
+            existing_report_path = os.path.join(self.app_vars.audio_excel_report_dir, existing_report)
+            error = pyani.core.util.delete_by_day(self.app_vars.audio_max_report_history, existing_report_path)
+            if error:
+                error_fmt = "Error removing old reports. Error is {0}".format(error)
+                return None, error_fmt
+
+        return filename, None

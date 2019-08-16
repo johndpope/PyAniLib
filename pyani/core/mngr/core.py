@@ -4,6 +4,8 @@ import re
 import mmap
 import time
 from datetime import datetime
+# need to import _strptime for multi-threading, a known python 2.7 bug
+import _strptime
 import pyani.core.appvars
 import pyani.core.anivars
 import pyani.core.ui
@@ -44,6 +46,8 @@ class AniCoreMngr(QtCore.QObject):
     finished_cache_build_signal = pyqtSignal(object)
     # signal that lets other objects know this class is done syncing with cgt and downloading
     finished_sync_and_download_signal = pyqtSignal(object)
+    # signal that lets other objects know this class is done checking for asset changes
+    finished_tracking = pyqtSignal(object)
     # error message for other classes to receive when doing any local file operations
     error_thread_signal = pyqtSignal(object)
 
@@ -78,6 +82,88 @@ class AniCoreMngr(QtCore.QObject):
             logger.info("Multi-threading with %d threads" % self.thread_pool.maxThreadCount())
         else:
             self.thread_pool.setMaxThreadCount(thread_num)
+
+    def get_preference(self, app, category, pref_name):
+        """
+        Get's preference value if exists, otherwise creates preference file and gets default preference value
+        :param app: the application the preference applies to, see pyani.core.appvars.AppVars for apps with pref
+        :param category: the application category, see pyani.core.appvars.AppVars for app pref catgeories
+        :param pref_name: name of the preference
+        :return: dict if pref exists as {pref_name: pref_value} or error as string
+        """
+        pref = self._load_preferences()
+
+        # if preferences didn't load, try to create
+        if not pref:
+            # check for creation errors
+            error = self._create_preferences()
+            if error:
+                error_fmt = "Could not create preferences, error is: {0}".format(error)
+                return error_fmt
+
+            # if no errors creating then load preferences
+            pref = self._load_preferences()
+            # check for error loading
+            if not pref:
+                error_fmt = "Could not load preferences, error is: {0}".format(pref)
+                return error_fmt
+
+        return {pref_name: pyani.core.util.find_val_in_nested_dict(pref, [app, category, pref_name])}
+
+    def save_preference(self, app, category, pref_name, pref_value):
+        """
+        Saves the preference value to the preferences file
+        :param app: the application the preference applies to, see pyani.core.appvars.AppVars for apps with pref
+        :param category: the application category, see pyani.core.appvars.AppVars for app pref catgeories
+        :param pref_name: name of the preference
+        :param pref_value: value to save for the preference
+        :return: None if saved successfully, error as a string if can't save
+        """
+        # load so we can get current preferences data
+        pref_data = self._load_preferences()
+        # check for error loading
+        if not pref_data:
+            error_fmt = "Could not load preferences, error is: {0}".format(pref_data)
+            return error_fmt
+
+        # store new preference value, but first check preference exists
+        if pyani.core.util.find_val_in_nested_dict(pref_data, [app, category, pref_name]) is None:
+            error_fmt = "Preference, {0}, does not exist.".format(pref_name)
+            return error_fmt
+        pref_data[app][category][pref_name] = pref_value
+
+        # save preference
+        error = pyani.core.util.write_json(self.app_vars.preferences_filename, pref_data)
+
+        if error:
+            error_fmt = "Could not save preferences, error is: {0}".format(error)
+            return error_fmt
+
+        return None
+
+    def _create_preferences(self):
+        """
+        Creates the preference file when it doesn't exist
+        :return: None or the error as a string when can't create the file
+        """
+        if not os.path.exists(self.app_vars.preferences_filename):
+            error = pyani.core.util.write_json(self.app_vars.preferences_filename, self.app_vars.preferences_template)
+            if error:
+                return error
+        return None
+
+    def _load_preferences(self):
+        """
+        Load preferences file
+        :return: None if can't load, otherwise returns the dict of preferences
+        """
+        # load the preferences
+        pref = pyani.core.util.load_json(self.app_vars.preferences_filename)
+        # check if loaded, if not return none
+        if not isinstance(pref, dict):
+            return None
+
+        return pref
 
     def create_setup_dependencies(self, setup_dir=None):
         """
@@ -739,7 +825,9 @@ class AniCoreMngr(QtCore.QObject):
             # check for output
             if output:
                 try:
-                    return datetime.strptime(output, "%Y-%b-%d %I:%M:%S")
+                    # remove newlines
+                    date_str = output.strip("\n")
+                    return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
                 except ValueError as e:
                     return e
 
@@ -794,6 +882,7 @@ class AniCoreMngr(QtCore.QObject):
         ]
         try:
             output, error = pyani.core.util.call_ext_py_api(dl_command)
+
             # error from trying to open subprocess
             if error:
                 error_fmt = "Error occurred launching subprocess. Error is {0}".format(error)

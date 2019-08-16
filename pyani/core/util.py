@@ -8,6 +8,7 @@ import json
 from scandir import scandir
 import subprocess
 from bisect import bisect_left
+from win32com.client import Dispatch
 import logging
 import Queue
 import threading
@@ -581,7 +582,7 @@ def write_json(json_path, user_data, indent=4):
             json.dump(user_data, write_file, indent=indent)
             return None
     except (IOError, OSError, EnvironmentError, ValueError) as e:
-        error_msg = "Problem loading {0}. Error reported is {1}".format(json_path, e)
+        error_msg = "Problem writing {0}. Error reported is {1}".format(json_path, e)
         logger.error(error_msg)
         return error_msg
 
@@ -646,6 +647,17 @@ def launch_app(app, args, open_shell=False, wait_to_complete=False, open_as_new_
         logger.error(error_msg)
         return error_msg
     return None
+
+
+def open_excel(file_path):
+    """
+    Open an excel file in excel
+    :param file_path: the file path of the excel file, newest excel does not accept forward slash in path
+    """
+    xl = Dispatch("Excel.Application")
+    # otherwise excel is hidden
+    xl.Visible = True
+    xl.Workbooks.Open(file_path)
 
 
 def call_ext_py_api(command, interpreter=None):

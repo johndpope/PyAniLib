@@ -29,6 +29,7 @@ class AssetComponentTab(QtWidgets.QWidget):
         self.asset_mngr = asset_mngr
         self._name = name
         self.assets_with_versions = ["rig"]
+        self.assets_supporting_update_tracking = ["audio"]
         # if asset component specified set it, otherwise use the name
         if asset_component:
             self.asset_component = asset_component
@@ -47,6 +48,12 @@ class AssetComponentTab(QtWidgets.QWidget):
         # ui variables
         self.asset_tree = None
         self.tab_description = tab_desc
+        self.btn_tracking = pyani.core.ui.ImageButton(
+            "images\\tracking_off.png",
+            "images\\tracking_on.png",
+            "images\\tracking_on.png",
+            size=(86, 86)
+        )
         self.btn_sync_cgt = pyani.core.ui.ImageButton(
             "images\sync_cache_off.png",
             "images\sync_cache_on.png",
@@ -63,6 +70,11 @@ class AssetComponentTab(QtWidgets.QWidget):
             "Show Only Assets that are Auto-Updated.",
             False,
             "Shows assets that are in the auto update config file. These are the green colored assets below."
+        )
+        self.track_asset_changes_label, self.track_asset_changes_cbox = pyani.core.ui.build_checkbox(
+            "Generate daily report for asset updates.",
+            False,
+            "Tracks updates to assets. Generates an excel report of any changed assets for the show."
         )
 
         # window to display notes
@@ -107,10 +119,23 @@ class AssetComponentTab(QtWidgets.QWidget):
         header.addWidget(self.btn_sync_cgt)
         header.addItem(QtWidgets.QSpacerItem(10, 0))
         header.addWidget(self.btn_save_config)
+        # add asset changes tracking button if this component supports it
+        if self.name.lower() in self.assets_supporting_update_tracking:
+            header.addItem(QtWidgets.QSpacerItem(10, 0))
+            header.addWidget(self.btn_tracking)
 
         options_layout = QtWidgets.QHBoxLayout()
         options_layout.addWidget(self.show_only_auto_update_assets_cbox)
         options_layout.addWidget(self.show_only_auto_update_assets_label)
+        # add asset changes tracking option if this component supports it
+        if self.name.lower() in self.assets_supporting_update_tracking:
+            options_layout.addItem(QtWidgets.QSpacerItem(40, 0))
+            options_layout.addWidget(self.track_asset_changes_cbox)
+            options_layout.addWidget(self.track_asset_changes_label)
+            pref = self.asset_mngr.get_preference("asset mngr", "audio", "track updates")
+            if isinstance(pref, dict):
+                self.track_asset_changes_cbox.setChecked(pref.get("track updates"))
+
         options_layout.addStretch(1)
 
         self.build_asset_tree()
@@ -124,8 +149,11 @@ class AssetComponentTab(QtWidgets.QWidget):
         self.asset_tree.itemDoubleClicked.connect(self.get_notes)
         self.btn_save_config.clicked.connect(self.save_asset_update_config)
         self.btn_sync_cgt.clicked.connect(self.sync_assets_with_cgt)
+        self.btn_tracking.clicked.connect(self.generate_tracking_report)
         self.show_only_auto_update_assets_cbox.clicked.connect(self._set_tree_display_mode)
         self.asset_mngr.finished_sync_and_download_signal.connect(self.sync_finished)
+        self.asset_mngr.finished_tracking.connect(self.tracking_finished)
+        self.track_asset_changes_cbox.clicked.connect(self.update_tracking_preferences)
 
     def sync_finished(self, asset_component):
         """
@@ -133,11 +161,56 @@ class AssetComponentTab(QtWidgets.QWidget):
         was sync'd. It compares the asset component to the name of the tab so other tabs don't get this signal.
         :param asset_component: user friendly name of the asset component
         """
-        if str(asset_component) == self.name:
+        if str(asset_component).lower() == self.name.lower():
             self.msg_win.show_info_msg(
                 "Sync Complete", "The selected assets were updated."
             )
-            self.build_asset_tree()
+
+    def tracking_finished(self, tracking_info):
+        asset_component = str(tracking_info[0])
+        filename = str(tracking_info[1])
+        if asset_component.lower() == self.name.lower():
+            pyani.core.util.open_excel(filename)
+            self.msg_win.show_info_msg(
+                "Tracking Complete", "Report saved to {0} and should open automatically.".format(
+                    self.app_vars.persistent_data_path
+                )
+            )
+
+    def generate_tracking_report(self):
+        self.asset_mngr.check_for_new_assets(self.name.lower())
+
+    def update_tracking_preferences(self):
+        """
+        Updates tracking asset preference for this asset component. Displays error if can't update, or success msg
+        if successfully updated.
+        """
+        # get the preference name and value as a dict
+        pref = self.asset_mngr.get_preference("asset mngr", self.name.lower(), "track updates")
+        # check if we have a valid preference
+        if not isinstance(pref, dict):
+            self.msg_win.show_error_msg("Preferences Error", "Could not get preference, error is: {0}".format(pref))
+            return
+
+        pref_name = pref.keys()[0]
+
+        if self.track_asset_changes_cbox.isChecked():
+            pref_value = True
+        else:
+            pref_value = False
+        error = self.asset_mngr.save_preference("asset mngr", self.name.lower(), pref_name, pref_value)
+        if error:
+            self.msg_win.show_error_msg(
+                "Preferences Error", "Could not save preference, error is: {0}".format(error)
+            )
+            return
+        else:
+            self.msg_win.show_info_msg(
+                "Preferences Saved", "The preference, {0}, was successfully update to {1}".format(
+                    pref_name,
+                    pref_value
+                )
+            )
 
     def sync_assets_with_cgt(self):
         """

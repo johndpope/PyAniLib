@@ -4,6 +4,7 @@ import json
 import pyani.core.mngr.core
 import pyani.core.mngr.assets
 import pyani.core.mngr.tools
+import pyani.core.util
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -53,6 +54,9 @@ class TestWindow(QtWidgets.QDialog):
         self.btn_audio_changed_unit_test = QtWidgets.QPushButton("start audio changed unit test")
         self.btn_audio_changed_unit_test.pressed.connect(self.start_audio_changed_unit_test)
 
+        self.btn_audio_changed_report_unit_test = QtWidgets.QPushButton("start audio changed report unit test")
+        self.btn_audio_changed_report_unit_test.pressed.connect(self.start_audio_changed_report_unit_test)
+
         '''
         -----------------------------------------------------------------------------------------------------------
         '''
@@ -97,6 +101,7 @@ class TestWindow(QtWidgets.QDialog):
         layout.addWidget(self.btn_build_cache_unit_test)
         layout.addWidget(self.btn_update_version_after_dl_unit_test)
         layout.addWidget(self.btn_audio_changed_unit_test)
+        layout.addWidget(self.btn_audio_changed_report_unit_test)
 
         layout.addWidget(QtWidgets.QLabel("<b>Tools Unit Tests</b>"))
         layout.addWidget(self.btn_show_tools_cache)
@@ -119,6 +124,7 @@ class TestWindow(QtWidgets.QDialog):
         self.asset_mngr = pyani.core.mngr.assets.AniAssetMngr()
         self.asset_mngr.finished_cache_build_signal.connect(self.finished_job)
         self.asset_mngr.finished_signal.connect(self.finished_job)
+        self.asset_mngr.finished_tracking.connect(self.finished_job)
 
         self.tools_mngr = pyani.core.mngr.tools.AniToolsMngr()
         self.tools_mngr.error_thread_signal.connect(self.show_multithreaded_error)
@@ -130,8 +136,13 @@ class TestWindow(QtWidgets.QDialog):
         self.tools_mngr.progress_win.close()
         print error
 
-    def finished_job(self):
+    def finished_job(self, msg):
         print "finito."
+        if msg:
+            if msg[0] == "audio":
+                print self.asset_mngr.shots_with_changed_audio
+                print self.asset_mngr.shots_failed_checking_timestamp
+                pyani.core.util.open_excel(msg[1])
 
     def start_create_setup_dependencies_unit_test(self):
         self.core_mngr.create_setup_dependencies(setup_dir="C:\\Users\\Patrick\\Downloads\\install\\")
@@ -162,7 +173,15 @@ class TestWindow(QtWidgets.QDialog):
         self.tools_mngr.sync_local_cache_with_server()
 
     def start_audio_changed_unit_test(self):
-        self.asset_mngr.check_for_new_audio()
+        self.asset_mngr.check_for_new_assets("audio", asset_list="Seq050")
+
+    def start_audio_changed_report_unit_test(self):
+        self.asset_mngr.shots_with_changed_audio["Seq050"] = ["Shot010", "Shot030", "Shot160"]
+        self.asset_mngr.shots_with_changed_audio["Seq060"] = ["Shot010", "Shot120"]
+        self.asset_mngr.shots_failed_checking_timestamp["Seq050"] = {
+            "Shot130": "Shot is missing audio. Error is Nonetype doesn't exist"
+        }
+        print self.asset_mngr._generate_report_for_changed_audio()
 
     def start_update_tools_cache_unit_test(self):
         """

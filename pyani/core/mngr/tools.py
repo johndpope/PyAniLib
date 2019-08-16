@@ -813,7 +813,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                             self.server_download,
                             False,
                             [cgt_path],
-                            local_file_paths=[local_path],
+                            local_file_paths=[local_path]
                         )
                         self.thread_total += 1.0
                         self.thread_pool.start(worker)
@@ -1040,6 +1040,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
 
         # download the metadata which has version and release notes
         error = self.server_download(server_metadata_paths, local_temp_metadata_dir)
+
         if error:
             error_fmt = "Could not read cgt tool metadata. Error is {0}".format(error)
             self.send_thread_error(error_fmt)
