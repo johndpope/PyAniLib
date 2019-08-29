@@ -409,7 +409,8 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
 
     def set_slots(self):
         self.nav_crumbs.linkActivated.connect(self.update_from_nav_link)
-        self.seq_menu.currentIndexChanged.connect(self.download_sequence_stats)
+        #self.seq_menu.currentIndexChanged.connect(self.download_sequence_stats)
+        self.seq_menu.currentIndexChanged.connect(self.process_sequence_stats)
         self.history_menu.currentIndexChanged.connect(self.update_displayed_history)
         self.stats_menu.currentIndexChanged.connect(self.update_displayed_stat)
         self.render_layer_menu.currentIndexChanged.connect(self.update_displayed_render_layer)
@@ -477,7 +478,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self.shot,
             self.history
         )
-        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "server_download.py")
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
         # need to convert python lists to strings, separated by commas, so that it will pass through
         # in the shell so if there are multiple paths, the list [path1, path2] becomes 'path1,path2'
         dl_command = [
@@ -492,7 +493,9 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self.msg_win.show_msg("CGT Download", "Getting stat data for {0} at history: {1} from CGT, this will "
                                                   "take just a few seconds...".format(self.render_layer, self.history))
             QtWidgets.QApplication.processEvents()
-            output, error = pyani.core.util.call_ext_py_api(dl_command)
+            # note not using the return values, as we don't care here whether download was successful. We check below
+            # for file existence
+            _, _ = pyani.core.util.call_ext_py_api(dl_command)
             self.msg_win.close()
             shot_stats_path = "Z:\\LongGong\\sequences\\{0}\\lighting\\render_data\\{1}\\{2}\\{0}_{1}.json".format(
                 self.seq,
@@ -513,9 +516,10 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
             self.msg_win.show_error_msg("CGT Download Error", "Can not download from CGT. Error is {0}".format(e))
             return False
 
-    def download_sequence_stats(self):
+    def download_sequence_stats_depr(self):
         """
-        Download the sequences stat data from CGT using multi-threading.
+        Download the sequences stat data from CGT using multi-threading. Uses tool managers inherited server_file_download
+        function from mngr_core to download
         """
         if self.seq_menu.currentIndex() > 0:
             self.prev_seq = self.seq
@@ -574,6 +578,70 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                 # slot that is called when a thread finishes
                 worker.signals.finished.connect(self._render_data_download_thread_complete)
                 worker.signals.error.connect(self._render_data_download_thread_error)
+
+    def download_sequence_stats(self):
+        """
+        Download the sequences stat data from CGT using multi-threading. Uses tool managers inherited server_file_download
+        function from mngr_core to download
+        """
+        if self.seq_menu.currentIndex() > 0:
+            self._reset_thread_counters()
+            self.tools_mngr.init_thread_error()
+
+            self.prev_seq = self.seq
+            self.seq = str(self.seq_menu.currentText())
+            self.ani_vars.update(seq_name=self.seq)
+
+            # check if we need to load or its already loaded
+            if self.render_data.is_loaded(self.seq):
+                # no need to load, already loaded
+                self.current_level = 0
+                self.history = "1"
+                self.set_nav_link()
+                self._build_render_layer_menu()
+                self.update_ui()
+                return
+
+            # reset progress
+            self.progress_win.setWindowTitle("Render Data Progress")
+            self.progress_win.setLabelText("Downloading {0} Render Data...".format(self.seq))
+            self.progress_win.setValue(0)
+            # makes sure progress shows over window, as windows os will place it under cursor behind other windows if
+            # user moves mouse off off app
+            self.progress_win.move(QtWidgets.QDesktopWidget().availableGeometry().center())
+            self.progress_win.show()
+
+            # only connect this once - allows the download method to call its send error method which emits a
+            # error_thread_signal. If we get this signal, call our custom render data thread error method. Note
+            # we don't catch thread errors, but thats ok, error handling in mngr_core server download method
+            self.tools_mngr.error_thread_signal.connect(self._render_data_download_thread_error)
+
+            # make the paths to the sequence's render data
+            for shot in self.ani_vars.get_shot_list():
+                cgt_shot_stats_path = "/LongGong/sequences/{0}/lighting/render_data/{1}/{2}/{0}_{1}.json".format(
+                    self.seq,
+                    shot,
+                    self.history,
+                    self.seq,
+                    shot
+                )
+                # make the path to the json file, only ever one file in the history directory,
+                # so we grab the first element from os.listdir
+                dl_shot_stats_path = "Z:\\LongGong\\sequences\\{0}\\lighting\\render_data\\{1}\\{2}\\".format(
+                    self.seq,
+                    shot,
+                    self.history
+                )
+                worker = pyani.core.ui.Worker(
+                    self.tools_mngr.server_download,
+                    False,
+                    [cgt_shot_stats_path],
+                    local_file_paths=[dl_shot_stats_path]
+                )
+                self.thread_total += 1.0
+                self.thread_pool.start(worker)
+                # slot that is called when a thread finishes
+                worker.signals.finished.connect(self._render_data_download_thread_complete)
 
     def process_sequence_stats(self):
         """
@@ -991,7 +1059,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                                              "log will open in the default system text editor")
         QtWidgets.QApplication.processEvents()
         app_vars = pyani.core.appvars.AppVars()
-        py_script = os.path.join(app_vars.cgt_bridge_api_path, "server_download.py")
+        py_script = os.path.join(app_vars.cgt_bridge_api_path, "cgt_download.py")
         # cgt path
         log_cgt_path = r"/LongGong/sequences/{0}/{1}/{2}/render_data/{3}/{4}/{5}_{6}_{7}.{8}.log".format(
                     self.seq,
@@ -1104,29 +1172,22 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                 return
             # some files downloaded, but not all
             elif self.dl_error_list:
-                self.msg_win.show_error_msg("CGT Download Error", "{0} Shot's render data could not be downloaded. "
+                self.msg_win.show_error_msg("CGT Download Error", "({0}) shot's render data could not be downloaded. "
                                                                   "See log for details.".format(len(self.dl_error_list))
                                             )
                 logger.error("download errors from cgt: " + ', '.join(self.dl_error_list))
                 # reset d/l error list
                 self.dl_error_list = []
 
-            # reset threads counters
-            self.thread_total = 0.0
-            self.threads_done = 0.0
-
             self.process_sequence_stats()
 
     def _render_data_download_thread_error(self, error):
         """
-        Called when an error occurs in the thread when downloading
-        :param error: a tuple containing the exception type, the exception value/msg, and traceback. Note the
-        exeception value is of type Exception.exception and must be casted to a string. The signal is in
-        pyani.core.ui.Worker
+        Called when an error occurs in from downloading
+        :param error: a string error
         """
-        exec_type, error_msg, traceback_msg = error
         # record error in a list, when all threads complete can use this to inform user
-        self.dl_error_list.append(str(error_msg))
+        self.dl_error_list.append(str(error))
 
     def _build_render_layer_menu(self):
         """
@@ -1175,7 +1236,7 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
                 self.seq,
                 self.shot
             )
-            py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "server_download.py")
+            py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
             # need to convert python lists to strings, separated by commas, so that it will pass through
             # in the shell so if there are multiple paths, the list [path1, path2] becomes 'path1,path2'
             dl_command = [
@@ -1205,3 +1266,11 @@ class AniRenderDataViewer(pyani.core.ui.AniQMainWindow):
         # reset the current history
         self.history = str(self.history_menu.currentText())
         self.history_menu.blockSignals(False)
+
+    def _reset_thread_counters(self):
+        """
+        resets the thread counters to zero
+        """
+        # reset threads counters
+        self.thread_total = 0.0
+        self.threads_done = 0.0

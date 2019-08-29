@@ -118,18 +118,21 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         :return None if opened or error as string if can't open
         """
 
-        url = r"http://172.18.10.11:8090/display/KB/{0}".format(tool_name)
-        # check if page exists
-        response = requests.get(
-            url,
-            headers={'Content-Type': 'application/json'},
-            auth=(self.app_vars.wiki_user, self.app_vars.wiki_pass)
-        )
-        if response:
-            link = QtCore.QUrl(url)
-            QtGui.QDesktopServices.openUrl(link)
-        else:
-            return "The {0} tool does not have a confluence page".format(tool_name)
+        try:
+            url = r"http://172.18.10.11:8090/display/KB/{0}".format(tool_name)
+            # check if page exists
+            response = requests.get(
+                url,
+                headers={'Content-Type': 'application/json'},
+                auth=(self.app_vars.wiki_user, self.app_vars.wiki_pass)
+            )
+            if response:
+                link = QtCore.QUrl(url)
+                QtGui.QDesktopServices.openUrl(link)
+            else:
+                return "The {0} tool does not have a confluence page".format(tool_name)
+        except requests.ConnectionError as e:
+            return "Could not connect to confluence, error is {0}".format(e)
 
     def get_tool_categories(self, display_name=False):
         """
@@ -272,7 +275,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                 return None
         try:
             return self._tools_info[tool_type][tool_category][tool_name]['version info'][0]["version"]
-        except (KeyError, TypeError):
+        except (IndexError, KeyError, TypeError):
             return None
 
     def get_tool_description(self, tool_type, tool_category, tool_name):
@@ -585,9 +588,9 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             thread_callback_args=[self.active_type, self.server_save_local_cache]
         )
         # download files
-        self.server_download_from_gui(update_data_dict)
+        self.server_download(update_data_dict, gui_mode=True)
 
-    def server_download_from_gui(self, tools_dict=None):
+    def server_download_from_gui_depr(self, tools_dict=None):
         """
         used with gui asset mngr
         downloads files for the tools in the tools dict, and updates the meta data on disk for that tool. Uses
@@ -692,9 +695,9 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                         else:
                             local_path = self._tools_info[tool_type][tool_category][tool_name]["local path"]
 
-                        # server_download expects a list of files, so pass list even though just one file
+                        # server_file_download expects a list of files, so pass list even though just one file
                         worker = pyani.core.ui.Worker(
-                            self.server_download,
+                            self.server_file_download,
                             False,
                             [cgt_path],
                             local_file_paths=[local_path],
@@ -702,8 +705,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
 
                         self.thread_total += 1.0
                         self.thread_pool.start(worker)
-                        # reset error list
-                        self.init_thread_error()
+
                         # slot that is called when a thread finishes, passes the active_type so calling classes can
                         # know what was updated and the save cache method so that when cache gets updated it can be
                         # saved
@@ -716,10 +718,11 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                         )
                         worker.signals.error.connect(self.send_thread_error)
 
-    def server_download_no_sync(self, tools_dict=None):
+    def server_download(self, tools_dict=None, debug=False, gui_mode=False):
         """
-        downloads files for the tools in the tools dict, but doesn't sync cache. Uses
-        multi-threading.
+        downloads files. If a tools list is provided only those tools will be downloaded, otherwise all tools are
+        downloaded. Gui mode provides cache syncing, otherwise the local cgt cache is not synced during download.
+        Uses multi-threading.
         :param tools_dict: a dict in format:
              {
                  tool type: {
@@ -729,9 +732,13 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                      }, more tool types...
              }
              If not provided downloads all tools
+        :param debug: if True don't download just save a json of cgt paths and local paths to download to
+                      saves to user's desktop as tools_dl_list.json
+        :param gui_mode: if True connects a slot that sends the active tool tab name and saves the local tool cache
+                         for use in gui mode of asset mngr
         :return error if occurs before threading starts.
         """
-        # set number of threads to one. have issues otherwise
+        # set number of threads to 3. have issues otherwise
         self.set_number_of_concurrent_threads(3)
 
         # if not visible then no other function called this, so we can show progress window
@@ -756,16 +763,22 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         # reset threads counters
         self._reset_thread_counters()
 
+        # lists for debugging
+        cgt_file_paths = list()
+        local_file_paths = list()
+
         # now use multi-threading to download
         for tool_type in tools_dict:
             for tool_category in tools_dict[tool_type]:
+                # need to download the cgt metadata as well - once per category
+                files_to_download = [self.app_vars.cgt_metadata_filename]
                 for tool_name in tools_dict[tool_type][tool_category]:
                     # some tools are folders, some are multiple files, so get folder or files
-                    files_to_download = [
-                        file_name for file_name in self._tools_info[tool_type][tool_category][tool_name]["files"]
-                    ]
-                    # need to download the cgt metadata as well
-                    files_to_download.append(self.app_vars.cgt_metadata_filename)
+                    files_to_download.extend(
+                        [
+                            file_name for file_name in self._tools_info[tool_type][tool_category][tool_name]["files"]
+                        ]
+                    )
 
                     for file_name in files_to_download:
                         # make path in cloud - dirs and files already have full path. metadata does not so make full
@@ -808,21 +821,56 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                         else:
                             local_path = self._tools_info[tool_type][tool_category][tool_name]["local path"]
 
-                        # server_download expects a list of files, so pass list even though just one file
-                        worker = pyani.core.ui.Worker(
-                            self.server_download,
-                            False,
-                            [cgt_path],
-                            local_file_paths=[local_path]
-                        )
-                        self.thread_total += 1.0
-                        self.thread_pool.start(worker)
+                        if debug:
+                            cgt_file_paths.append(cgt_path)
+                            local_file_paths.append(local_path)
+                        else:
+                            # server_file_download expects a list of files, so pass list even though just one file
+                            worker = pyani.core.ui.Worker(
+                                self.server_file_download,
+                                False,
+                                [cgt_path],
+                                local_file_paths=[local_path]
+                            )
+                            self.thread_total += 1.0
+                            self.thread_pool.start(worker)
 
-                        # slot that is called when a thread finishes
-                        worker.signals.finished.connect(self._thread_server_download_complete)
-                        worker.signals.error.connect(self.send_thread_error)
+                            # slot that is called when a thread finishes
+                            if gui_mode:
+                                # passes the active_type so calling classes can know what was updated
+                                # and the save cache method so that when cache gets updated it can be saved
+                                worker.signals.finished.connect(
+                                    functools.partial(
+                                        self._thread_server_sync_complete,
+                                        self.active_type,
+                                        self.server_save_local_cache
+                                    )
+                                )
+                            else:
+                                worker.signals.finished.connect(self._thread_server_download_complete)
+                            worker.signals.error.connect(self.send_thread_error)
+                        # reset list
+                        files_to_download = list()
+        if debug:
+            self.progress_win.setValue(100)
+            tools_file_paths_dict = {
+                "cgt" : cgt_file_paths,
+                "local" : local_file_paths
+            }
+            error = pyani.core.util.write_json(
+                os.path.join(self.app_vars.user_desktop, "tools_dl_list.json"), tools_file_paths_dict
+            )
+            if error:
+                return error
+            else:
+                return None
 
-    def server_build_local_cache(self, tools_dict=None, thread_callback=None, thread_callback_args=None):
+    def server_build_local_cache(
+            self,
+            tools_dict=None,
+            thread_callback=None,
+            thread_callback_args=None
+    ):
         """
         Creates a local cache representation of the server tools directories along with each tools metadata such as
         version and release notes. Runs a tool category per thread. Ex: maya scripts runs in a thread, maya plugins
@@ -967,6 +1015,12 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir'],
             files_and_dirs=True
         )
+        # log if no files, will help debug, probably an error on cgt where something got erased
+        if tools_found is None:
+            msg = "The directory {0} returned no files.".format(
+                self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir']
+            )
+            logger.error(msg)
 
         tools_no_extension = []
         # remove any extensions and non tool files
@@ -1039,7 +1093,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         local_temp_metadata_dir = [self.app_vars.tool_types[tool_type][tool_category]['local temp path']]
 
         # download the metadata which has version and release notes
-        error = self.server_download(server_metadata_paths, local_temp_metadata_dir)
+        error = self.server_file_download(server_metadata_paths, local_temp_metadata_dir)
 
         if error:
             error_fmt = "Could not read cgt tool metadata. Error is {0}".format(error)

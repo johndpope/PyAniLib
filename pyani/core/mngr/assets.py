@@ -241,7 +241,7 @@ class AniAssetMngr(AniCoreMngr):
             # no notes exist, so no error either
             return None, None
 
-        error = self.server_download(server_file_path, local_file_path)
+        error = self.server_file_download(server_file_path, local_file_path)
         if error:
             # couldn't download notes, return error
             return None, error
@@ -443,7 +443,7 @@ class AniAssetMngr(AniCoreMngr):
         )
 
         # downloads from the gui, which requires knowing which asset component was run
-        self.server_download_from_gui(update_data_dict)
+        self.server_download(update_data_dict, gui_mode=True)
 
     def sync_local_cache_with_server(self, update_data_dict=None):
         """
@@ -480,7 +480,7 @@ class AniAssetMngr(AniCoreMngr):
                 thread_callback_args=[self.active_asset_component, self.server_save_local_cache]
             )
 
-    def server_download_from_gui(self, assets_dict):
+    def server_download_from_gui_depr(self, assets_dict):
         """
         used with gui asset mngr
         downloads files for the assets in the asset dict, and updates the meta data on disk for that file. Uses
@@ -502,7 +502,7 @@ class AniAssetMngr(AniCoreMngr):
         # if not visible then no other function called this, so we can show progress window
         if not self.progress_win.isVisible():
             # reset progress
-            self.init_progress_window("Sync Progress", "Updating tools...")
+            self.init_progress_window("Sync Progress", "Updating assets...")
 
         # now use multi-threading to download
         for asset_type in assets_dict:
@@ -515,9 +515,9 @@ class AniAssetMngr(AniCoreMngr):
                             file_name
                         )
                         local_path = self._asset_info[asset_type][asset_component][asset_name]["local path"]
-                        # server_download expects a list of files, so pass list even though just one file
+                        # server_file_download expects a list of files, so pass list even though just one file
                         worker = pyani.core.ui.Worker(
-                            self.server_download,
+                            self.server_file_download,
                             False,
                             [server_path],
                             local_file_paths=[local_path],
@@ -537,10 +537,11 @@ class AniAssetMngr(AniCoreMngr):
                         )
                         worker.signals.error.connect(self.send_thread_error)
 
-    def server_download_no_sync(self, assets_dict=None):
+    def server_download(self, assets_dict=None, gui_mode=False):
         """
-        downloads files for the assets in the asset dict, but does not sync cache. Uses
-        multi-threading.
+        downloads files. If an asset list is provided only those assets will be downloaded, otherwise all assets are
+        downloaded. Gui mode provides cache syncing, otherwise the local cgt cache is not synced during download.
+        Uses multi-threading.
         :param assets_dict: a dict in format:
         {
              asset type: {
@@ -549,16 +550,21 @@ class AniAssetMngr(AniCoreMngr):
                  ]
                  }, more asset types...
         }
+        :param gui_mode: if True connects a slot that sends the active tool tab name and saves the local tool cache
+                         for use in gui mode of asset mngr
         """
         # set number of threads to max - can do this since running per asset
         self.set_number_of_concurrent_threads()
 
         self._reset_thread_counters()
 
+        # reset error list
+        self.init_thread_error()
+
         # if not visible then no other function called this, so we can show progress window
         if not self.progress_win.isVisible():
             # reset progress
-            self.init_progress_window("Sync Progress", "Updating tools...")
+            self.init_progress_window("Sync Progress", "Updating assets...")
 
         # now use multi-threading to download
         for asset_type in assets_dict:
@@ -571,9 +577,10 @@ class AniAssetMngr(AniCoreMngr):
                             file_name
                         )
                         local_path = self._asset_info[asset_type][asset_component][asset_name]["local path"]
-                        # server_download expects a list of files, so pass list even though just one file
+
+                        # server_file_download expects a list of files, so pass list even though just one file
                         worker = pyani.core.ui.Worker(
-                            self.server_download,
+                            self.server_file_download,
                             False,
                             [server_path],
                             local_file_paths=[local_path],
@@ -581,11 +588,23 @@ class AniAssetMngr(AniCoreMngr):
                         )
                         self.thread_total += 1.0
                         self.thread_pool.start(worker)
-                        # reset error list
-                        self.init_thread_error()
+
                         # slot that is called when a thread finishes
-                        worker.signals.finished.connect(self._thread_server_download_complete)
+                        if gui_mode:
+                            # passes the active component so calling classes can know what was updated
+                            # and the save cache method so that when cache gets updated it can be saved
+                            worker.signals.finished.connect(
+                                functools.partial(
+                                    self._thread_server_sync_complete,
+                                    self.active_asset_component,
+                                    self.server_save_local_cache
+                                )
+                            )
+                        else:
+                            worker.signals.finished.connect(self._thread_server_download_complete)
                         worker.signals.error.connect(self.send_thread_error)
+                        # reset list
+                        files_to_download = list()
 
     def server_build_local_cache(self, assets_dict=None, thread_callback=None, thread_callback_args=None):
         """

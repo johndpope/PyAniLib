@@ -923,11 +923,11 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         self.title_vert_spacer = QtWidgets.QSpacerItem(0, 15)
 
         # help doc button
-        if show_help:
+        if self.show_help:
             self.btn_help_doc = pyani.core.ui.ImageButton(
-                "{0}\help_off.png".format(app_vars.local_pyanitools_core_dir),
-                "{0}\help_on.png".format(app_vars.local_pyanitools_core_dir),
-                "{0}\help_on.png".format(app_vars.local_pyanitools_core_dir),
+                "{0}\help_doc_icons\help_off.png".format(app_vars.local_pyanitools_core_dir),
+                "{0}\help_doc_icons\help_on.png".format(app_vars.local_pyanitools_core_dir),
+                "{0}\help_doc_icons\help_on.png".format(app_vars.local_pyanitools_core_dir),
                 size=(148, 38)
             )
             self.btn_help_doc.clicked.connect(self._open_help_doc)
@@ -1062,9 +1062,12 @@ class AniQMainWindow(QtWidgets.QMainWindow):
             e.ignore()
 
     def _open_help_doc(self):
-        """Open help doc
+        """Open help doc. Displays error if can't connect or message to user if no confluence exists.
         """
+        self.msg_win.show_msg("Connection Info", "Connecting to Confluence...")
+        QtWidgets.QApplication.processEvents()
         error = self.tools_mngr.open_help_doc(self.tool_name)
+        self.msg_win.close()
         if error:
             self.msg_win.show_error_msg("Confluence Error", error)
 

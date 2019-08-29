@@ -58,7 +58,7 @@ class AniSetupGui(pyani.core.mngr.ui.core.AniTaskListWindow):
             },
             # download tools - pyani and maya
             {
-                'func': self.tools_mngr.server_download_no_sync,
+                'func': self.tools_mngr.server_download,
                 'params': [],
                 'finish signal': self.tools_mngr.finished_signal,
                 'error signal': self.tools_mngr.error_thread_signal,

@@ -337,7 +337,7 @@ class AniTaskListWindow(pyani.core.ui.AniQMainWindow):
         # some tasks are already multi-threaded, so only thread tasks that have the 'thread task' key in task list
         # set to True
         if task_list_package['thread task']:
-            # server_download expects a list of files, so pass list even though just one file
+            # server_file_download expects a list of files, so pass list even though just one file
             worker = pyani.core.ui.Worker(
                 self.method_to_run,
                 False,

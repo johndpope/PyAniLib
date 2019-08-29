@@ -837,7 +837,7 @@ class AniCoreMngr(QtCore.QObject):
             self.send_thread_error(error_fmt)
             return error_fmt
 
-    def server_download(self, server_file_paths, local_file_paths=None, update_local_version=False):
+    def server_file_download(self, server_file_paths, local_file_paths=None, update_local_version=False):
         """
         Downloads files from server
         :param server_file_paths: a list of server file paths
@@ -880,6 +880,7 @@ class AniCoreMngr(QtCore.QObject):
             self.app_vars.cgt_user,
             self.app_vars.cgt_pass
         ]
+
         try:
             output, error = pyani.core.util.call_ext_py_api(dl_command)
 
@@ -895,6 +896,7 @@ class AniCoreMngr(QtCore.QObject):
                 "Error occurred connecting to CGT. Error is {0}. Attempted to download files {1} to {2}"
                 .format(error, ', '.join(server_file_paths), ', '.join(local_dl_paths))
             )
+
             self.send_thread_error(error_fmt)
             logger.error(error_fmt)
             return error_fmt

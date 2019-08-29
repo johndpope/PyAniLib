@@ -64,6 +64,9 @@ class TestWindow(QtWidgets.QDialog):
         self.btn_show_tools_cache = QtWidgets.QPushButton("show tools cache unit test")
         self.btn_show_tools_cache.pressed.connect(self.show_tool_data)
 
+        self.btn_save_tools_download_list = QtWidgets.QPushButton("save the list of files to download")
+        self.btn_save_tools_download_list.pressed.connect(self.save_tools_to_dl)
+
         self.btn_build_tools_cache = QtWidgets.QPushButton("start tools cache build (complete rebuild) unit test")
         self.btn_build_tools_cache.pressed.connect(self.start_build_tools_cache_unit_test)
 
@@ -105,6 +108,7 @@ class TestWindow(QtWidgets.QDialog):
 
         layout.addWidget(QtWidgets.QLabel("<b>Tools Unit Tests</b>"))
         layout.addWidget(self.btn_show_tools_cache)
+        layout.addWidget(self.btn_save_tools_download_list)
         layout.addWidget(self.btn_build_tools_cache)
         layout.addWidget(self.btn_update_tools_cache)
         layout.addWidget(self.btn_update_config_new_tools)
@@ -221,7 +225,14 @@ class TestWindow(QtWidgets.QDialog):
         self.tools_mngr.update_config_file_after_sync(debug=True)
 
     def start_tools_download_unit_test(self):
-        self.tools_mngr.server_download_no_sync()
+        self.tools_mngr.server_download()
+
+    def save_tools_to_dl(self):
+        error = self.tools_mngr.server_download(debug=True)
+        if error:
+            print error
+        else:
+            print "Wrote tool list to desktop."
 
     def start_tools_cleanup(self):
         print self.tools_mngr.remove_files_not_on_server(debug=True)
