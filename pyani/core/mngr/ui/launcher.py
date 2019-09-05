@@ -1,6 +1,8 @@
 import os
 import sys
 import logging
+import psutil
+import time
 import pyani.core.ui
 import pyani.core.util
 import pyani.core.appvars
@@ -52,8 +54,13 @@ class AniAppRoamingLauncher(QtWidgets.QDialog):
     def run(self):
         """
         Copies and runs the application. Displays any errors, and exits after user presses ok. Also exist after
-        successfully running the provided application
+        successfully running the provided application. Closes any running instances before launching new instance
         """
+
+        # check for running instance of application and close, if fail then do not continue
+        if not self.close_active_instances():
+            self.close()
+            return
 
         # check if logging was setup correctly in main()
         if self.error_logging.error_log_list:
@@ -144,3 +151,30 @@ class AniAppRoamingLauncher(QtWidgets.QDialog):
             return
 
         sys.exit()
+
+    def close_active_instances(self):
+        """
+        Close any running instances of the application. Displays error message if can't close running instances of the
+        application
+        :return: True if closed, False if not closed
+        """
+        for proc in psutil.process_iter():
+            try:
+                # check name
+                if proc.name() == self.app_file_name:
+                    # check path, possible another application has the same name
+                    if proc.exe().lower() == self.app_path_in_temp_dir.lower():
+                        proc.kill()
+                        logger.info(
+                            "Killed pid: {0}, name: {1}, path: {2}".format(str(proc.pid), proc.name(), proc.exe())
+                        )
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as e:
+                self.msg_win.show_error_msg(
+                    "Launch Error",
+                    "An existing instance of the updater is running and can not close. Error is {0}".format(e)
+                )
+                logger.error(e)
+                return False
+        # pause for 1/4 a second, to ensure resources freed
+        time.sleep(0.25)
+        return True

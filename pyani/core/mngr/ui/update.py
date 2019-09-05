@@ -85,6 +85,19 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
             )
             progress_list.append("Checking for tool updates")
 
+            # copy launcher
+            self.task_list.append(
+                {
+                    'func': self.core_mngr.create_support_launcher,
+                    'params': [],
+                    'finish signal': self.core_mngr.finished_signal,
+                    'error signal': self.core_mngr.error_thread_signal,
+                    'thread task': True,
+                    'desc': "Updated the support launcher."
+                }
+            )
+            progress_list.append("Checking for support launcher updates.")
+
         # if show or shot assets present in update config file, download
         if self.show_and_shot_assets:
             self.task_list.append(
