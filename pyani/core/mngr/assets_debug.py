@@ -96,7 +96,9 @@ class AniAssetMngr(AniCoreMngr):
         :param asset_list: optional list of assets to check
         :return:
         """
+        logging.info("==========> in check_for_new_assets")
         if asset_component == "audio":
+            logging.info("==========> in check_for_new_assets with asset component = audio")
             self._check_for_new_audio(seqs=asset_list)
 
     def load_server_asset_info_cache(self):
@@ -556,12 +558,10 @@ class AniAssetMngr(AniCoreMngr):
         # set number of threads to max - can do this since running per asset
         self.set_number_of_concurrent_threads()
 
-        # if not in gui mode reset thread count and errors, otherwise don't because cache sync did this already
-        if not gui_mode:
-            # reset thread counters
-            self._reset_thread_counters()
-            # reset error list
-            self.init_thread_error()
+        self._reset_thread_counters()
+
+        # reset error list
+        self.init_thread_error()
 
         # if not visible then no other function called this, so we can show progress window
         if not self.progress_win.isVisible():
@@ -604,8 +604,9 @@ class AniAssetMngr(AniCoreMngr):
                             )
                         else:
                             worker.signals.finished.connect(self._thread_server_download_complete)
-
                         worker.signals.error.connect(self.send_thread_error)
+                        # reset list
+                        files_to_download = list()
 
     def server_build_local_cache(self, assets_dict=None, thread_callback=None, thread_callback_args=None):
         """
@@ -667,6 +668,7 @@ class AniAssetMngr(AniCoreMngr):
                         # make sure the sequence shot list loads
                         error = self.ani_vars.load_seq_shot_list()
                         if error:
+
                             return error
                         else:
                             # build a list of asset names as Seq###_Shot###
@@ -941,12 +943,14 @@ class AniAssetMngr(AniCoreMngr):
         # load the sequence/shot list
         error = self.ani_vars.load_seq_shot_list()
         if error:
+            logging.info("==========> error loading seq list = {0}".format(error))
             self.send_thread_error(error)
             return error
 
         # no sequences given, load all
         if not seqs:
             seqs = self.ani_vars.get_sequence_list()
+            logging.info("==========> loading seqs = {0}".format(','.join(seqs)))
 
         # set number of threads to max - can do this since running per asset
         self.set_number_of_concurrent_threads()
@@ -967,6 +971,7 @@ class AniAssetMngr(AniCoreMngr):
             self.ani_vars.update(seq)
             for shot in self.ani_vars.get_shot_list():
                 self.ani_vars.update(seq, shot)
+                logging.info("==========> launching timestamp for seq: {0}, shot: {1} with audio dir = {2}".format(seq, shot, self.ani_vars.shot_audio_dir))
                 worker = pyani.core.ui.Worker(
                     self._check_shot_audio_timestamp,
                     False,
@@ -1008,18 +1013,22 @@ class AniAssetMngr(AniCoreMngr):
 
         # if can't load, add last modified to file
         if not isinstance(audio_metadata, dict):
+            logging.info("==========> {0}, {1} \tfirst time checking file for audio, audio_metadata from load json = {2} ".format(seq, shot, audio_metadata))
             audio_metadata = {"last_modified": ""}
         # file loaded, get the date time
         else:
             # check if the key exists in metadata
             if 'last_modified' not in audio_metadata:
+                logging.info("==========> {0}, {1} \t missing last modified key, contents = {2}".format(seq, shot, audio_metadata))
                 audio_metadata['last_modified'] = ""
             else:
                 date_str = audio_metadata['last_modified']
+                logging.info("==========> {0}, {1} \t loaded last modified with value {2}".format(seq, shot, date_str))
                 try:
                     local_audio_modified_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
                 # couldn't convert date time into date object
                 except ValueError as error:
+                    logging.info("==========>  {0}, {1} \tcouldn't convert last modified to datetime obj, error is {2}".format(seq, shot, error))
                     self.shots_failed_checking_timestamp[seq][shot] = error
                     return
 
@@ -1032,8 +1041,13 @@ class AniAssetMngr(AniCoreMngr):
                 error = "Shot does not have an audio file."
             else:
                 error = "Could not convert date from CGT to a datetime object"
+            logging.info("==========>  {0}, {1} \t connected to cgt to get {2} and returned not a date time. error is {3}".format(seq, shot, audio_server_path, error))
             self.shots_failed_checking_timestamp[seq][shot] = error
             return
+
+        logging.info("==========>  {0}, {1} \t connected to cgt to get {1} and returned {2}".format(seq, shot, audio_server_path, server_modified_date.strftime("%Y-%m-%d %H:%M:%S")))
+
+        logging.info("==========>  {0}, {1} \t time comparison check, is server newer : {2}".format(seq, shot, str(server_modified_date > local_audio_modified_date)))
 
         # if audio file is newer, save and update modified date in audio info file
         if server_modified_date > local_audio_modified_date:
@@ -1044,8 +1058,10 @@ class AniAssetMngr(AniCoreMngr):
             # check if directory exists - because this check doesn't care if the audio file exists locally, just the
             # audio info file with the timestamp, the directory may not be there
             if not os.path.exists(audio_metadata_path):
+                logging.info("==========>  {0}, {1} \t audio local timestamp file missing, first time tracking".format(seq, shot))
                 error = pyani.core.util.make_all_dir_in_path(audio_dir)
                 if error:
+                    logging.info("==========>  {0}, {1} \t couldn't make audio dir, error is {2}".format(seq, shot, error))
                     self.shots_failed_checking_timestamp[seq][shot] = error
                 # just created for the first time, flag it
                 started_tracking = True
@@ -1054,9 +1070,11 @@ class AniAssetMngr(AniCoreMngr):
             # if an error occurred saving to disk, skip shot, otherwise it was written successfully so we
             # can record the shot as changed
             if error:
+                logging.info("==========>   {0}, {1} \tcouldn't save audio timestamp file, error is {2}".format(seq, shot, error))
                 self.shots_failed_checking_timestamp[seq][shot] = error
             # don't want to add newly tracked shots to report
             elif not started_tracking:
+                logging.info("==========>   {0}, {1} \tshot has changed audio: {1}".format(seq, shot))
                 self.shots_with_changed_audio[seq].append(shot)
 
     def _thread_audio_timestamp_check_complete(self):

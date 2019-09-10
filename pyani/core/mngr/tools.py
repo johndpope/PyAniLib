@@ -741,6 +741,13 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         # set number of threads to 3. have issues otherwise
         self.set_number_of_concurrent_threads(3)
 
+        # if not in gui mode reset thread count and errors, otherwise don't because cache sync did this already
+        if not gui_mode:
+            # reset error list
+            self.init_thread_error()
+            # reset threads counters
+            self._reset_thread_counters()
+
         # if not visible then no other function called this, so we can show progress window
         if not self.progress_win.isVisible():
             # reset progress
@@ -756,12 +763,6 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                 return error_msg
             else:
                 tools_dict = self._tools_info
-
-        # reset error list
-        self.init_thread_error()
-
-        # reset threads counters
-        self._reset_thread_counters()
 
         # lists for debugging
         cgt_file_paths = list()
@@ -911,8 +912,9 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             }
         }
         '''
-
         self._reset_thread_counters()
+        # reset thread errors
+        self.init_thread_error()
 
         # load existing cache if exists. Note if it can't be loaded and tools dict is provided, ignore tools dict
         # and rebuild entire cache to avoid cache being incomplete. i.e. can't build cache for certain tools if
@@ -962,8 +964,6 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                 )
                 self.thread_total += 1.0
                 self.thread_pool.start(worker)
-                # reset thread errors
-                self.init_thread_error()
 
                 # slot that is called when a thread finishes, pass the call back function to call when its done
                 # check if thread callback is cache update or cache update with download, if no callback,

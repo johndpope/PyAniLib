@@ -165,6 +165,7 @@ class AssetComponentTab(QtWidgets.QWidget):
             self.msg_win.show_info_msg(
                 "Sync Complete", "The selected assets were updated."
             )
+            self.build_asset_tree()
 
     def tracking_finished(self, tracking_info):
         asset_component = str(tracking_info[0])
