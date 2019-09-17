@@ -377,6 +377,11 @@ class AniCoreMngr(QtCore.QObject):
         return None
 
     def create_windows_task_sched(self):
+        """
+        Create the daily update task
+        :return: None if no errors and succeeds. error returned as a string. Also fires a signal via
+        send_thread_error() when in a multi-threaded mode and can't receive return values
+        """
         # create a task scheduler object
         task_scheduler = pyani.core.util.WinTaskScheduler(
             "pyanitools_update", r"'{0}' {1} {2}".format(
@@ -387,7 +392,15 @@ class AniCoreMngr(QtCore.QObject):
         )
 
         # remove existing task if there
-        if task_scheduler.is_task_scheduled():
+        is_scheduled = task_scheduler.is_task_scheduled()
+        # check for errors getting state
+        if not isinstance(is_scheduled, bool):
+            error_fmt = "Can't get Windows Task state. Error is: {0}".format(is_scheduled)
+            self.send_thread_error(error_fmt)
+            logging.error(error_fmt)
+            return error_fmt
+
+        if is_scheduled:
             error = task_scheduler.delete_task()
             if error:
                 error_fmt = "Can't Delete Windows Task. Error is: {0}".format(error)

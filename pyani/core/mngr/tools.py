@@ -87,7 +87,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         self.exclude_removal = [
             "cgt_metadata.json"
         ]
-        # list of existing tools so we can compare after a sync for newly added tools
+        # list of existing tools so we can compare after a sync for newly added or updated tools
         self._existing_tools_before_sync = dict()
 
     @property
@@ -1326,6 +1326,24 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
 
         self.finished_signal.emit(None)
         return errors_removing_files
+
+    def find_new_and_changed_tools(self):
+        new_tools = list()
+        changed_tools = list()
+
+        for tool_type in self._tools_info:
+            for tool_category in self._tools_info[tool_type]:
+                for tool_name in self._tools_info[tool_type][tool_category]:
+                    latest_version = self.get_tool_newest_version(tool_type, tool_category, tool_name)
+                    try:
+                        old_version = self._existing_tools_before_sync[tool_type][tool_category][tool_name]['version info'][0]['version']
+                        if not old_version == latest_version:
+                            changed_tools.append(tool_name)
+                    # means new tool, since entry isn't in old tools cache
+                    except (KeyError, IndexError) as e:
+                        new_tools.append(tool_name)
+
+        return new_tools, changed_tools
 
     def _reset_thread_counters(self):
         # reset threads counters

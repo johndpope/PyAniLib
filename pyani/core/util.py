@@ -69,9 +69,10 @@ class WinTaskScheduler:
         :param start_time: optional start time
         :return: any errors, otherwise None
         """
-        is_scheduled, error = self.is_task_scheduled()
-        if error:
-            return error
+        is_scheduled = self.is_task_scheduled()
+        # check for errors getting state
+        if not isinstance(is_scheduled, bool):
+            return is_scheduled
 
         if not is_scheduled:
             p = subprocess.Popen(
@@ -102,7 +103,7 @@ class WinTaskScheduler:
         """
         checks for a task in windows scheduler using the command line tool schtasks. Uses syntax:
         schtasks /query which returns a table format.
-        :returns: True if scheduled, False if not. Also returns error if encountered any, otherwise None
+        :returns: True if scheduled, False if not, or error as string
         """
         p = subprocess.Popen(["schtasks", "/Query"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         output, error = p.communicate()
@@ -114,11 +115,11 @@ class WinTaskScheduler:
                 error
             )
             logger.error(error)
-            return False, error
+            return error
         if re.search(r'\b{0}\b'.format(self.task_name), output):
-            return True, None
+            return True
         else:
-            return False, None
+            return False
 
     def is_task_enabled(self):
         """
@@ -126,9 +127,11 @@ class WinTaskScheduler:
         schtasks /query /tn "task name" /v /fo list
         :returns: true if enabled, false if not, or returns error as string
         """
-        is_scheduled, error = self.is_task_scheduled()
-        if error:
-            return error
+        is_scheduled = self.is_task_scheduled()
+        # check for errors getting state
+        if not isinstance(is_scheduled, bool):
+            return is_scheduled
+
         # only attempt to disable or enable if the task exists
         if is_scheduled:
             p = subprocess.Popen(
@@ -163,9 +166,11 @@ class WinTaskScheduler:
         :param enabled: True or False
         :return: error as string or None
         """
-        is_scheduled, error = self.is_task_scheduled()
-        if error:
-            return error
+        is_scheduled = self.is_task_scheduled()
+        # check for errors getting state
+        if not isinstance(is_scheduled, bool):
+            return is_scheduled
+
         # only attempt to disable or enable if the task exists
         if is_scheduled:
             if enabled:
@@ -240,26 +245,31 @@ class WinTaskScheduler:
 
     def delete_task(self):
         """
-        Deletes a task
+        Deletes a task, checks that it exists before deleting
         :return: error if encountered as a string, otherwise None
         """
-        p = subprocess.Popen(
-            ["schtasks", "/Delete", "/tn", self.task_name, "/f"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        output, error = p.communicate()
-        logging.info("task query is: {0}".format(output))
-        if p.returncode != 0:
-            error = "Problem deleting task {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
-                self.task_name,
-                p.returncode,
-                output,
-                error
+        is_scheduled = self.is_task_scheduled()
+        # check for errors getting state
+        if isinstance(is_scheduled, bool) and is_scheduled:
+            p = subprocess.Popen(
+                ["schtasks", "/Delete", "/tn", self.task_name, "/f"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
             )
-            logger.error(error)
-            return error
-        return None
+            output, error = p.communicate()
+            logging.info("task query is: {0}".format(output))
+            if p.returncode != 0:
+                error = "Problem deleting task {0}. Return Code is {1}. Output is {2}. Error is {3} ".format(
+                    self.task_name,
+                    p.returncode,
+                    output,
+                    error
+                )
+                logger.error(error)
+                return error
+            return None
+        else:
+            return None
 
 """
 Threaded copy - faster than multi proc copy, and 2-3x speed up over sequential copy

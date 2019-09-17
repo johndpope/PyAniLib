@@ -1,6 +1,12 @@
+'''
+Go to Run > Edit Configurations and remove from tests if pyTest trying to run. PyTest tries to auto-discover
+files with 'test' in them
+'''
+
 import os
 import sys
 import json
+import copy
 import pyani.core.mngr.core
 import pyani.core.mngr.assets
 import pyani.core.mngr.tools
@@ -88,6 +94,9 @@ class TestWindow(QtWidgets.QDialog):
         self.btn_get_tools_notes = QtWidgets.QPushButton("get notes")
         self.btn_get_tools_notes.pressed.connect(self.get_tools_notes)
 
+        self.btn_get_new_and_changed_tools = QtWidgets.QPushButton("get new and changed tools")
+        self.btn_get_new_and_changed_tools.pressed.connect(self.get_new_and_changed_tools)
+
         self.version_input = QtWidgets.QLineEdit()
 
         layout = QtWidgets.QVBoxLayout()
@@ -115,6 +124,7 @@ class TestWindow(QtWidgets.QDialog):
         layout.addWidget(self.btn_download_tools)
         layout.addWidget(self.btn_tools_cleanup)
         layout.addWidget(self.btn_get_tools_version)
+        layout.addWidget(self.btn_get_new_and_changed_tools)
         layout.addWidget(QtWidgets.QLabel("version ('latest') or number:"))
         layout.addWidget(self.version_input)
         layout.addWidget(self.btn_get_tools_notes)
@@ -233,6 +243,20 @@ class TestWindow(QtWidgets.QDialog):
             print error
         else:
             print "Wrote tool list to desktop."
+
+    def get_new_and_changed_tools(self):
+        # this is all stuff handled by sync
+        error = self.tools_mngr.load_local_tool_cache_data()
+        if error:
+            print("Can't load cache, error is {0}".format(error))
+            return
+        self.tools_mngr._existing_tools_before_sync = copy.deepcopy(self.tools_mngr._tools_info)
+
+        new_tools, updated_tools = self.tools_mngr.find_new_and_changed_tools()
+        print("New Tools")
+        print ', '.join(new_tools)
+        print("Changed Tools")
+        print ', '.join(updated_tools)
 
     def start_tools_cleanup(self):
         print self.tools_mngr.remove_files_not_on_server(debug=True)

@@ -1,6 +1,7 @@
 import os
 import logging
 import functools
+import copy
 from datetime import datetime
 # need to import _strptime for multi-threading, a known python 2.7 bug
 import _strptime
@@ -80,6 +81,9 @@ class AniAssetMngr(AniCoreMngr):
         # record of errors that occur checking audio timestamps  as dict
         # { seq name: {shot name: error}, {shot name: error}, ... }
         self.shots_failed_checking_timestamp = dict()
+
+        # list of existing assets so we can compare after a sync for newly added or updated assets
+        self._existing_assets_before_sync = dict()
 
     @property
     def active_asset_component(self):
@@ -636,6 +640,13 @@ class AniAssetMngr(AniCoreMngr):
             # reset progress
             self.init_progress_window("Cache Progress", "Creating cache...")
 
+        # load existing cache if exists and store in a copy
+        error = self.load_server_asset_info_cache()
+        if not error:
+            self._existing_assets_before_sync = copy.deepcopy(self._asset_info)
+        # reset cache, as it is built below
+        self._asset_info = dict()
+
         # if no asset type was provided, rebuild cache for all asset types
         if not assets_dict:
             asset_types = self.app_vars.asset_types
@@ -1114,7 +1125,7 @@ class AniAssetMngr(AniCoreMngr):
         shot_font_size = Font(size=12)
 
         # create data
-        for seq in self.shots_with_changed_audio:
+        for seq in sorted(self.shots_with_changed_audio):
             active_sheet.cell(row_index, column=1).value = seq
             # apply fill color and font to cell
             active_sheet.cell(row_index, column=1).fill = seq_row_fill

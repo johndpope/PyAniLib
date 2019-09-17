@@ -1,4 +1,5 @@
 import os
+import sys
 import datetime
 import pyani.core.util
 import logging
@@ -15,7 +16,7 @@ import pyani.core.mngr.tools
 os.environ['QT_API'] = 'pyqt'
 # import from QtPy instead of doing it directly
 # note that QtPy always uses PyQt5 API
-from qtpy import QtWidgets, QtCore, QtGui
+from qtpy import QtWidgets
 
 logger = logging.getLogger()
 
@@ -860,7 +861,7 @@ class ToolsTab(QtWidgets.QWidget):
                 columns=col_count
             )
 
-        # collpase certain tool categories
+        # collapse certain tool categories
         for tool_cat_to_collapse in self._tool_categories_to_collapse:
             self.tools_tree.collapse_item(tool_cat_to_collapse)
 
@@ -1131,6 +1132,10 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         self.auto_dl_am_pm.addItem("PM")
         self.btn_auto_dl_update_time = QtWidgets.QPushButton("Update Run Time")
 
+        # if task is missing, this button shows
+        self.btn_create_task = QtWidgets.QPushButton("Create Daily Update Task")
+        self.btn_create_task.setStyleSheet("background-color:{0};".format(pyani.core.ui.GREEN))
+
         self.create_layout()
         self.set_slots()
 
@@ -1209,6 +1214,7 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
                 )
             )
         )
+
         # set initial state of auto download
         state = self.task_scheduler.is_task_enabled()
         if not isinstance(state, bool):
@@ -1229,6 +1235,16 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
                 self.font_size, self.font_family, pyani.core.ui.GRAY_MED, state_label
             )
         )
+
+        # check if task exists, if not show create task button
+        is_scheduled = self.task_scheduler.is_task_scheduled()
+
+        if not is_scheduled:
+            options_create_task_layout = QtWidgets.QHBoxLayout()
+            options_create_task_layout.addWidget(self.btn_create_task)
+            options_create_task_layout.addStretch(1)
+            options_layout.addLayout(options_create_task_layout)
+            options_layout.addItem(QtWidgets.QSpacerItem(1, 30))
 
         options_auto_update_enabled_layout = QtWidgets.QHBoxLayout()
         options_auto_update_enabled_layout.addWidget(self.auto_dl_label)
@@ -1271,6 +1287,7 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         self.btn_update.clicked.connect(self.update)
         self.btn_install.clicked.connect(self.reinstall)
         self.btn_auto_dl_update_time.clicked.connect(self.update_auto_dl_time)
+        self.btn_create_task.clicked.connect(self.create_missing_task)
         self.tabs.currentChanged.connect(self.tab_changed)
         self.tools_mngr.error_thread_signal.connect(self.show_multithreaded_error)
         self.asset_mngr.error_thread_signal.connect(self.show_multithreaded_error)
@@ -1287,6 +1304,40 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         # the tool manager - note that unlike assets, we don't have a user friendly name, so we use lower
         if self.tabs.currentWidget().name in self.tools_mngr.get_tool_categories(display_name=True):
             self.tools_mngr.active_type = self.tabs.currentWidget().name
+
+    def create_missing_task(self):
+        """
+        Adds the daily update task with run time 12:00 pm
+        """
+        error = self.task_scheduler.setup_task(schedule_type="daily", start_time="12:00")
+        if error:
+            self.msg_win.show_warning_msg(
+                "Task Scheduling Error",
+                "Could not create task {0}. Error is {1}".format(
+                    self.task_scheduler.task_name,
+                    error
+                )
+            )
+        else:
+            self.msg_win.show_info_msg(
+                "Task Success",
+                "The daily update task was created."
+            )
+            self.auto_dl_label.setText(
+                "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+                "Auto-download of updates from server "
+                "<font color='{2}'><i>(Currently: Enabled)</font></i></span>".format(
+                    self.font_size, self.font_family, pyani.core.ui.GRAY_MED
+                )
+            )
+            self.auto_dl_run_time_label.setText(
+                "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+                "Change Update Time  "
+                "<font color='{2}'><i>(Current Update Time: 12:00 PM)</font></i></span>".format(
+                    self.font_size, self.font_family, pyani.core.ui.GRAY_MED
+                )
+            )
+            self.btn_create_task.hide()
 
     def update_auto_dl_state(self):
         """
@@ -1328,6 +1379,7 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         """
         Update the run time for the auto updates
         """
+        run_time = "n/a"
         try:
             # get hour an minute from input
             hour = str(self.auto_dl_hour.text())
@@ -1377,23 +1429,25 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         app_path = app_vars.local_pyanitools_core_dir
         app_name = app_vars.pyanitools_setup_app_name
 
-        # launch app
-        error = pyani.core.util.launch_app(
-            app_vars.pyanitools_support_launcher_path,
-            [app_path, app_name],
-            open_as_new_process=True
-        )
-        if error:
-            self.msg_win.show_error_msg(
-                "Setup Error",
-                "Could not copy setup application for re-installation. Error is {0}".format(error)
+        response = self.msg_win.show_question_msg("Auto Close Warning",
+                                                  "This application will close now so the install can run. "
+                                                  "Press Yes to continue or No to cancel. Ok to continue?"
+                                                  )
+        if response:
+            # launch app
+            error = pyani.core.util.launch_app(
+                app_vars.pyanitools_support_launcher_path,
+                [app_path, app_name],
+                open_as_new_process=True
             )
-            logger.error(error)
-            return
-
-        self.msg_win.show_info_msg("Restart Required", "A few windows will open and close until the setup window "
-                                                       "appears. This is normal. Please close this application "
-                                                       "and re-open after the re-install finishes.")
+            if error:
+                self.msg_win.show_error_msg(
+                    "Setup Error",
+                    "Could not copy setup application for re-installation. Error is {0}".format(error)
+                )
+                logger.error(error)
+                return
+            sys.exit()
 
     def update(self):
         """
@@ -1403,20 +1457,26 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         app_path = app_vars.local_pyanitools_core_dir
         app_name = app_vars.pyanitools_update_app_name
 
-        # launch app
-        error = pyani.core.util.launch_app(
-            app_vars.pyanitools_support_launcher_path,
-            [app_path, app_name],
-            open_as_new_process=True
-        )
-        if error:
-            self.msg_win.show_error_msg(
-                "Setup Error",
-                "Could not copy update application to update files. Error is {0}".format(error)
+        response = self.msg_win.show_question_msg("Auto Close Warning",
+                                                  "This application will close now so the asset manager can "
+                                                  "update. Press Yes to continue or No to cancel. Ok to continue?"
+                                                  )
+        if response:
+            # launch app
+            error = pyani.core.util.launch_app(
+                app_vars.pyanitools_support_launcher_path,
+                [app_path, app_name],
+                open_as_new_process=True
             )
-            logger.error(error)
-            return
+            if error:
+                self.msg_win.show_error_msg(
+                    "Setup Error",
+                    "Could not copy update application to update files. Error is {0}".format(error)
+                )
+                logger.error(error)
+                return
+            sys.exit()
 
-        self.msg_win.show_info_msg("Restart Required", "A few windows will open and close until the update window "
-                                                       "appears. This is normal. Please close this application "
-                                                       "and re-open after the update finishes.")
+
+
+
