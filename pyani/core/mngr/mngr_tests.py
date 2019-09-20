@@ -63,6 +63,14 @@ class TestWindow(QtWidgets.QDialog):
         self.btn_audio_changed_report_unit_test = QtWidgets.QPushButton("start audio changed report unit test")
         self.btn_audio_changed_report_unit_test.pressed.connect(self.start_audio_changed_report_unit_test)
 
+        # dpwnload assets in update config
+        self.btn_assets_download_update_config_unit_test = QtWidgets.QPushButton("start download assets in update config unit test")
+        self.btn_assets_download_update_config_unit_test.pressed.connect(self.start_download_assets_in_update_config_test)
+
+        # cleans up update config if any assets non longer exist
+        self.btn_sync_update_config_assets = QtWidgets.QPushButton("start sync assets in update config unit test")
+        self.btn_sync_update_config_assets.pressed.connect(self.start_sync_update_config_assets)
+
         '''
         -----------------------------------------------------------------------------------------------------------
         '''
@@ -114,6 +122,8 @@ class TestWindow(QtWidgets.QDialog):
         layout.addWidget(self.btn_update_version_after_dl_unit_test)
         layout.addWidget(self.btn_audio_changed_unit_test)
         layout.addWidget(self.btn_audio_changed_report_unit_test)
+        layout.addWidget(self.btn_assets_download_update_config_unit_test)
+        layout.addWidget(self.btn_sync_update_config_assets)
 
         layout.addWidget(QtWidgets.QLabel("<b>Tools Unit Tests</b>"))
         layout.addWidget(self.btn_show_tools_cache)
@@ -183,11 +193,40 @@ class TestWindow(QtWidgets.QDialog):
         # look for finished message
         self.asset_mngr.sync_local_cache_with_server()
 
+    def start_download_assets_in_update_config_test(self):
+        # for finding assets
+        class Found(Exception): pass
+
+        show_and_shot_assets = None
+
+        # load the assets that we want to update - includes tool assets, show assets, and shot assets
+        assets_to_update = self.core_mngr.read_update_config()
+        if not isinstance(assets_to_update, dict):
+            return "Could not load the update configuration file. Error is {0}".format(assets_to_update)
+
+        # all show and shot assets
+        potential_assets = {key: value for key, value in assets_to_update.items() if not key == 'tools'}
+        # could be empty, make sure there are assets, not just types or components
+        try:
+            for asset_type in potential_assets:
+                for asset_component in potential_assets[asset_type]:
+                    if potential_assets[asset_type][asset_component]:
+                        # found an asset, so can quit looking, just need one
+                        raise Found
+        except Found:
+            show_and_shot_assets = potential_assets
+
+        if show_and_shot_assets:
+            self.asset_mngr.server_download(assets_dict=show_and_shot_assets)
+
+    def start_sync_update_config_assets(self):
+        self.asset_mngr.update_config_file_after_sync(debug=True)
+
     def start_build_tools_cache_unit_test(self):
         self.tools_mngr.sync_local_cache_with_server()
 
     def start_audio_changed_unit_test(self):
-        self.asset_mngr.check_for_new_assets("audio", asset_list="Seq050")
+        self.asset_mngr.check_for_new_assets("audio", asset_list="Seq040")
 
     def start_audio_changed_report_unit_test(self):
         self.asset_mngr.shots_with_changed_audio["Seq050"] = ["Shot010", "Shot030", "Shot160"]
@@ -244,13 +283,23 @@ class TestWindow(QtWidgets.QDialog):
         else:
             print "Wrote tool list to desktop."
 
-    def get_new_and_changed_tools(self):
-        # this is all stuff handled by sync
-        error = self.tools_mngr.load_local_tool_cache_data()
-        if error:
-            print("Can't load cache, error is {0}".format(error))
-            return
-        self.tools_mngr._existing_tools_before_sync = copy.deepcopy(self.tools_mngr._tools_info)
+    def get_new_and_changed_tools(self, use_sync=False):
+
+        if use_sync:
+            pass
+        else:
+            # this is all stuff handled by sync
+            error = self.tools_mngr.load_local_tool_cache_data()
+            if error:
+                print("Can't load old cache, error is {0}".format(error))
+                return
+            self.tools_mngr._existing_tools_before_sync = copy.deepcopy(self.tools_mngr._tools_info)
+
+            cache = pyani.core.util.load_json("C:\Users\Patrick\.PyAniTools\cgt_tools_cache_new.json")
+            if not isinstance(cache, dict):
+                print("Can't load new cache, error is {0}".format(cache))
+                return
+            self.tools_mngr._tools_info = cache
 
         new_tools, updated_tools = self.tools_mngr.find_new_and_changed_tools()
         print("New Tools")

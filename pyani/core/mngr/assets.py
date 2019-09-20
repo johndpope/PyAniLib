@@ -75,7 +75,15 @@ class AniAssetMngr(AniCoreMngr):
         self.active_asset_component = None
 
         # records of changed audio stored as dict:
-        # { seq name: [ shot name, shot name, ...] }
+        '''
+        { 
+            seq name: [ 
+                (shot name, modified date), 
+                (shot name, modified date),
+                ...
+            ] 
+        }
+        '''
         self.shots_with_changed_audio = dict()
 
         # record of errors that occur checking audio timestamps  as dict
@@ -365,6 +373,63 @@ class AniAssetMngr(AniCoreMngr):
                 return error
             return None
 
+    def update_config_file_after_sync(self, debug=False):
+        # pull the config data off disk
+        existing_config_data = pyani.core.util.load_json(self.app_vars.update_config_file)
+        # check if config data loaded
+        if not isinstance(existing_config_data, dict):
+            error = "Error loading update config file from disk. Error is: {0}".format(existing_config_data)
+            self.send_thread_error(error)
+            return error
+
+        # load asset info cache
+        error = self.load_server_asset_info_cache()
+        if error:
+            self.send_thread_error(error)
+            return error
+
+        # assets in current update config
+        assets_in_update_config = {key: value for key, value in existing_config_data.items() if not key == 'tools'}
+
+        # assets to remove - list of tuples where tuple is (asset type, asset component, asset name)
+        assets_to_remove = list()
+
+        # find any assets that no longer exist
+        if assets_in_update_config:
+            for asset_type in assets_in_update_config:
+                for asset_component in assets_in_update_config[asset_type]:
+                    for asset_name in assets_in_update_config[asset_type][asset_component]:
+                        if not pyani.core.util.find_val_in_nested_dict(
+                                self._asset_info, [asset_type, asset_component, asset_name]
+                        ):
+                            assets_to_remove.append((asset_type, asset_component, asset_name))
+
+        # remove non-existent assets, also removes any empty asset components and asset types
+        if assets_to_remove:
+            for asset in assets_to_remove:
+                asset_type, asset_component, asset_name = asset
+                # remove asset
+                existing_config_data[asset_type][asset_component].remove(asset_name)
+                # check if asset_component empty
+                if not existing_config_data[asset_type][asset_component]:
+                    del existing_config_data[asset_type][asset_component]
+                # check if asset type empty
+                if not existing_config_data[asset_type]:
+                    del existing_config_data[asset_type]
+
+        if debug:
+            print "Updated Config Data Is Now:"
+            print existing_config_data
+        else:
+            error = pyani.core.util.write_json(self.app_vars.update_config_file, existing_config_data, indent=4)
+            if error:
+                error_fmt = "Could not save sync'd update config file. Error is {0}".format(error)
+                self.send_thread_error(error_fmt)
+                return error_fmt
+
+        self.finished_signal.emit(None)
+        return None
+
     def update_local_cache(self, asset_type, asset_component, asset_name, asset_update_info):
         """
         Updates the cache on disk with data provided. Does not connect to server. Only uses the asset info passed in
@@ -484,63 +549,6 @@ class AniAssetMngr(AniCoreMngr):
                 thread_callback_args=[self.active_asset_component, self.server_save_local_cache]
             )
 
-    def server_download_from_gui_depr(self, assets_dict):
-        """
-        used with gui asset mngr
-        downloads files for the assets in the asset dict, and updates the meta data on disk for that file. Uses
-        multi-threading.
-        :param assets_dict: a dict in format:
-        {
-             asset type: {
-                 asset component(s): [
-                     asset name(s)
-                 ]
-                 }, more asset types...
-        }
-        """
-        # set number of threads to max - can do this since running per asset
-        self.set_number_of_concurrent_threads()
-
-        self._reset_thread_counters()
-
-        # if not visible then no other function called this, so we can show progress window
-        if not self.progress_win.isVisible():
-            # reset progress
-            self.init_progress_window("Sync Progress", "Updating assets...")
-
-        # now use multi-threading to download
-        for asset_type in assets_dict:
-            for asset_component in assets_dict[asset_type]:
-                for asset_name in assets_dict[asset_type][asset_component]:
-                    # could be more than one file
-                    for file_name in self._asset_info[asset_type][asset_component][asset_name]["file name"]:
-                        server_path = "{0}/{1}".format(
-                            self._asset_info[asset_type][asset_component][asset_name]["cgt path"],
-                            file_name
-                        )
-                        local_path = self._asset_info[asset_type][asset_component][asset_name]["local path"]
-                        # server_file_download expects a list of files, so pass list even though just one file
-                        worker = pyani.core.ui.Worker(
-                            self.server_file_download,
-                            False,
-                            [server_path],
-                            local_file_paths=[local_path],
-                            update_local_version=True
-                        )
-                        self.thread_total += 1.0
-                        self.thread_pool.start(worker)
-                        # reset error list
-                        self.init_thread_error()
-                        # slot that is called when a thread finishes
-                        worker.signals.finished.connect(
-                            functools.partial(
-                                self._thread_server_sync_complete,
-                                self.active_asset_component,
-                                self.server_save_local_cache
-                            )
-                        )
-                        worker.signals.error.connect(self.send_thread_error)
-
     def server_download(self, assets_dict=None, gui_mode=False):
         """
         downloads files. If an asset list is provided only those assets will be downloaded, otherwise all assets are
@@ -572,44 +580,56 @@ class AniAssetMngr(AniCoreMngr):
             # reset progress
             self.init_progress_window("Sync Progress", "Updating assets...")
 
+        # make sure asset info is loaded
+        if not self._asset_info:
+            error = self.load_server_asset_info_cache()
+            if error:
+                self.send_thread_error(error)
+                return error
+
         # now use multi-threading to download
         for asset_type in assets_dict:
             for asset_component in assets_dict[asset_type]:
                 for asset_name in assets_dict[asset_type][asset_component]:
-                    # could be more than one file
-                    for file_name in self._asset_info[asset_type][asset_component][asset_name]["file name"]:
-                        server_path = "{0}/{1}".format(
-                            self._asset_info[asset_type][asset_component][asset_name]["cgt path"],
-                            file_name
-                        )
-                        local_path = self._asset_info[asset_type][asset_component][asset_name]["local path"]
-
-                        # server_file_download expects a list of files, so pass list even though just one file
-                        worker = pyani.core.ui.Worker(
-                            self.server_file_download,
-                            False,
-                            [server_path],
-                            local_file_paths=[local_path],
-                            update_local_version=True
-                        )
-                        self.thread_total += 1.0
-                        self.thread_pool.start(worker)
-
-                        # slot that is called when a thread finishes
-                        if gui_mode:
-                            # passes the active component so calling classes can know what was updated
-                            # and the save cache method so that when cache gets updated it can be saved
-                            worker.signals.finished.connect(
-                                functools.partial(
-                                    self._thread_server_sync_complete,
-                                    self.active_asset_component,
-                                    self.server_save_local_cache
-                                )
+                    # make sure asset exists, can't download non-existent asset
+                    if pyani.core.util.find_val_in_nested_dict(
+                            self._asset_info,
+                            [asset_type, asset_component, asset_name]
+                    ):
+                        # could be more than one file
+                        for file_name in self._asset_info[asset_type][asset_component][asset_name]["file name"]:
+                            server_path = "{0}/{1}".format(
+                                self._asset_info[asset_type][asset_component][asset_name]["cgt path"],
+                                file_name
                             )
-                        else:
-                            worker.signals.finished.connect(self._thread_server_download_complete)
+                            local_path = self._asset_info[asset_type][asset_component][asset_name]["local path"]
 
-                        worker.signals.error.connect(self.send_thread_error)
+                            # server_file_download expects a list of files, so pass list even though just one file
+                            worker = pyani.core.ui.Worker(
+                                self.server_file_download,
+                                False,
+                                [server_path],
+                                local_file_paths=[local_path],
+                                update_local_version=True
+                            )
+                            self.thread_total += 1.0
+                            self.thread_pool.start(worker)
+
+                            # slot that is called when a thread finishes
+                            if gui_mode:
+                                # passes the active component so calling classes can know what was updated
+                                # and the save cache method so that when cache gets updated it can be saved
+                                worker.signals.finished.connect(
+                                    functools.partial(
+                                        self._thread_server_sync_complete,
+                                        self.active_asset_component,
+                                        self.server_save_local_cache
+                                    )
+                                )
+                            else:
+                                worker.signals.finished.connect(self._thread_server_download_complete)
+
+                            worker.signals.error.connect(self.send_thread_error)
 
     def server_build_local_cache(self, assets_dict=None, thread_callback=None, thread_callback_args=None):
         """
@@ -644,12 +664,12 @@ class AniAssetMngr(AniCoreMngr):
         error = self.load_server_asset_info_cache()
         if not error:
             self._existing_assets_before_sync = copy.deepcopy(self._asset_info)
-        # reset cache, as it is built below
-        self._asset_info = dict()
 
         # if no asset type was provided, rebuild cache for all asset types
         if not assets_dict:
             asset_types = self.app_vars.asset_types
+            # reset cache, doing a complete rebuild
+            self._asset_info = dict()
         else:
             asset_types = assets_dict.keys()
 
@@ -1066,9 +1086,10 @@ class AniAssetMngr(AniCoreMngr):
             # can record the shot as changed
             if error:
                 self.shots_failed_checking_timestamp[seq][shot] = error
-            # don't want to add newly tracked shots to report
+            # don't want to add newly tracked shots to report, i.e. skip them since we don't have any local date
+            # information
             elif not started_tracking:
-                self.shots_with_changed_audio[seq].append(shot)
+                self.shots_with_changed_audio[seq].append((shot, timestamp))
 
     def _thread_audio_timestamp_check_complete(self):
         """
@@ -1134,14 +1155,21 @@ class AniAssetMngr(AniCoreMngr):
             active_sheet.merge_cells(start_row=row_index, start_column=1, end_row=row_index, end_column=merge_length)
             row_index += 1
 
-            shot_list = self.shots_with_changed_audio[seq]
+            # a seq in shots_with_changed_audio may be empty, so check with a try..except so zip doesn't error
+            # unpacking
+            try:
+                # a list of tuples so unpack into dict key value pair
+                shot_date_list = dict(self.shots_with_changed_audio[seq])
+                shot_list = shot_date_list.keys()
+            except ValueError:
+                shot_list = list()
 
             # does seq exist in errored list, if so get shots
             if seq in self.shots_failed_checking_timestamp:
                 # get a list of all shots both errored and changed audio so they can be in order sorted
                 shot_list.extend(self.shots_failed_checking_timestamp[seq].keys())
 
-            for shot in sorted(shot_list):
+            for shot_index, shot in enumerate(sorted(shot_list)):
                 if pyani.core.util.find_val_in_nested_dict(self.shots_failed_checking_timestamp, [seq, shot]):
                     active_sheet.cell(row_index, column=1).value = "{0} : {1}".format(
                         shot,
@@ -1149,21 +1177,37 @@ class AniAssetMngr(AniCoreMngr):
                     )
                 else:
                     active_sheet.cell(row_index, column=1).value = shot
-                # apply font size
+                    # add space between shot name and date
+                    active_sheet.cell(row_index, column=2).value = "        "
+                    active_sheet.cell(row_index, column=3).value = shot_date_list[shot]
+
+                # apply font size - don't care about column 2, its empty
                 active_sheet.cell(row_index, column=1).font = shot_font_size
-                # figure out fill - error, or light or dark color
+                active_sheet.cell(row_index, column=3).font = shot_font_size
+
+                # figure out fill - error, or light or dark color and merge cells
                 if pyani.core.util.find_val_in_nested_dict(self.shots_failed_checking_timestamp, [seq, shot]):
                     active_sheet.cell(row_index, column=1).fill = shot_row_fill_error
+                    # merge cells
+                    active_sheet.merge_cells(start_row=row_index, start_column=1, end_row=row_index,
+                                             end_column=merge_length)
                 elif alternate_row_color:
                     active_sheet.cell(row_index, column=1).fill = shot_row_fill_shaded_light
+                    active_sheet.cell(row_index, column=2).fill = shot_row_fill_shaded_light
+                    active_sheet.cell(row_index, column=3).fill = shot_row_fill_shaded_light
+                    # merge cells
+                    active_sheet.merge_cells(start_row=row_index, start_column=3, end_row=row_index,
+                                             end_column=merge_length)
                 else:
                     active_sheet.cell(row_index, column=1).fill = shot_row_fill_shaded_dark
+                    active_sheet.cell(row_index, column=2).fill = shot_row_fill_shaded_dark
+                    active_sheet.cell(row_index, column=3).fill = shot_row_fill_shaded_dark
+                    # merge cells
+                    active_sheet.merge_cells(start_row=row_index, start_column=3, end_row=row_index,
+                                             end_column=merge_length)
 
                 # flip the color for next row
                 alternate_row_color = not alternate_row_color
-                # merge cells
-                active_sheet.merge_cells(start_row=row_index, start_column=1, end_row=row_index,
-                                         end_column=merge_length)
                 row_index += 1
 
         # save report

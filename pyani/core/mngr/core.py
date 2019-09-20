@@ -905,10 +905,20 @@ class AniCoreMngr(QtCore.QObject):
                 return error_fmt
 
         except pyani.core.util.CGTError as error:
-            error_fmt = (
-                "Error occurred connecting to CGT. Error is {0}. Attempted to download files {1} to {2}"
-                .format(error, ', '.join(server_file_paths), ', '.join(local_dl_paths))
-            )
+            error_str = str(error)
+            # look for doesn't exist, so we can give a better error to user
+            if not error_str.find("doesn't exist") == -1:
+                error_fmt = (
+                    "The file(s) {0} are missing. Please try running the update application to sync your local "
+                    "CGT cache. If the problem persists, check CGT to see if the file was removed.".format(
+                        server_file_paths
+                    )
+                )
+            else:
+                error_fmt = (
+                    "Error occurred downloading from CGT. Error is: {0}. Attempted to download files {1} to {2}"
+                    .format(error, ', '.join(server_file_paths), ', '.join(local_dl_paths))
+                )
 
             self.send_thread_error(error_fmt)
             logger.error(error_fmt)

@@ -112,7 +112,20 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
             )
             progress_list.append("Checking for asset updates")
 
-        # add update config sync step
+        # add update config sync step for assets
+        self.task_list.append(
+            {
+                'func': self.asset_mngr.update_config_file_after_sync,
+                'params': [],
+                'finish signal': self.asset_mngr.finished_signal,
+                'error signal': self.asset_mngr.error_thread_signal,
+                'thread task': True,
+                'desc': "Checking update config file for old assets."
+            }
+        )
+        progress_list.append("Syncing update config file with assets on server.")
+
+        # add update config sync for tools
         self.task_list.append(
             {
                 'func': self.tools_mngr.update_config_file_after_sync,
@@ -123,7 +136,7 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
                 'desc': "Checking update config file for old tools or missing new tools."
             }
         )
-        progress_list.append("Syncing update config file with server.")
+        progress_list.append("Syncing update config file with tools on server.")
 
         # add asset tracking step for audio
         if self.asset_mngr.get_preference("asset mngr", "audio", "track updates")['track updates']:
