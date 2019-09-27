@@ -10,11 +10,11 @@
   </component>
   <component name="FileEditorManager">
     <leaf SIDE_TABS_SIZE_LIMIT_KEY="300">
-      <file pinned="false" current-in-tab="false">
+      <file pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/pyani/core/mngr/assets.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="8613">
-              <caret line="590" column="38" lean-forward="true" selection-start-line="590" selection-start-column="38" selection-end-line="590" selection-end-column="38" />
+            <state relative-caret-position="314">
+              <caret line="280" column="13" lean-forward="true" selection-start-line="280" selection-start-column="13" selection-end-line="280" selection-end-column="13" />
               <folding>
                 <element signature="e#0#9#0" expanded="true" />
               </folding>
@@ -25,8 +25,8 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/pyani/core/mngr/core.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="621">
-              <caret line="911" column="40" selection-start-line="911" selection-start-column="40" selection-end-line="911" selection-end-column="40" />
+            <state relative-caret-position="5">
+              <caret line="1014" column="102" lean-forward="true" selection-start-line="1014" selection-start-column="102" selection-end-line="1014" selection-end-column="102" />
               <folding>
                 <element signature="e#0#9#0" expanded="true" />
               </folding>
@@ -34,11 +34,11 @@
           </provider>
         </entry>
       </file>
-      <file pinned="false" current-in-tab="true">
+      <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/pyani/core/mngr/mngr_tests.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="362">
-              <caret line="284" selection-start-line="284" selection-end-line="284" />
+            <state relative-caret-position="209">
+              <caret line="251" column="58" selection-start-line="251" selection-start-column="58" selection-end-line="251" selection-end-column="58" />
               <folding>
                 <element signature="e#144#153#0" expanded="true" />
               </folding>
@@ -49,8 +49,8 @@
       <file pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/pyani/core/mngr/tools.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="345">
-              <caret line="1329" column="8" selection-start-line="1329" selection-start-column="8" selection-end-line="1329" selection-end-column="8" />
+            <state relative-caret-position="587">
+              <caret line="659" column="31" lean-forward="true" selection-start-line="659" selection-start-column="31" selection-end-line="659" selection-end-column="31" />
               <folding>
                 <element signature="e#0#9#0" expanded="true" />
               </folding>
@@ -69,9 +69,6 @@
   </component>
   <component name="FindInProjectRecents">
     <findStrings>
-      <find>An</find>
-      <find>number</find>
-      <find>AniQMainWindow</find>
       <find>pixmap_num_1</find>
       <find>finished</find>
       <find>tools_shortcut</find>
@@ -99,6 +96,9 @@
       <find>set_number_of_concurrent_threads</find>
       <find>version</find>
       <find>task</find>
+      <find>update_config</find>
+      <find>load_j</find>
+      <find>tree</find>
     </findStrings>
     <replaceStrings>
       <replace>seq</replace>
@@ -118,8 +118,6 @@
   <component name="IdeDocumentHistory">
     <option name="CHANGED_PATHS">
       <list>
-        <option value="$PROJECT_DIR$/pyani/core/appmanager.py" />
-        <option value="$PROJECT_DIR$/pyani/core/assist_launcher.py" />
         <option value="$PROJECT_DIR$/pyani/core/mngr/unit_tests.py" />
         <option value="$PROJECT_DIR$/pyani/core/mngr/ui/assetgui.py" />
         <option value="$APPLICATION_CONFIG_DIR$/scratches/scratch_42.py" />
@@ -148,7 +146,6 @@
         <option value="$USER_HOME$/.PyAniTools/sequences.json" />
         <option value="$PROJECT_DIR$/pyani/core/appvars.py" />
         <option value="$PROJECT_DIR$/pyani/render/log/data_generator.py" />
-        <option value="$PROJECT_DIR$/pyani/core/ui.py" />
         <option value="$PROJECT_DIR$/pyani/render/log/data.py" />
         <option value="$PROJECT_DIR$/pyani/render/log/viewer.py" />
         <option value="$PROJECT_DIR$/pyani/core/mngr/ui/setup.py" />
@@ -161,18 +158,21 @@
         <option value="$PROJECT_DIR$/../PyAniTools/Dist/source/PyAniTools/apps/cgt_metadata.json" />
         <option value="$PROJECT_DIR$/../PyAniTools/Dist/source/PyAniTools/core/cgt_metadata.json" />
         <option value="$PROJECT_DIR$/../PyAniTools/Dist/source/PyAniTools/lib/cgt_metadata.json" />
-        <option value="$PROJECT_DIR$/pyani/core/mngr/tools.py" />
-        <option value="$PROJECT_DIR$/pyani/core/mngr/ui/gui.py" />
         <option value="$USER_HOME$/Desktop/cgt_metadata.json" />
-        <option value="$PROJECT_DIR$/pyani/core/mngr/ui/update.py" />
-        <option value="$PROJECT_DIR$/pyani/core/mngr/core.py" />
-        <option value="$PROJECT_DIR$/pyani/core/mngr/assets.py" />
-        <option value="$PROJECT_DIR$/pyani/core/mngr/mngr_tests.py" />
         <option value="$USER_HOME$/.PyAniTools/cgt_tools_cache_new.json" />
+        <option value="$PROJECT_DIR$/pyani/core/mngr/ui/update.py" />
+        <option value="$APPLICATION_CONFIG_DIR$/scratches/scratch_52.py" />
+        <option value="$PROJECT_DIR$/../PyAniTools/Test_Files/Mngr_Tests/timestamps_from_server.json" />
+        <option value="$PROJECT_DIR$/pyani/core/mngr/core.py" />
+        <option value="$PROJECT_DIR$/pyani/core/mngr/tools.py" />
+        <option value="$PROJECT_DIR$/pyani/core/mngr/mngr_tests.py" />
+        <option value="$PROJECT_DIR$/pyani/core/mngr/assets.py" />
+        <option value="$PROJECT_DIR$/pyani/core/ui.py" />
+        <option value="$PROJECT_DIR$/pyani/core/mngr/ui/gui.py" />
       </list>
     </option>
   </component>
-  <component name="ProjectFrameBounds" extendedState="6">
+  <component name="ProjectFrameBounds" extendedState="7">
     <option name="x" value="-8" />
     <option name="y" value="-8" />
     <option name="width" value="2576" />
@@ -433,23 +433,30 @@
     <history-entry file="pytest_in_mngr_tests_py - 2019.09.16 at 10h 47m 26s.xml">
       <configuration name="pytest in mngr_tests.py" configurationId="tests" />
     </history-entry>
+    <history-entry file="pytest_in_mngr_tests_py - 2019.09.26 at 09h 10m 26s.xml">
+      <configuration name="pytest in mngr_tests.py" configurationId="tests" />
+    </history-entry>
+    <history-entry file="pytest_in_mngr_tests_py - 2019.09.26 at 11h 36m 15s.xml">
+      <configuration name="pytest in mngr_tests.py" configurationId="tests" />
+    </history-entry>
   </component>
   <component name="ToolWindowManager">
     <frame x="-8" y="-8" width="2576" height="1416" extended-state="6" />
+    <editor active="true" />
     <layout>
-      <window_info content_ui="combo" id="Project" order="0" visible="true" weight="0.10195313" />
+      <window_info active="true" content_ui="combo" id="Project" order="0" visible="true" weight="0.10195313" />
       <window_info id="Structure" order="1" side_tool="true" weight="0.25" />
       <window_info id="Favorites" order="2" side_tool="true" />
       <window_info anchor="bottom" id="Message" order="0" />
-      <window_info anchor="bottom" id="Find" order="1" sideWeight="0.46796876" visible="true" weight="0.28159127" />
-      <window_info anchor="bottom" id="Run" order="2" sideWeight="0.60898435" weight="0.32215288" />
+      <window_info anchor="bottom" id="Find" order="1" sideWeight="0.4675781" weight="0.28159127" />
+      <window_info anchor="bottom" id="Run" order="2" sideWeight="0.6082031" visible="true" weight="0.32215288" />
       <window_info anchor="bottom" id="Debug" order="3" sideWeight="0.4984375" weight="0.39937598" />
       <window_info anchor="bottom" id="Cvs" order="4" weight="0.25" />
       <window_info anchor="bottom" id="Inspection" order="5" weight="0.4" />
       <window_info anchor="bottom" id="TODO" order="6" />
       <window_info anchor="bottom" id="Version Control" order="7" show_stripe_button="false" />
       <window_info anchor="bottom" id="Terminal" order="8" />
-      <window_info anchor="bottom" id="Event Log" order="9" sideWeight="0.39101562" side_tool="true" visible="true" weight="0.32215288" />
+      <window_info anchor="bottom" id="Event Log" order="9" sideWeight="0.3917969" side_tool="true" visible="true" weight="0.32215288" />
       <window_info anchor="bottom" id="Python Console" order="10" />
       <window_info anchor="right" id="Commander" internal_type="SLIDING" order="0" type="SLIDING" weight="0.4" />
       <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
@@ -467,17 +474,6 @@
     </expressions>
   </component>
   <component name="editorHistoryManager">
-    <entry file="file://$PROJECT_DIR$/pyani/media/image/core.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="263">
-          <caret line="145" column="11" selection-start-line="145" selection-start-column="11" selection-end-line="145" selection-end-column="11" />
-          <folding>
-            <element signature="e#0#9#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/../PyAniTools/Dist/source/PyAniTools/maya_metatdata_files/scripts/plugin_version.json" />
     <entry file="file://$PROJECT_DIR$/../PyAniTools/Dist/source/PyAniTools/shortcuts/cgt_metadata.json">
       <provider selected="true" editor-type-id="text-editor">
         <state>
@@ -645,16 +641,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/appvars.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="222">
-          <caret line="101" column="25" lean-forward="true" selection-start-line="101" selection-start-column="25" selection-end-line="101" selection-end-column="41" />
-          <folding>
-            <element signature="e#0#9#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/pyani/core/tests/tasks_test.py" />
     <entry file="file://$PROJECT_DIR$/pyani/core/__init__.py">
       <provider selected="true" editor-type-id="text-editor" />
@@ -682,16 +668,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/ui.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="299">
-          <caret line="1230" column="8" selection-start-line="1230" selection-start-column="8" selection-end-line="1230" selection-end-column="8" />
-          <folding>
-            <element signature="e#0#9#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/../PyAniTools/Dist/source/PyAniTools/apps/cgt_metadata.json">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="102">
@@ -713,16 +689,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/util.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="-59">
-          <caret line="830" column="4" selection-start-line="830" selection-start-column="4" selection-end-line="830" selection-end-column="4" />
-          <folding>
-            <element signature="e#0#9#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$USER_HOME$/.PyAniTools/cgt_tools_cache.json">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="-663" />
@@ -735,30 +701,101 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/mngr/ui/gui.py">
+    <entry file="file://$USER_HOME$/.PyAniTools/cgt_tools_cache_new.json">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="10800">
-          <caret line="845" column="91" lean-forward="true" selection-start-line="845" selection-start-column="91" selection-end-line="845" selection-end-column="91" />
-          <folding>
-            <element signature="e#0#9#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/mngr/core.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="621">
-          <caret line="911" column="40" selection-start-line="911" selection-start-column="40" selection-end-line="911" selection-end-column="40" />
-          <folding>
-            <element signature="e#0#9#0" expanded="true" />
-          </folding>
+        <state relative-caret-position="481">
+          <caret line="253" column="39" selection-start-line="253" selection-start-column="39" selection-end-line="253" selection-end-column="39" />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/pyani/core/mngr/ui/update.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="629">
-          <caret line="103" column="17" selection-start-line="103" selection-start-column="17" selection-end-line="103" selection-end-column="17" />
+        <state relative-caret-position="1819">
+          <caret line="113" selection-start-line="113" selection-end-line="113" />
+          <folding>
+            <element signature="e#0#9#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$APPLICATION_CONFIG_DIR$/scratches/scratch_52.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="527">
+          <caret line="31" column="10" selection-end-line="42" selection-end-column="1" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/../PyAniTools/Test_Files/Mngr_Tests/timestamps_from_server.json">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="442">
+          <caret line="26" column="4" selection-start-line="26" selection-start-column="4" selection-end-line="26" selection-end-column="4" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/core/mngr/core.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="5">
+          <caret line="1014" column="102" lean-forward="true" selection-start-line="1014" selection-start-column="102" selection-end-line="1014" selection-end-column="102" />
+          <folding>
+            <element signature="e#0#9#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/core/mngr/mngr_tests.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="209">
+          <caret line="251" column="58" selection-start-line="251" selection-start-column="58" selection-end-line="251" selection-end-column="58" />
+          <folding>
+            <element signature="e#144#153#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/core/mngr/tools.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="587">
+          <caret line="659" column="31" lean-forward="true" selection-start-line="659" selection-start-column="31" selection-end-line="659" selection-end-column="31" />
+          <folding>
+            <element signature="e#0#9#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/core/util.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="263">
+          <caret line="352" column="35" selection-start-line="352" selection-start-column="31" selection-end-line="352" selection-end-column="35" />
+          <folding>
+            <element signature="e#0#9#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/core/appvars.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="340">
+          <caret line="23" column="53" lean-forward="true" selection-start-line="23" selection-start-column="53" selection-end-line="23" selection-end-column="53" />
+          <folding>
+            <element signature="e#0#9#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/core/ui.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="221">
+          <caret line="34" column="16" selection-start-line="34" selection-start-column="16" selection-end-line="34" selection-end-column="16" />
+          <folding>
+            <element signature="e#0#9#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pyani/core/mngr/ui/gui.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="413">
+          <caret line="455" column="33" selection-start-line="455" selection-start-column="33" selection-end-line="455" selection-end-column="33" />
           <folding>
             <element signature="e#0#9#0" expanded="true" />
           </folding>
@@ -767,37 +804,10 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/pyani/core/mngr/assets.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="8613">
-          <caret line="590" column="38" lean-forward="true" selection-start-line="590" selection-start-column="38" selection-end-line="590" selection-end-column="38" />
+        <state relative-caret-position="314">
+          <caret line="280" column="13" lean-forward="true" selection-start-line="280" selection-start-column="13" selection-end-line="280" selection-end-column="13" />
           <folding>
             <element signature="e#0#9#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/mngr/tools.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="345">
-          <caret line="1329" column="8" selection-start-line="1329" selection-start-column="8" selection-end-line="1329" selection-end-column="8" />
-          <folding>
-            <element signature="e#0#9#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$USER_HOME$/.PyAniTools/cgt_tools_cache_new.json">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="481">
-          <caret line="253" column="39" selection-start-line="253" selection-start-column="39" selection-end-line="253" selection-end-column="39" />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/pyani/core/mngr/mngr_tests.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="362">
-          <caret line="284" selection-start-line="284" selection-end-line="284" />
-          <folding>
-            <element signature="e#144#153#0" expanded="true" />
           </folding>
         </state>
       </provider>

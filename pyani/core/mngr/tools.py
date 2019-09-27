@@ -87,8 +87,28 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         self.exclude_removal = [
             "cgt_metadata.json"
         ]
-        # list of existing tools so we can compare after a sync for newly added or updated tools
+        # list of existing tools so we can compare after a sync for newly added or updated tools, this is set in
+        # sync_local_cache_with_server()
         self._existing_tools_before_sync = dict()
+        # list of timestamps for all tools being downloaded - this is set in server_download()
+        '''
+        { 
+            'tool type': {
+                'tool category': { 
+                    'tool_name': {
+                        'file_name': date,
+                        'file_name': date,
+                        ....
+                    }
+                    ...
+                },
+                ...
+            }
+            ...
+        }
+        '''
+        self._tools_timestamp_before_dl = dict()
+
 
     @property
     def active_type(self):
@@ -98,7 +118,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
     def active_type(self, tool_type):
         self._active_type = tool_type
 
-    def load_local_tool_cache_data(self):
+    def load_server_tool_cache(self):
         """
         calls parent class method load_server_local_cache to load the cache from disk, if can't load data sets to none
         :return: None if the data if loaded successfully, otherwise the error
@@ -142,7 +162,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         """
         # load cache off disk if it hasn't been loaded
         if not self._tools_info:
-            error = self.load_local_tool_cache_data()
+            error = self.load_server_tool_cache()
             if error:
                 return None
 
@@ -158,7 +178,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         """
         # load cache off disk if it hasn't been loaded
         if not self._tools_info:
-            error = self.load_local_tool_cache_data()
+            error = self.load_server_tool_cache()
             if error:
                 return None
         return self._tools_info[tool_type].keys()
@@ -173,7 +193,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         """
         # load cache off disk if it hasn't been loaded
         if not self._tools_info:
-            error = self.load_local_tool_cache_data()
+            error = self.load_server_tool_cache()
             if error:
                 return None
         return self._tools_info[tool_type][tool_category].keys()
@@ -189,7 +209,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         """
         # load cache off disk if it hasn't been loaded
         if not self._tools_info:
-            error = self.load_local_tool_cache_data()
+            error = self.load_server_tool_cache()
             if error:
                 return None
         # tool may not have files
@@ -209,7 +229,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         """
         # load cache off disk if it hasn't been loaded
         if not self._tools_info:
-            error = self.load_local_tool_cache_data()
+            error = self.load_server_tool_cache()
             if error:
                 return None
         # tool may not have directory info
@@ -247,7 +267,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         """
         # load cache off disk if it hasn't been loaded
         if not self._tools_info:
-            error = self.load_local_tool_cache_data()
+            error = self.load_server_tool_cache()
             if error:
                 return None
         # tool may not have version
@@ -270,7 +290,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         """
         # load cache off disk if it hasn't been loaded
         if not self._tools_info:
-            error = self.load_local_tool_cache_data()
+            error = self.load_server_tool_cache()
             if error:
                 return None
         try:
@@ -289,7 +309,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         """
         # load cache off disk if it hasn't been loaded
         if not self._tools_info:
-            error = self.load_local_tool_cache_data()
+            error = self.load_server_tool_cache()
             if error:
                 return None
         try:
@@ -309,7 +329,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         """
         # load cache off disk if it hasn't been loaded
         if not self._tools_info:
-            error = self.load_local_tool_cache_data()
+            error = self.load_server_tool_cache()
             if error:
                 return None
         try:
@@ -590,134 +610,6 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         # download files
         self.server_download(update_data_dict, gui_mode=True)
 
-    def server_download_from_gui_depr(self, tools_dict=None):
-        """
-        used with gui asset mngr
-        downloads files for the tools in the tools dict, and updates the meta data on disk for that tool. Uses
-        multi-threading.
-        :param tools_dict: a dict in format:
-             {
-                 tool type: {
-                     tool category(s): [
-                         tool name(s)
-                     ]
-                     }, more tool types...
-             }
-             If not provided downloads all tools
-        :return error if occurs before threading starts.
-        """
-        # set number of threads to one. have issues otherwise
-        self.set_number_of_concurrent_threads(1)
-
-        self._reset_thread_counters()
-
-        # if not visible then no other function called this, so we can show progress window
-        if not self.progress_win.isVisible():
-            # reset progress
-            self.init_progress_window("Sync Progress", "Updating tools...")
-
-        # check if tools to download were provided, if not load cache off disk.
-        if not tools_dict:
-            error = self.load_local_tool_cache_data()
-            if error:
-                error_msg = "No tools provided to download and could not load tool info off disk." \
-                            " Error is {0}".format(error)
-                self.send_thread_error(error_msg)
-                return error_msg
-            else:
-                tools_dict = self._tools_info
-
-        # now use multi-threading to download
-        for tool_type in tools_dict:
-            for tool_category in tools_dict[tool_type]:
-                for tool_name in tools_dict[tool_type][tool_category]:
-                    # only process tools that exist - need to check in case server data changed from local cache
-                    # first get the folder or file to check, then check with server
-
-                    if self._tools_info[tool_type][tool_category][tool_name]["is dir"]:
-                        cgt_path = "{0}/{1}".format(
-                            self._tools_info[tool_type][tool_category][tool_name]["cgt cloud dir"],
-                            tool_name
-                        )
-                    else:
-                        cgt_path = self._tools_info[tool_type][tool_category][tool_name]["files"][0]
-
-                    if not self.server_file_exists(cgt_path):
-                        continue
-
-                    # some tools are folders, some are multiple files, so get folder or files
-                    files_to_download = [
-                        file_name for file_name in self._tools_info[tool_type][tool_category][tool_name]["files"]
-                    ]
-
-                    # need to download the cgt metadata as well
-                    files_to_download.append(self.app_vars.cgt_metadata_filename)
-
-                    for file_name in files_to_download:
-                        # make path in cloud - dirs and files already have full path. metadata does not so make full
-                        # file name for cgt metadata
-                        if self.app_vars.cgt_metadata_filename in file_name:
-                            cgt_path = "{0}/{1}".format(
-                                self._tools_info[tool_type][tool_category][tool_name]["cgt cloud dir"],
-                                file_name
-                            )
-                        else:
-                            cgt_path = file_name
-
-                        # make download path - this is the root directory holding the files or folder downloaded above
-                        # if its a folder need to add that to the end of the download path, otherwise its a flat
-                        # structure so no need. also check for the cgt metadata, that is always beneath the tool type,
-                        # ie the root directory for the tool's type, such as script or plugin
-
-                        # server metadata
-                        if self.app_vars.cgt_metadata_filename in file_name:
-                            local_path = self._tools_info[tool_type][tool_category][tool_name]["local path"]
-                        # tools in their own folder
-                        elif self._tools_info[tool_type][tool_category][tool_name]['is dir']:
-                            # get local tool directory from server cache
-                            tool_local_dir = self._tools_info[tool_type][tool_category][tool_name]["local path"]
-                            cloud_dir = self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir']
-
-                            if self.is_file_on_local_server_representation(cloud_dir, tool_local_dir):
-                                local_path = self.convert_server_path_to_local_server_representation(
-                                    file_name,
-                                    directory_only=True
-                                )
-                            else:
-                                local_path = self.convert_server_path_to_non_local_server(
-                                    cloud_dir,
-                                    tool_local_dir,
-                                    file_name,
-                                    directory_only=True
-                                )
-
-                        # single dir structure - all tools in same dir
-                        else:
-                            local_path = self._tools_info[tool_type][tool_category][tool_name]["local path"]
-
-                        # server_file_download expects a list of files, so pass list even though just one file
-                        worker = pyani.core.ui.Worker(
-                            self.server_file_download,
-                            False,
-                            [cgt_path],
-                            local_file_paths=[local_path],
-                        )
-
-                        self.thread_total += 1.0
-                        self.thread_pool.start(worker)
-
-                        # slot that is called when a thread finishes, passes the active_type so calling classes can
-                        # know what was updated and the save cache method so that when cache gets updated it can be
-                        # saved
-                        worker.signals.finished.connect(
-                            functools.partial(
-                                self._thread_server_sync_complete,
-                                self.active_type,
-                                self.server_save_local_cache
-                            )
-                        )
-                        worker.signals.error.connect(self.send_thread_error)
-
     def server_download(self, tools_dict=None, debug=False, gui_mode=False):
         """
         downloads files. If a tools list is provided only those tools will be downloaded, otherwise all tools are
@@ -753,16 +645,16 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             # reset progress
             self.init_progress_window("Sync Progress", "Updating tools...")
 
-        # check if tools to download were provided, if not load cache off disk.
+        # load cache off disk
+        error = self.load_server_tool_cache()
+        if error:
+            error_msg = "Could not load tool info off disk. Error is {0}".format(error)
+            self.send_thread_error(error_msg)
+            return error_msg
+
+        # check if tools to download were provided, if not download all tools
         if not tools_dict:
-            error = self.load_local_tool_cache_data()
-            if error:
-                error_msg = "No tools provided to download and could not load tool info off disk." \
-                            " Error is {0}".format(error)
-                self.send_thread_error(error_msg)
-                return error_msg
-            else:
-                tools_dict = self._tools_info
+            tools_dict = self._tools_info
 
         # lists for debugging
         cgt_file_paths = list()
@@ -821,6 +713,17 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                         # single dir structure - all tools in same dir
                         else:
                             local_path = self._tools_info[tool_type][tool_category][tool_name]["local path"]
+
+                        # get timestamps of tools being downloaded - create keys if needed
+                        if tool_type not in self._tools_timestamp_before_dl:
+                            self._tools_timestamp_before_dl[tool_type] = dict()
+                        if tool_category not in self._tools_timestamp_before_dl[tool_type]:
+                            self._tools_timestamp_before_dl[tool_type][tool_category] = dict()
+                        if tool_name not in self._tools_timestamp_before_dl[tool_type][tool_category]:
+                            self._tools_timestamp_before_dl[tool_type][tool_category][tool_name] = dict()
+                        file_path = "{0}\\{1}".format(local_path, file_name.split("/")[-1])
+                        self._tools_timestamp_before_dl[tool_type][tool_category][tool_name][file_path] = \
+                            os.path.getmtime(file_path)
 
                         if debug:
                             cgt_file_paths.append(cgt_path)
@@ -919,7 +822,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         # load existing cache if exists. Note if it can't be loaded and tools dict is provided, ignore tools dict
         # and rebuild entire cache to avoid cache being incomplete. i.e. can't build cache for certain tools if
         # don't have rest of the cache info, otherwise only certain tools get updated
-        error = self.load_local_tool_cache_data()
+        error = self.load_server_tool_cache()
         if error:
             tools_dict = None
             self._tools_info = dict()
@@ -1171,39 +1074,6 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             if tool_name not in server_tool_names:
                 del self._tools_info[tool_type][tool_category][tool_name]
 
-        '''
-        # if no tool names were provided then process all tools
-        if not tool_names:
-            tool_names = server_tool_names_and_files[tool_type][tool_category]
-
-        # adds new server tool info
-        for tool_name in tool_names:
-            # check if tool name exists on server. Possible user is updating via gui, and server tools changed from
-            # local cache. If the tool is not in server info, i.e. server_tool_names_and_files, then skip adding
-            if tool_name not in server_tool_names_and_files[tool_type][tool_category]:
-                continue
-            # tool is in metadata file, capture metadata such as version
-            if tool_name in metadata:
-                metadata_info = metadata[tool_name]
-            # tool doesn't have metadata, so set to empty
-            else:
-                metadata_info = None
-            # add metadata
-            tool_metadata = {
-                "version info": metadata_info,
-                "is dir": server_tool_names_and_files[tool_type][tool_category][tool_name]["is dir"],
-                "files": server_tool_names_and_files[tool_type][tool_category][tool_name]["files"],
-                "cgt cloud dir": self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir'],
-                "local path": self.app_vars.tool_types[tool_type][tool_category]['local dir']
-            }
-            self._tools_info[tool_type][tool_category][tool_name] = tool_metadata
-    
-        # cleanup any old tools - note use list below for python 3 compatibility
-        for tool_name in list(self._tools_info[tool_type][tool_category].keys()):
-            if tool_name not in tool_names:
-                del self._tools_info[tool_type][tool_category][tool_name]
-        '''
-
     def server_save_local_cache(self):
         """
         Saves the cache created from server's file structure to disk and cleans up any temp files and folders
@@ -1261,7 +1131,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
 
         # load cgt cache to see what is on server
         if not self._tools_info:
-            error = self.load_local_tool_cache_data()
+            error = self.load_server_tool_cache()
             if error:
                 self.send_thread_error("Could not load local tools cache. Error is {0}".format(error))
                 return "Could not load local tools cache. Error is {0}".format(error)
@@ -1327,23 +1197,52 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         self.finished_signal.emit(None)
         return errors_removing_files
 
-    def find_new_and_changed_tools(self):
-        new_tools = list()
-        changed_tools = list()
+    def find_new_and_updated_assets_old(self):
+        new_assets = list()
+        changed_assets = list()
+        removed_assets = list()
 
-        for tool_type in self._tools_info:
-            for tool_category in self._tools_info[tool_type]:
-                for tool_name in self._tools_info[tool_type][tool_category]:
-                    latest_version = self.get_tool_newest_version(tool_type, tool_category, tool_name)
-                    try:
-                        old_version = self._existing_tools_before_sync[tool_type][tool_category][tool_name]['version info'][0]['version']
-                        if not old_version == latest_version:
-                            changed_tools.append(tool_name)
-                    # means new tool, since entry isn't in old tools cache
-                    except (KeyError, IndexError) as e:
-                        new_tools.append(tool_name)
+        # check for updated assets - check if file got updated -
+        # _tools_timestamp_before_dl is a list of all downloaded assets
+        for asset_type in self._tools_timestamp_before_dl:
+            for asset_category in self._tools_timestamp_before_dl[asset_type]:
+                for asset_name in self._tools_timestamp_before_dl[asset_type][asset_category]:
+                    for file_name, modified_time_before_dl in self._tools_timestamp_before_dl[asset_type][asset_category][asset_name].items():
+                        # ignore metadata files
+                        if self.app_vars.cgt_metadata_filename not in file_name:
+                            modified_time_after_dl = os.path.getmtime(file_name)
+                            if not modified_time_before_dl == modified_time_after_dl:
+                                changed_assets.append(asset_name)
 
-        return new_tools, changed_tools
+        # check for removed assets and added or removed files from existing assets
+        for asset_type in self._existing_tools_before_sync:
+            for asset_category in self._existing_tools_before_sync[asset_type]:
+                for asset_name in self._existing_tools_before_sync[asset_type][asset_category]:
+                    # first see if the asset still exists
+                    if asset_name in self._tools_info[asset_type][asset_category]:
+                        if not self._tools_info[asset_type][asset_category][asset_name]['files'] == \
+                               self._existing_tools_before_sync[asset_type][asset_category][asset_name]['files']:
+                            # asset may have already been added to the list from the timestamp check,
+                            # don't add twice
+                            if asset_name not in changed_assets:
+                                changed_assets.append(asset_name)
+                    else:
+                        removed_assets.append(asset_name)
+
+        # check for new assets
+        for asset_type in self._tools_info:
+            for asset_category in self._tools_info[asset_type]:
+                for asset_name in self._tools_info[asset_type][asset_category]:
+                    # first see if the asset still exists
+                    if asset_name not in self._existing_tools_before_sync[asset_type][asset_category]:
+                        new_assets.append(asset_name)
+
+        return new_assets, changed_assets, removed_assets
+
+    def find_changed_assets(self):
+        return self.find_new_and_updated_assets(
+            self._tools_timestamp_before_dl, self._existing_tools_before_sync, self._tools_info
+        )
 
     def _reset_thread_counters(self):
         # reset threads counters

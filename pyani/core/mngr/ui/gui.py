@@ -436,14 +436,26 @@ class AssetComponentTab(QtWidgets.QWidget):
                 # for all asset names, make a list of tree item objects that have asset name and optionally version
                 for asset_name, asset_properties in sorted(assets_info.items()):
                     if self.app_vars.asset_types[asset_type][self.asset_component]['is versioned']:
+
                         row_text = [asset_name, asset_properties["version"]]
-                        col_count = len(row_text)
+                        # will be 3 since version assets have approved and work folders and we have a column for that
+                        # after version
+                        col_count = 3
 
                         # check if this asset is in the asset update config, meaning it gets updated automatically
                         if self.asset_mngr.is_asset_in_update_config(
                                 asset_type, self.asset_component, asset_name
                         ):
-                            row_color = [pyani.core.ui.GREEN, pyani.core.ui.WHITE]
+                            # check if file doesn't exist on server - this let's user know so they don't wonder why
+                            # update isn't getting any files
+                            if not asset_properties['file name']:
+                                # found missing file on server, set to strikeout - see pyani.core.ui.CheckboxTreeWidget
+                                # for available formatting options
+                                row_text[0] = "strikethrough:{0}".format(row_text[0])
+                                row_color = [pyani.core.ui.DARK_GREEN, pyani.core.ui.WHITE]
+                            else:
+                                row_color = [pyani.core.ui.GREEN, pyani.core.ui.WHITE]
+
                             existing_assets_updated_list.append(
                                 {
                                     "parent": asset_type,
@@ -452,8 +464,15 @@ class AssetComponentTab(QtWidgets.QWidget):
                             )
                         else:
                             row_color = [pyani.core.ui.WHITE, pyani.core.ui.WHITE]
+                            # check if file doesn't exist on server - this let's user know so they don't wonder why
+                            # update isn't getting any files
+                            if not asset_properties['file name']:
+                                # found missing file on server, set to strikeout - see pyani.core.ui.CheckboxTreeWidget
+                                # for available formatting options
+                                row_text[0] = "strikethrough:{0}".format(row_text[0])
+                                row_color[0] = pyani.core.ui.GRAY_MED
 
-                        # if version si blank put n/a
+                        # if version is blank put n/a
                         if row_text[1] == "":
                             row_text[1] = "n/a"
 
@@ -474,6 +493,11 @@ class AssetComponentTab(QtWidgets.QWidget):
                                 row_text[1] = "{0} / ({1})".format(json_data["version"], asset_properties["version"])
                                 # keep the first color, but replace white with red for version
                                 row_color = [row_color[0], pyani.core.ui.RED.name()]
+
+                        # check if asset is publishable
+                        if not self.asset_mngr.is_asset_approved(asset_type, self.asset_component, asset_name):
+                            row_text.append("images\\not_approved.png")
+                            row_color.append("")
 
                     # asset is not versioned
                     else:
@@ -1123,13 +1147,19 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         self.menu_toggle_auto_dl.addItem("Enabled")
         self.menu_toggle_auto_dl.addItem("Disabled")
         self.auto_dl_run_time_label = QtWidgets.QLabel("")
-        self.auto_dl_hour = QtWidgets.QLineEdit("12")
-        self.auto_dl_hour.setMaximumWidth(40)
-        self.auto_dl_min = QtWidgets.QLineEdit("00")
-        self.auto_dl_min.setMaximumWidth(40)
         self.auto_dl_am_pm = QtWidgets.QComboBox()
         self.auto_dl_am_pm.addItem("AM")
         self.auto_dl_am_pm.addItem("PM")
+
+        # get the current time and set it
+        current_update_time = self.task_scheduler.get_task_time()
+        hour, min, time_of_day = self._get_update_time_components(current_update_time)
+
+        self.auto_dl_am_pm.setCurrentIndex(self.auto_dl_am_pm.findText(time_of_day))
+        self.auto_dl_hour = QtWidgets.QLineEdit(hour)
+        self.auto_dl_hour.setMaximumWidth(40)
+        self.auto_dl_min = QtWidgets.QLineEdit(min)
+        self.auto_dl_min.setMaximumWidth(40)
         self.btn_auto_dl_update_time = QtWidgets.QPushButton("Update Run Time")
 
         # if task is missing, this button shows
@@ -1399,14 +1429,6 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
                     "Task Scheduling Error",
                     "Could not set run time. Error is {0}".format(error)
                 )
-
-            # update time in ui
-            # get the run time and format as hour:seconds am or pm, ex: 02:00 PM
-            run_time = self.task_scheduler.get_task_time()
-            if isinstance(run_time, datetime.datetime):
-                run_time = run_time.strftime("%I:%M %p")
-            else:
-                run_time = "N/A"
             self.auto_dl_run_time_label.setText(
                 "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
                 "Change Update Time  "
@@ -1477,6 +1499,23 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
                 return
             sys.exit()
 
+    @staticmethod
+    def _get_update_time_components(update_time):
+        """
+        Gets the hour, min ,a dn time of day (AM/PM) from a date time object
+        :param update_time: the date time object
+        :return: hour, min, and time of day (AM/PM)
+        """
+        if isinstance(update_time, datetime.datetime):
+            hour = "{:d}".format(update_time.hour)
+            min = "{:02d}".format(update_time.minute)
+            time_of_day = update_time.strftime('%p')
+        else:
+            hour = ""
+            min = ""
+            time_of_day = "AM"
+
+        return hour, min, time_of_day
 
 
 

@@ -1012,6 +1012,48 @@ class AniCoreMngr(QtCore.QObject):
 
         return None
 
+    def find_new_and_updated_assets(self, timestamp_before_dl, assets_before_sync, assets_after_sync):
+        new_assets = list()
+        changed_assets = list()
+        removed_assets = list()
+
+        # check for updated assets - check if file got updated -
+        # _tools_timestamp_before_dl is a list of all downloaded assets
+        for asset_type in timestamp_before_dl:
+            for asset_category in timestamp_before_dl[asset_type]:
+                for asset_name in timestamp_before_dl[asset_type][asset_category]:
+                    for file_name, modified_time_before_dl in timestamp_before_dl[asset_type][asset_category][asset_name].items():
+                        # ignore metadata files
+                        if self.app_vars.cgt_metadata_filename not in file_name:
+                            modified_time_after_dl = os.path.getmtime(file_name)
+                            if not modified_time_before_dl == modified_time_after_dl:
+                                changed_assets.append(asset_name)
+
+        # check for removed assets and added or removed files from existing assets
+        for asset_type in assets_before_sync:
+            for asset_category in assets_before_sync[asset_type]:
+                for asset_name in assets_before_sync[asset_type][asset_category]:
+                    # first see if the asset still exists
+                    if asset_name in assets_after_sync[asset_type][asset_category]:
+                        if not assets_after_sync[asset_type][asset_category][asset_name]['files'] == \
+                               assets_before_sync[asset_type][asset_category][asset_name]['files']:
+                            # asset may have already been added to the list from the timestamp check,
+                            # don't add twice
+                            if asset_name not in changed_assets:
+                                changed_assets.append(asset_name)
+                    else:
+                        removed_assets.append(asset_name)
+
+        # check for new assets
+        for asset_type in assets_after_sync:
+            for asset_category in assets_after_sync[asset_type]:
+                for asset_name in assets_after_sync[asset_type][asset_category]:
+                    # first see if the asset still exists
+                    if asset_name not in assets_before_sync[asset_type][asset_category]:
+                        new_assets.append(asset_name)
+
+        return new_assets, changed_assets, removed_assets
+
     @staticmethod
     def convert_server_path_to_local_server_representation(server_path, directory_only=False):
         """

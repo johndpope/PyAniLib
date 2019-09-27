@@ -32,7 +32,8 @@ CORE UI ELEMENTS
 
 # COLORS
 GOLD = "#be9117"
-GREEN = "#397d42"
+GREEN = "#3f8b49"
+DARK_GREEN = "#25512b"
 CYAN = "#429db6"
 WHITE = "#ffffff"
 YELLOW = QtGui.QColor(234, 192, 25)
@@ -1556,8 +1557,17 @@ class CheckboxTreeWidgetItem(object):
 
 class CheckboxTreeWidget(QtWidgets.QTreeWidget):
     """
-    Qt tree custom class with check boxes. Supports multiple columns. Only supports one level deep, ie parent->child
-    not parent->child->child....
+    Qt tree custom class with check boxes.
+
+    Supports:
+
+        - multiple columns. Only supports one level deep, ie parent->child, not parent->child->child....
+        - images for a column. Only supports .png format. Simply set column text to the image path, like
+          images\approved.png. Supports relative and absolute paths
+        - basic text formatting - strikethrough, bold, italics. specify as bold:the text to display or
+          strikethrough:text to display
+
+
     """
     def __init__(self, tree_items=None, columns=None, expand=True, checked=False):
         """
@@ -1572,6 +1582,13 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
         super(CheckboxTreeWidget, self).__init__()
         # spacing between columns
         self.__col_space = 50
+        self.__supported_image_formats = [".png"]
+        self.font_strikeout = QtGui.QFont()
+        self.font_strikeout.setStrikeOut(True)
+        self.font_bold = QtGui.QFont()
+        self.font_bold.setBold(True)
+        self.font_italic = QtGui.QFont()
+        self.font_italic.setItalic(True)
         self.build_checkbox_tree(tree_items, columns, expand, checked)
         self.itemExpanded.connect(self._resize_on_expand)
 
@@ -1596,7 +1613,7 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
                 # build main column rows
                 for col_index in range(0, root_item.col_count()):
                     parent.setTextColor(col_index, root_item.color(col_index))
-                    parent.setText(col_index, root_item.text(col_index))
+                    self._set_styling(parent, root_item.text(col_index), col_index)
                 parent.setFlags(parent.flags() | QtCore.Qt.ItemIsTristate | QtCore.Qt.ItemIsUserCheckable)
                 # build children rows if they exist - keys will be 2 if they exist
                 if len(tree_item.keys()) > 1:
@@ -1605,8 +1622,22 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
                         child = QtWidgets.QTreeWidgetItem(parent)
                         child.setFlags(child.flags() | QtCore.Qt.ItemIsUserCheckable)
                         for col_index in range(0, child_item.col_count()):
-                            child.setTextColor(col_index, child_item.color(col_index))
-                            child.setText(col_index, child_item.text(col_index))
+                            # flag indicates if column is image or text
+                            image_found = False
+                            # check if it's an image
+                            for image_format in self.__supported_image_formats:
+                                if image_format in child_item.text(col_index):
+                                    image_found = True
+                                    break
+                            if image_found:
+                                child.setData(
+                                    col_index,
+                                    QtCore.Qt.DecorationRole,
+                                    QtGui.QPixmap(child_item.text(col_index))
+                                )
+                            else:
+                                child.setTextColor(col_index, child_item.color(col_index))
+                                self._set_styling(child, child_item.text(col_index), col_index)
                         if checked:
                             child.setCheckState(0, QtCore.Qt.Checked)
                         else:
@@ -1790,6 +1821,25 @@ class CheckboxTreeWidget(QtWidgets.QTreeWidget):
         for col in range(0, self.columnCount() - 1):
             self.resizeColumnToContents(col)
             self.setColumnWidth(col, self.columnWidth(col) + self.__col_space)
+
+    def _set_styling(self, tree_item, col_text, col_index):
+        """
+        Sets basic formatting for text
+        :param tree_item: the qt tree item
+        :param col_text: the string text
+        :param col_index: the column number
+        """
+        if "strikethrough" in col_text:
+            tree_item.setText(col_index, col_text.split("strikethrough:")[-1])
+            tree_item.setFont(col_index, self.font_strikeout)
+        elif "bold" in col_text:
+            tree_item.setText(col_index, col_text.split("bold:")[-1])
+            tree_item.setFont(col_index, self.font_bold)
+        elif "italic" in col_text:
+            tree_item.setText(col_index, col_text.split("italic:")[-1])
+            tree_item.setFont(col_index, self.font_italic)
+        else:
+            tree_item.setText(col_index, col_text)
 
 
 class TabContentWidget(QtWidgets.QWidget):

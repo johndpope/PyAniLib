@@ -105,6 +105,9 @@ class TestWindow(QtWidgets.QDialog):
         self.btn_get_new_and_changed_tools = QtWidgets.QPushButton("get new and changed tools")
         self.btn_get_new_and_changed_tools.pressed.connect(self.get_new_and_changed_tools)
 
+        self.btn_get_new_and_changed_assets = QtWidgets.QPushButton("get new and changed assets")
+        self.btn_get_new_and_changed_assets.pressed.connect(self.get_new_and_changed_assets)
+
         self.version_input = QtWidgets.QLineEdit()
 
         layout = QtWidgets.QVBoxLayout()
@@ -124,6 +127,7 @@ class TestWindow(QtWidgets.QDialog):
         layout.addWidget(self.btn_audio_changed_report_unit_test)
         layout.addWidget(self.btn_assets_download_update_config_unit_test)
         layout.addWidget(self.btn_sync_update_config_assets)
+        layout.addWidget(self.btn_get_new_and_changed_assets)
 
         layout.addWidget(QtWidgets.QLabel("<b>Tools Unit Tests</b>"))
         layout.addWidget(self.btn_show_tools_cache)
@@ -262,7 +266,7 @@ class TestWindow(QtWidgets.QDialog):
         """
         # set up test data:
         # this is the tools cache after sync
-        self.tools_mngr.load_local_tool_cache_data()
+        self.tools_mngr.load_server_tool_cache()
         # this is tools cache before sync
         self.tools_mngr._existing_tools_before_sync = \
             pyani.core.util.load_json("C:\\Users\\Patrick\\.PyAniTools\\cgt_tools_cache_orig.json")
@@ -283,35 +287,43 @@ class TestWindow(QtWidgets.QDialog):
         else:
             print "Wrote tool list to desktop."
 
-    def get_new_and_changed_tools(self, use_sync=False):
-
-        if use_sync:
-            pass
-        else:
-            # this is all stuff handled by sync
-            error = self.tools_mngr.load_local_tool_cache_data()
-            if error:
-                print("Can't load old cache, error is {0}".format(error))
-                return
-            self.tools_mngr._existing_tools_before_sync = copy.deepcopy(self.tools_mngr._tools_info)
-
-            cache = pyani.core.util.load_json("C:\Users\Patrick\.PyAniTools\cgt_tools_cache_new.json")
-            if not isinstance(cache, dict):
-                print("Can't load new cache, error is {0}".format(cache))
-                return
-            self.tools_mngr._tools_info = cache
-
-        new_tools, updated_tools = self.tools_mngr.find_new_and_changed_tools()
+    def get_new_and_changed_tools(self):
+        # see C:\Users\Patrick\PycharmProjects\PyAniTools\Test_Files\Mngr_Tests\README.txt for tests
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\tools_timestamps_from_server.json", "r") as read_file:
+            self.tools_mngr._tools_timestamp_before_dl = json.load(read_file)
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\cgt_tools_cache_after.json", "r") as read_file:
+            self.tools_mngr._tools_info = json.load(read_file)
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\cgt_tools_cache_before.json", "r") as read_file:
+            self.tools_mngr._existing_tools_before_sync = json.load(read_file)
+        new_tools, updated_tools, removed_tools = self.tools_mngr.find_changed_assets()
         print("New Tools")
         print ', '.join(new_tools)
         print("Changed Tools")
         print ', '.join(updated_tools)
+        print("Removed Tools")
+        print ', '.join(removed_tools)
+
+    def get_new_and_changed_assets(self):
+        # see C:\Users\Patrick\PycharmProjects\PyAniTools\Test_Files\Mngr_Tests\README.txt for tests
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\assets_timestamps_from_server.json", "r") as read_file:
+            self.asset_mngr._assets_timestamp_before_dl = json.load(read_file)
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\cgt_asset_info_cache_after.json", "r") as read_file:
+            self.asset_mngr._asset_info = json.load(read_file)
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\cgt_asset_info_cache_before.json", "r") as read_file:
+            self.asset_mngr._existing_assets_before_sync = json.load(read_file)
+        new_tools, updated_tools, removed_tools = self.asset_mngr.find_changed_assets()
+        print("New Assets")
+        print ', '.join(new_tools)
+        print("Changed Assets")
+        print ', '.join(updated_tools)
+        print("Removed Assets")
+        print ', '.join(removed_tools)
 
     def start_tools_cleanup(self):
         print self.tools_mngr.remove_files_not_on_server(debug=True)
 
     def show_tool_data(self):
-        self.tools_mngr.load_local_tool_cache_data()
+        self.tools_mngr.load_server_tool_cache()
         print json.dumps(self.tools_mngr._tools_info, indent=4)
 
     def get_tools_version(self):

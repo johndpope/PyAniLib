@@ -92,6 +92,8 @@ class AniAssetMngr(AniCoreMngr):
 
         # list of existing assets so we can compare after a sync for newly added or updated assets
         self._existing_assets_before_sync = dict()
+        # assets tiemstamp before downloads
+        self._assets_timestamp_before_dl = dict()
 
     @property
     def active_asset_component(self):
@@ -275,6 +277,28 @@ class AniAssetMngr(AniCoreMngr):
         :return: True if it can be published, False if not
         """
         if self.app_vars.asset_types[asset_type][asset_component]['is publishable']:
+            return True
+        else:
+            return False
+
+    def is_asset_approved(self, asset_type, asset_component, asset_name):
+        """
+        checks if an asset is approved, meaning it has an approved folder
+        :param asset_type: the type of asset - see pyani.core.appvars.py for asset types
+        :param asset_component: the asset component to check - see pyani.core.appvars.py for asset components
+        :param asset_name: the name of the asset
+        :return: True if it is approved, false if not
+        """
+        # load asset info if not loaded
+        if not self._asset_info:
+            error = self.load_server_asset_info_cache()
+            if error:
+                error_fmt = "Problem loading asset info cache in assets.py - is_asset_approved. Error is {0}".format(
+                    error
+                )
+                logger.error(error_fmt)
+                return False
+        if self._asset_info[asset_type][asset_component][asset_name]['approved']:
             return True
         else:
             return False
@@ -587,6 +611,10 @@ class AniAssetMngr(AniCoreMngr):
                 self.send_thread_error(error)
                 return error
 
+        # check if assets to download were provided, if not download all assets
+        if not assets_dict:
+            assets_dict = self._asset_info
+
         # now use multi-threading to download
         for asset_type in assets_dict:
             for asset_component in assets_dict[asset_type]:
@@ -596,40 +624,56 @@ class AniAssetMngr(AniCoreMngr):
                             self._asset_info,
                             [asset_type, asset_component, asset_name]
                     ):
-                        # could be more than one file
-                        for file_name in self._asset_info[asset_type][asset_component][asset_name]["file name"]:
-                            server_path = "{0}/{1}".format(
-                                self._asset_info[asset_type][asset_component][asset_name]["cgt path"],
-                                file_name
-                            )
-                            local_path = self._asset_info[asset_type][asset_component][asset_name]["local path"]
-
-                            # server_file_download expects a list of files, so pass list even though just one file
-                            worker = pyani.core.ui.Worker(
-                                self.server_file_download,
-                                False,
-                                [server_path],
-                                local_file_paths=[local_path],
-                                update_local_version=True
-                            )
-                            self.thread_total += 1.0
-                            self.thread_pool.start(worker)
-
-                            # slot that is called when a thread finishes
-                            if gui_mode:
-                                # passes the active component so calling classes can know what was updated
-                                # and the save cache method so that when cache gets updated it can be saved
-                                worker.signals.finished.connect(
-                                    functools.partial(
-                                        self._thread_server_sync_complete,
-                                        self.active_asset_component,
-                                        self.server_save_local_cache
-                                    )
+                        # possible no files, then skip, otherwise download
+                        if self._asset_info[asset_type][asset_component][asset_name]["file name"]:
+                            # could be more than one file
+                            for file_name in self._asset_info[asset_type][asset_component][asset_name]["file name"]:
+                                server_path = "{0}/{1}".format(
+                                    self._asset_info[asset_type][asset_component][asset_name]["cgt path"],
+                                    file_name
                                 )
-                            else:
-                                worker.signals.finished.connect(self._thread_server_download_complete)
+                                local_path = self._asset_info[asset_type][asset_component][asset_name]["local path"]
 
-                            worker.signals.error.connect(self.send_thread_error)
+                                # get timestamps of tools being downloaded - create keys if needed
+                                if asset_type not in self._assets_timestamp_before_dl:
+                                    self._assets_timestamp_before_dl[asset_type] = dict()
+                                if asset_component not in self._assets_timestamp_before_dl[asset_type]:
+                                    self._assets_timestamp_before_dl[asset_type][asset_component] = dict()
+                                if asset_name not in self._assets_timestamp_before_dl[asset_type][asset_component]:
+                                    self._assets_timestamp_before_dl[asset_type][asset_component][asset_name] = dict()
+                                file_path = "{0}\\{1}".format(local_path, file_name.split("/")[-1])
+                                # file may not be on local machine, so try to get time, if can't set to 0
+                                try:
+                                    self._assets_timestamp_before_dl[asset_type][asset_component][asset_name][file_path] = os.path.getmtime(file_path)
+                                except WindowsError:
+                                    self._assets_timestamp_before_dl[asset_type][asset_component][asset_name][file_path] = 0.0
+
+                                # server_file_download expects a list of files, so pass list even though just one file
+                                worker = pyani.core.ui.Worker(
+                                    self.server_file_download,
+                                    False,
+                                    [server_path],
+                                    local_file_paths=[local_path],
+                                    update_local_version=True
+                                )
+                                self.thread_total += 1.0
+                                self.thread_pool.start(worker)
+
+                                # slot that is called when a thread finishes
+                                if gui_mode:
+                                    # passes the active component so calling classes can know what was updated
+                                    # and the save cache method so that when cache gets updated it can be saved
+                                    worker.signals.finished.connect(
+                                        functools.partial(
+                                            self._thread_server_sync_complete,
+                                            self.active_asset_component,
+                                            self.server_save_local_cache
+                                        )
+                                    )
+                                else:
+                                    worker.signals.finished.connect(self._thread_server_download_complete)
+
+                                worker.signals.error.connect(self.send_thread_error)
 
     def server_build_local_cache(self, assets_dict=None, thread_callback=None, thread_callback_args=None):
         """
@@ -1227,3 +1271,8 @@ class AniAssetMngr(AniCoreMngr):
                 return None, error_fmt
 
         return filename, None
+
+    def find_changed_assets(self):
+        return self.find_new_and_updated_assets(
+            self._assets_timestamp_before_dl, self._existing_assets_before_sync, self._asset_info
+        )
