@@ -926,9 +926,9 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         # help doc button
         if self.show_help:
             self.btn_help_doc = pyani.core.ui.ImageButton(
-                "{0}\help_doc_icons\help_off.png".format(app_vars.local_pyanitools_core_dir),
-                "{0}\help_doc_icons\help_on.png".format(app_vars.local_pyanitools_core_dir),
-                "{0}\help_doc_icons\help_on.png".format(app_vars.local_pyanitools_core_dir),
+                "{0}\\images\\help_off.png".format(app_vars.local_pyanitools_core_dir),
+                "{0}\\images\\help_on.png".format(app_vars.local_pyanitools_core_dir),
+                "{0}\\images\\help_on.png".format(app_vars.local_pyanitools_core_dir),
                 size=(148, 38)
             )
             self.btn_help_doc.clicked.connect(self._open_help_doc)
@@ -1204,7 +1204,7 @@ class QtMsgWindow(QtWidgets.QMessageBox):
         super(QtMsgWindow, self).__init__()
         # create the window and tell it to parent to the main window
         self.msg_box = QtWidgets.QMessageBox(parent=main_win)
-        # member variable declaring the type of mesg box, needed because a msg box without buttons must call
+        # member variable declaring the type of msg box, needed because a msg box without buttons must call
         # a different method than close() to close it.
         self.msg_box_type = None
 

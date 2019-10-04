@@ -6,10 +6,11 @@ files with 'test' in them
 import os
 import sys
 import json
-import copy
+import qdarkstyle
 import pyani.core.mngr.core
 import pyani.core.mngr.assets
 import pyani.core.mngr.tools
+import pyani.core.mngr.ui.core
 import pyani.core.util
 
 # set the environment variable to use a specific wrapper
@@ -24,6 +25,12 @@ from qtpy import QtWidgets
 class TestWindow(QtWidgets.QDialog):
     def __init__(self):
         super(TestWindow, self).__init__()
+
+        self.core_mngr = pyani.core.mngr.core.AniCoreMngr()
+        self.asset_mngr = pyani.core.mngr.assets.AniAssetMngr()
+        self.tools_mngr = pyani.core.mngr.tools.AniToolsMngr()
+        self.ui_mngr = pyani.core.mngr.ui.core.AniAssetUpdateReport(self)
+
         self.setWindowTitle("Unit Tests For Updating Tools and Assets")
 
         self.btn_create_setup_dependencies_unit_test = QtWidgets.QPushButton("start create setup dependencies unit test")
@@ -108,6 +115,9 @@ class TestWindow(QtWidgets.QDialog):
         self.btn_get_new_and_changed_assets = QtWidgets.QPushButton("get new and changed assets")
         self.btn_get_new_and_changed_assets.pressed.connect(self.get_new_and_changed_assets)
 
+        self.btn_get_all_new_and_changed_assets = QtWidgets.QPushButton("get all new and changed assets")
+        self.btn_get_all_new_and_changed_assets.pressed.connect(self.get_all_new_and_changed_assets)
+
         self.version_input = QtWidgets.QLineEdit()
 
         layout = QtWidgets.QVBoxLayout()
@@ -119,6 +129,9 @@ class TestWindow(QtWidgets.QDialog):
         layout.addWidget(self.btn_create_desktop_shortcut_unit_test)
         layout.addWidget(self.btn_create_customize_nuke_unit_test)
         layout.addWidget(self.btn_create_task_sched_unit_test)
+
+        layout.addWidget(QtWidgets.QLabel("<b>Asset and Tool Unit Tests</b>"))
+        layout.addWidget(self.btn_get_all_new_and_changed_assets)
 
         layout.addWidget(QtWidgets.QLabel("<b>Asset Unit Tests</b>"))
         layout.addWidget(self.btn_build_cache_unit_test)
@@ -145,16 +158,13 @@ class TestWindow(QtWidgets.QDialog):
 
         self.setLayout(layout)
 
-        self.core_mngr = pyani.core.mngr.core.AniCoreMngr()
         self.core_mngr.error_thread_signal.connect(self.show_multithreaded_error)
         self.core_mngr.finished_signal.connect(self.finished_job)
 
-        self.asset_mngr = pyani.core.mngr.assets.AniAssetMngr()
         self.asset_mngr.finished_cache_build_signal.connect(self.finished_job)
         self.asset_mngr.finished_signal.connect(self.finished_job)
         self.asset_mngr.finished_tracking.connect(self.finished_job)
 
-        self.tools_mngr = pyani.core.mngr.tools.AniToolsMngr()
         self.tools_mngr.error_thread_signal.connect(self.show_multithreaded_error)
         self.tools_mngr.finished_cache_build_signal.connect(self.finished_job)
         self.tools_mngr.finished_signal.connect(self.finished_job)
@@ -287,6 +297,25 @@ class TestWindow(QtWidgets.QDialog):
         else:
             print "Wrote tool list to desktop."
 
+    def get_all_new_and_changed_assets(self):
+        """
+        generates the report for tools and assets
+        """
+        # see C:\Users\Patrick\PycharmProjects\PyAniTools\Test_Files\Mngr_Tests\README.txt for tests
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\tools_timestamps_from_server.json", "r") as read_file:
+            self.tools_mngr._tools_timestamp_before_dl = json.load(read_file)
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\cgt_tools_cache_after.json", "r") as read_file:
+            self.tools_mngr._tools_info = json.load(read_file)
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\cgt_tools_cache_before.json", "r") as read_file:
+            self.tools_mngr._existing_tools_before_sync = json.load(read_file)
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\assets_timestamps_from_server.json", "r") as read_file:
+            self.asset_mngr._assets_timestamp_before_dl = json.load(read_file)
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\cgt_asset_info_cache_after.json", "r") as read_file:
+            self.asset_mngr._asset_info = json.load(read_file)
+        with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\cgt_asset_info_cache_before.json", "r") as read_file:
+            self.asset_mngr._existing_assets_before_sync = json.load(read_file)
+        self.ui_mngr.generate_asset_update_report(self.asset_mngr, self.tools_mngr)
+
     def get_new_and_changed_tools(self):
         # see C:\Users\Patrick\PycharmProjects\PyAniTools\Test_Files\Mngr_Tests\README.txt for tests
         with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\tools_timestamps_from_server.json", "r") as read_file:
@@ -295,13 +324,7 @@ class TestWindow(QtWidgets.QDialog):
             self.tools_mngr._tools_info = json.load(read_file)
         with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\cgt_tools_cache_before.json", "r") as read_file:
             self.tools_mngr._existing_tools_before_sync = json.load(read_file)
-        new_tools, updated_tools, removed_tools = self.tools_mngr.find_changed_assets()
-        print("New Tools")
-        print ', '.join(new_tools)
-        print("Changed Tools")
-        print ', '.join(updated_tools)
-        print("Removed Tools")
-        print ', '.join(removed_tools)
+        self.ui_mngr.generate_asset_update_report(tools_mngr=self.tools_mngr)
 
     def get_new_and_changed_assets(self):
         # see C:\Users\Patrick\PycharmProjects\PyAniTools\Test_Files\Mngr_Tests\README.txt for tests
@@ -311,13 +334,7 @@ class TestWindow(QtWidgets.QDialog):
             self.asset_mngr._asset_info = json.load(read_file)
         with open("C:\\Users\\Patrick\\PycharmProjects\\PyAniTools\\Test_Files\\Mngr_Tests\\cgt_asset_info_cache_before.json", "r") as read_file:
             self.asset_mngr._existing_assets_before_sync = json.load(read_file)
-        new_tools, updated_tools, removed_tools = self.asset_mngr.find_changed_assets()
-        print("New Assets")
-        print ', '.join(new_tools)
-        print("Changed Assets")
-        print ', '.join(updated_tools)
-        print("Removed Assets")
-        print ', '.join(removed_tools)
+        self.ui_mngr.generate_asset_update_report(asset_mngr=self.asset_mngr)
 
     def start_tools_cleanup(self):
         print self.tools_mngr.remove_files_not_on_server(debug=True)
@@ -351,6 +368,9 @@ def main():
     # create the application and the main window
     app = QtWidgets.QApplication(sys.argv)
     window = TestWindow()
+
+    # setup stylesheet - note that in pyani.core.ui has some color overrides used by QFrame, and QButtons
+    app.setStyleSheet(qdarkstyle.load_stylesheet_from_environment())
 
     # run
     window.show()

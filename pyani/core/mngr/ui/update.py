@@ -173,7 +173,9 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
             progress_list,
             "Update",
             "Update",
-            self.task_list
+            self.task_list,
+            asset_mngr=self.asset_mngr,
+            tools_mngr=self.tools_mngr
         )
 
         if self.tool_assets is None:

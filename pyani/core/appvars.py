@@ -88,12 +88,6 @@ class AppVars:
         }
         self.audio_metadata_json_name = self.cgt_metadata_filename
         # audio tools
-        #self.audio_metadata_json_name = "audio_info.json"
-        '''
-        self.audio_info_template = {
-            "last_modified": ""
-        }
-        '''
         self.audio_excel_report_dir = os.path.join(self.persistent_data_path, "audio_reports")
         self.audio_excel_report_filename = "report_audio_changes"
         self.audio_max_report_history = 7

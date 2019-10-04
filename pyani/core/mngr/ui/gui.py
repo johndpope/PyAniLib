@@ -8,7 +8,7 @@ import pyani.core.anivars
 import pyani.core.appvars
 import pyani.core.mngr.assets
 import pyani.core.mngr.tools
-
+import pyani.core.mngr.ui.core
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -22,7 +22,20 @@ logger = logging.getLogger()
 
 
 class AssetComponentTab(QtWidgets.QWidget):
+    """
+    A class that provides a tab page for show and shot assets. the general format / display is:
+
+    tab description (if provided)           buttons
+
+    tree list of assets
+    """
     def __init__(self, name, asset_mngr, tab_desc=None, asset_component=None):
+        """
+        :param name: name of the tab, displayed on tab
+        :param asset_mngr: an asset manager object pyani.core.mngr.assets
+        :param tab_desc: an optional description
+        :param asset_component: the asset's category or component such as rig, audio, or gpu cache
+        """
         super(AssetComponentTab, self).__init__()
 
         # variables for asset (non-ui)
@@ -36,6 +49,8 @@ class AssetComponentTab(QtWidgets.QWidget):
             self.asset_component = asset_component
         else:
             self.asset_component = self.name
+
+        self.ui_mngr = pyani.core.mngr.ui.core.AniAssetUpdateReport(self)
 
         # make a msg window class for communicating with user
         self.msg_win = pyani.core.ui.QtMsgWindow(self)
@@ -156,6 +171,11 @@ class AssetComponentTab(QtWidgets.QWidget):
         self.asset_mngr.finished_tracking.connect(self.tracking_finished)
         self.track_asset_changes_cbox.clicked.connect(self.update_tracking_preferences)
 
+    def show_sync_and_download_report(self):
+        """
+        Launches the report on which assets where added, modified, or removed
+        """
+
     def sync_finished(self, asset_component):
         """
         Runs when the cgt sync finishes. the asset manager class send the signal and name of the asset component that
@@ -163,12 +183,14 @@ class AssetComponentTab(QtWidgets.QWidget):
         :param asset_component: user friendly name of the asset component
         """
         if str(asset_component).lower() == self.name.lower():
-            self.msg_win.show_info_msg(
-                "Sync Complete", "The selected assets were updated."
-            )
+            self.ui_mngr.generate_asset_update_report(asset_mngr=self.asset_mngr)
             self.build_asset_tree()
 
     def tracking_finished(self, tracking_info):
+        """
+        Opens the excel report for the asset tracking information
+        :param tracking_info: a tuple containing the asset component/category and filename of the excel report
+        """
         asset_component = str(tracking_info[0])
         filename = str(tracking_info[1])
         if asset_component.lower() == self.name.lower():
@@ -180,6 +202,9 @@ class AssetComponentTab(QtWidgets.QWidget):
             )
 
     def generate_tracking_report(self):
+        """
+        Creates the excel report for assets being tracked
+        """
         self.asset_mngr.check_for_new_assets(self.name.lower())
 
     def update_tracking_preferences(self):
@@ -587,7 +612,20 @@ class AssetComponentTab(QtWidgets.QWidget):
 
 
 class ToolsTab(QtWidgets.QWidget):
+    """
+    A class that provides a tab page for tools. the general format / display is:
+
+    tab description (if provided)           buttons
+
+    tree list of tools
+    """
     def __init__(self, name, tools_mngr, tab_desc=None, tool_type=None):
+        """
+        :param name: the tab name, displayed on tab
+        :param tools_mngr: a tools manager object - pyani.core.mngr.tools
+        :param tab_desc: a description displayed on the tab page to the left of the buttons
+        :param tool_type: the tool type is the asset type, such as maya or pyanitools
+        """
         super(ToolsTab, self).__init__()
 
         # variables for asset (non-ui)
@@ -595,6 +633,8 @@ class ToolsTab(QtWidgets.QWidget):
         self._name = name
         self.tool_type = tool_type
         self.tools_mngr = tools_mngr
+
+        self.ui_mngr = pyani.core.mngr.ui.core.AniAssetUpdateReport(self)
 
         # make a msg window class for communicating with user
         self.msg_win = pyani.core.ui.QtMsgWindow(self)
@@ -707,10 +747,6 @@ class ToolsTab(QtWidgets.QWidget):
         :param tool_category: name of the tool active_type such as Maya, user friendly name
         """
         if str(tool_category) == self.name:
-            self.msg_win.show_info_msg(
-                "Sync Complete", "The selected tools were updated successfully."
-            )
-
             error = self.tools_mngr.remove_files_not_on_server()
             if error:
                 # if error list is very long cap errors
@@ -729,6 +765,7 @@ class ToolsTab(QtWidgets.QWidget):
                 error_msg = "Could not sync update configuration file. Error is: {0}".format(error)
                 self.msg_win.show_error_msg("File Sync Warning", error_msg)
 
+            self.ui_mngr.generate_asset_update_report(tools_mngr=self.tools_mngr)
             self.build_tools_tree()
 
     def sync_tools_with_cgt(self):

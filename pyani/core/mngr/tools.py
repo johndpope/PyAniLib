@@ -48,6 +48,20 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         "plugins": { data}
     }
 
+    CACHE FORMAT:
+    Creates a local representation of the CGT server file structure and information about the tools.
+    The cache data file name is in the cgt_tools_cache_path member variable in pyani.core.appvars.AppVars class.
+    The cache is located in the permanent data directory - see pyani.core.appvars.
+    The cache is a dictionary in the following format:
+        {
+            "tool type" - this is maya, pyanitools, etc...
+                "tool category": { - scripts, plugins, etc...
+                    "tool_name": { - actual name of tool, such as rig_picker
+                        metadata as metadata_name: value, value can be any type such as list or string. Contains
+                        things like version, files associated with the asset, etc...
+                    }, ...
+                }, ...
+        }
 
     USAGE:
 
@@ -108,7 +122,6 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         }
         '''
         self._tools_timestamp_before_dl = dict()
-
 
     @property
     def active_type(self):
@@ -722,8 +735,11 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                         if tool_name not in self._tools_timestamp_before_dl[tool_type][tool_category]:
                             self._tools_timestamp_before_dl[tool_type][tool_category][tool_name] = dict()
                         file_path = "{0}\\{1}".format(local_path, file_name.split("/")[-1])
-                        self._tools_timestamp_before_dl[tool_type][tool_category][tool_name][file_path] = \
-                            os.path.getmtime(file_path)
+                        # file may not be on local machine, so try to get time, if can't set to 0
+                        try:
+                            self._tools_timestamp_before_dl[tool_type][tool_category][tool_name][file_path] = os.path.getmtime(file_path)
+                        except WindowsError:
+                            self._tools_timestamp_before_dl[tool_type][tool_category][tool_name][file_path] = 0.0
 
                         if debug:
                             cgt_file_paths.append(cgt_path)
@@ -778,15 +794,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         """
         Creates a local cache representation of the server tools directories along with each tools metadata such as
         version and release notes. Runs a tool category per thread. Ex: maya scripts runs in a thread, maya plugins
-        runs another thread. Creates the cache data in format:
-        {
-            "tool type" - this is maya, pyanitools, etc...
-                "tool category": { - scripts, plugins, etc...
-                    "tool_name": { - actual name of tool, such as rig_picker
-                        metadata as metadata_name: value, value can be any type such as list or string
-                    }, ...
-                }, ...
-        }
+        runs another thread. Creates the cache data in format described in docstring.
         :param tools_dict: a dict in format:
         {
          tool type: {
@@ -800,21 +808,7 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         """
         # set number of threads to max
         self.set_number_of_concurrent_threads()
-
-        # dict of names per tool active_type and type with the files associated with them,
-        # ex: names of all maya scripts for tool type = scripts, stores as:
-        '''
-        {
-            tool type: {
-                tool category: {
-                    tool name: {
-                        "is dir": whether tool is in a directory or flat folder as a file or files, ex maya plugins
-                        "files": the directory name or file(s) for the tool as a list
-                    }
-                }
-            }
-        }
-        '''
+        # reset thread counters
         self._reset_thread_counters()
         # reset thread errors
         self.init_thread_error()
@@ -1197,49 +1191,21 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         self.finished_signal.emit(None)
         return errors_removing_files
 
-    def find_new_and_updated_assets_old(self):
-        new_assets = list()
-        changed_assets = list()
-        removed_assets = list()
-
-        # check for updated assets - check if file got updated -
-        # _tools_timestamp_before_dl is a list of all downloaded assets
-        for asset_type in self._tools_timestamp_before_dl:
-            for asset_category in self._tools_timestamp_before_dl[asset_type]:
-                for asset_name in self._tools_timestamp_before_dl[asset_type][asset_category]:
-                    for file_name, modified_time_before_dl in self._tools_timestamp_before_dl[asset_type][asset_category][asset_name].items():
-                        # ignore metadata files
-                        if self.app_vars.cgt_metadata_filename not in file_name:
-                            modified_time_after_dl = os.path.getmtime(file_name)
-                            if not modified_time_before_dl == modified_time_after_dl:
-                                changed_assets.append(asset_name)
-
-        # check for removed assets and added or removed files from existing assets
-        for asset_type in self._existing_tools_before_sync:
-            for asset_category in self._existing_tools_before_sync[asset_type]:
-                for asset_name in self._existing_tools_before_sync[asset_type][asset_category]:
-                    # first see if the asset still exists
-                    if asset_name in self._tools_info[asset_type][asset_category]:
-                        if not self._tools_info[asset_type][asset_category][asset_name]['files'] == \
-                               self._existing_tools_before_sync[asset_type][asset_category][asset_name]['files']:
-                            # asset may have already been added to the list from the timestamp check,
-                            # don't add twice
-                            if asset_name not in changed_assets:
-                                changed_assets.append(asset_name)
-                    else:
-                        removed_assets.append(asset_name)
-
-        # check for new assets
-        for asset_type in self._tools_info:
-            for asset_category in self._tools_info[asset_type]:
-                for asset_name in self._tools_info[asset_type][asset_category]:
-                    # first see if the asset still exists
-                    if asset_name not in self._existing_tools_before_sync[asset_type][asset_category]:
-                        new_assets.append(asset_name)
-
-        return new_assets, changed_assets, removed_assets
-
     def find_changed_assets(self):
+        """
+        Passes member variables to parent class function
+        :return: a dictionary of assets added, a dictionary of assets modified, a dictionary of assets removed. All
+        dictionaries are in the format:
+
+        format:
+        {
+            asset_type: {
+                asset_category: [
+                    list of assets
+                ]
+            }
+        }
+        """
         return self.find_new_and_updated_assets(
             self._tools_timestamp_before_dl, self._existing_tools_before_sync, self._tools_info
         )

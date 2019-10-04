@@ -1013,12 +1013,54 @@ class AniCoreMngr(QtCore.QObject):
         return None
 
     def find_new_and_updated_assets(self, timestamp_before_dl, assets_before_sync, assets_after_sync):
-        new_assets = list()
-        changed_assets = list()
-        removed_assets = list()
+        """
+
+        :param timestamp_before_dl: a dictionary of assets with last modified timestamps. In format:
+        {
+            asset_type: {
+                asset_category: [
+                    asset name: last modified time using os.path.getmtime()
+                ]
+            }
+        }
+        :param assets_before_sync: a dictionary of assets before sync with CGT server in format:
+        {
+            asset_type: {
+                asset_category: {
+                    asset_name : {
+                        metadata such as files associated with asset. this is the local cgt cache
+                    },
+                },
+            }
+        }
+        :param assets_after_sync: a dictionary of assets after sync with CGT server in format:
+        {
+            asset_type: {
+                asset_category: {
+                    asset_name : {
+                        metadata such as files associated with asset. this is the local cgt cache
+                    },
+                },
+            }
+        }
+        :return: a dictionary of assets added, a dictionary of assets modified, a dictionary of assets removed. All
+        dictionaries are in the format:
+
+        format:
+        {
+            asset_type: {
+                asset_category: [
+                    list of assets
+                ]
+            }
+        }
+        """
+        new_assets = dict()
+        changed_assets = dict()
+        removed_assets = dict()
 
         # check for updated assets - check if file got updated -
-        # _tools_timestamp_before_dl is a list of all downloaded assets
+        # timestamp_before_dl is a list of all downloaded assets
         for asset_type in timestamp_before_dl:
             for asset_category in timestamp_before_dl[asset_type]:
                 for asset_name in timestamp_before_dl[asset_type][asset_category]:
@@ -1027,7 +1069,13 @@ class AniCoreMngr(QtCore.QObject):
                         if self.app_vars.cgt_metadata_filename not in file_name:
                             modified_time_after_dl = os.path.getmtime(file_name)
                             if not modified_time_before_dl == modified_time_after_dl:
-                                changed_assets.append(asset_name)
+                                if asset_type not in changed_assets:
+                                    changed_assets[asset_type] = dict()
+                                if asset_category not in changed_assets[asset_type]:
+                                    changed_assets[asset_type][asset_category] = list()
+                                # get version if exists, returns {asset name: version} where version is string or none
+                                asset_info = self._get_latest_version(assets_after_sync, asset_type, asset_category, asset_name)
+                                changed_assets[asset_type][asset_category].append(asset_info)
 
         # check for removed assets and added or removed files from existing assets
         for asset_type in assets_before_sync:
@@ -1035,14 +1083,41 @@ class AniCoreMngr(QtCore.QObject):
                 for asset_name in assets_before_sync[asset_type][asset_category]:
                     # first see if the asset still exists
                     if asset_name in assets_after_sync[asset_type][asset_category]:
-                        if not assets_after_sync[asset_type][asset_category][asset_name]['files'] == \
-                               assets_before_sync[asset_type][asset_category][asset_name]['files']:
+                        # NOTE: key can be called files or file name so check for both
+                        if 'files' in assets_after_sync[asset_type][asset_category][asset_name]:
+                            files_before_sync = assets_before_sync[asset_type][asset_category][asset_name]['files']
+                            files_after_sync = assets_after_sync[asset_type][asset_category][asset_name]['files']
+                        else:
+                            files_before_sync = assets_before_sync[asset_type][asset_category][asset_name]['file name']
+                            files_after_sync = assets_after_sync[asset_type][asset_category][asset_name]['file name']
+
+                        # sort so in same order, need to check though that there is a list because could be None
+                        if files_before_sync:
+                            files_before_sync = sorted(files_before_sync)
+                        if files_after_sync:
+                            files_after_sync = sorted(files_after_sync)
+
+                        # see if any files were added or removed
+                        if not files_after_sync == files_before_sync:
+                            if asset_type not in changed_assets:
+                                changed_assets[asset_type] = dict()
+                            if asset_category not in changed_assets[asset_type]:
+                                changed_assets[asset_type][asset_category] = list()
                             # asset may have already been added to the list from the timestamp check,
                             # don't add twice
-                            if asset_name not in changed_assets:
-                                changed_assets.append(asset_name)
+                            if asset_name not in changed_assets[asset_type][asset_category]:
+                                # get version if exists, returns {asset name: version} where version is string or none
+                                asset_info = self._get_latest_version(assets_after_sync, asset_type, asset_category, asset_name)
+                                changed_assets[asset_type][asset_category].append(asset_info)
+                    # asset removed
                     else:
-                        removed_assets.append(asset_name)
+                        if asset_type not in removed_assets:
+                            removed_assets[asset_type] = dict()
+                        if asset_category not in removed_assets[asset_type]:
+                            removed_assets[asset_type][asset_category] = list()
+                        # get version if exists, returns {asset name: version} where version is string or none
+                        asset_info = self._get_latest_version(assets_before_sync, asset_type, asset_category, asset_name)
+                        removed_assets[asset_type][asset_category].append(asset_info)
 
         # check for new assets
         for asset_type in assets_after_sync:
@@ -1050,9 +1125,42 @@ class AniCoreMngr(QtCore.QObject):
                 for asset_name in assets_after_sync[asset_type][asset_category]:
                     # first see if the asset still exists
                     if asset_name not in assets_before_sync[asset_type][asset_category]:
-                        new_assets.append(asset_name)
+                        if asset_type not in new_assets:
+                            new_assets[asset_type] = dict()
+                        if asset_category not in new_assets[asset_type]:
+                            new_assets[asset_type][asset_category] = list()
+                        # get version if exists, returns {asset name: version} where version is string or none
+                        asset_info = self._get_latest_version(assets_after_sync, asset_type, asset_category, asset_name)
+                        new_assets[asset_type][asset_category].append(asset_info)
 
         return new_assets, changed_assets, removed_assets
+
+    @staticmethod
+    def _get_latest_version(assets_cache, asset_type, asset_category, asset_name):
+        """
+        Gets version if it exists from asset cache, works for both tool assets, shot assets, and show assets
+        :param assets_cache: the local cgt server cache, see docstring in pyani.core.mngr.asset.py and tool.py
+        for format
+        :param asset_type: the type of asset to update - see pyani.core.appvars.py for asset types
+        :param asset_category: the asset component/category to update- see pyani.core.appvars.py for asset components/
+        categories
+        :param asset_name: asset name
+        :return: a dictionary with the asset name: version. dictionary used rather than tuple since more easily
+        expandable to include other asset information if needed
+        """
+        # if 'version info' key is present it's a tool, otherwise asset
+        if 'version info' in assets_cache[asset_type][asset_category][asset_name]:
+            # make sure version exists
+            if assets_cache[asset_type][asset_category][asset_name]['version info']:
+                # it's the first element of 'version info' because that's the latest version always
+                version = assets_cache[asset_type][asset_category][asset_name]['version info'][0]['version']
+            else:
+                version = None
+        # other asset
+        else:
+            version = assets_cache[asset_type][asset_category][asset_name]['version']
+        asset_info = {asset_name: version}
+        return asset_info
 
     @staticmethod
     def convert_server_path_to_local_server_representation(server_path, directory_only=False):

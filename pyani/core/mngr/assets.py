@@ -37,6 +37,21 @@ class AniAssetMngr(AniCoreMngr):
 
     Methods prefixed with 'server' are methods that contact CGT's cloud.
 
+    CACHE FORMAT:
+    Creates a local representation of the CGT server file structure and information about the assets.
+    The cache data file name is in the cgt_asset_info_cache_path member variable in pyani.core.appvars.AppVars class.
+    The cache is located in the permanent data directory - see pyani.core.appvars.
+    The cache is a dictionary in the following format:
+            {
+            "asset type" - this is char, set, prop, shot
+                "asset category/component": { - rig, gpu cache, audio
+                    "asset name": { - actual name of the asset, such as charHei
+                        metadata as metadata_name: value, value can be any type such as list or string. Contains
+                        things like version, files associated with the asset, etc...
+                    }, ...
+                }, ...
+        }
+
 
     USAGE:
 
@@ -463,6 +478,7 @@ class AniAssetMngr(AniCoreMngr):
         :param asset_name: a list of asset names
         :param asset_update_info: a tuple in format:
             ( asset type as string, asset component as string, asset name as string, asset info as dict )
+
             asset info is a dict in format:
             {
                 "local path": string path,
@@ -474,7 +490,7 @@ class AniAssetMngr(AniCoreMngr):
             }
             one or more of the above can be provided, for example these are acceptable:
             {
-                 "local path": string path,
+                "local path": string path,
                 "file name": string file name
             }
             -or-
@@ -981,6 +997,25 @@ class AniAssetMngr(AniCoreMngr):
         else:
             return None
 
+    def find_changed_assets(self):
+        """
+        Passes member variables to parent class function
+        :return: a dictionary of assets added, a dictionary of assets modified, a dictionary of assets removed. All
+        dictionaries are in the format:
+
+        format:
+        {
+            asset_type: {
+                asset_category: [
+                    list of assets
+                ]
+            }
+        }
+        """
+        return self.find_new_and_updated_assets(
+            self._assets_timestamp_before_dl, self._existing_assets_before_sync, self._asset_info
+        )
+
     def _reset_thread_counters(self):
         # reset threads counters
         self.thread_total = 0.0
@@ -1271,8 +1306,3 @@ class AniAssetMngr(AniCoreMngr):
                 return None, error_fmt
 
         return filename, None
-
-    def find_changed_assets(self):
-        return self.find_new_and_updated_assets(
-            self._assets_timestamp_before_dl, self._existing_assets_before_sync, self._asset_info
-        )
