@@ -212,6 +212,11 @@ class WinTaskScheduler:
                 split_line = line.split(" ")[-2:]
                 run_time = " ".join(split_line)
                 run_time = run_time.replace("\r", "")
+
+                # check for case when disabled, prints Time: N/A
+                if "N/A" in run_time:
+                    return None
+
                 try:
                     # windows 10 does a hour:minute:second pm/am format
                     time_object = datetime.datetime.strptime(run_time, "%I:%M:%S %p")

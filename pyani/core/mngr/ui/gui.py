@@ -1187,17 +1187,13 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         self.auto_dl_am_pm = QtWidgets.QComboBox()
         self.auto_dl_am_pm.addItem("AM")
         self.auto_dl_am_pm.addItem("PM")
-
-        # get the current time and set it
-        current_update_time = self.task_scheduler.get_task_time()
-        hour, min, time_of_day = self._get_update_time_components(current_update_time)
-
-        self.auto_dl_am_pm.setCurrentIndex(self.auto_dl_am_pm.findText(time_of_day))
-        self.auto_dl_hour = QtWidgets.QLineEdit(hour)
+        self.auto_dl_hour = QtWidgets.QLineEdit("")
         self.auto_dl_hour.setMaximumWidth(40)
-        self.auto_dl_min = QtWidgets.QLineEdit(min)
+        self.auto_dl_min = QtWidgets.QLineEdit("")
         self.auto_dl_min.setMaximumWidth(40)
         self.btn_auto_dl_update_time = QtWidgets.QPushButton("Update Run Time")
+        # get the current time and set it
+        self._set_ui_update_time()
 
         # if task is missing, this button shows
         self.btn_create_task = QtWidgets.QPushButton("Create Daily Update Task")
@@ -1415,6 +1411,9 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
             state = self.menu_toggle_auto_dl.currentText()
             if state == "Enabled":
                 error = self.task_scheduler.set_task_enabled(True)
+                # now that the task is re-enabled, get its time (note that task time is only available from windows
+                # when its enabled, otherwise it returns n/a even though it saves the time.
+                self._set_ui_update_time()
             else:
                 error = self.task_scheduler.set_task_enabled(False)
             if error:
@@ -1548,11 +1547,20 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
             min = "{:02d}".format(update_time.minute)
             time_of_day = update_time.strftime('%p')
         else:
-            hour = ""
-            min = ""
-            time_of_day = "AM"
+            hour = "12"
+            min = "00"
+            time_of_day = "PM"
 
         return hour, min, time_of_day
 
+    def _set_ui_update_time(self):
+        """
+        Sets the auto update time in the ui
+        """
+        # get the current time and set it
+        current_update_time = self.task_scheduler.get_task_time()
+        hour, min, time_of_day = self._get_update_time_components(current_update_time)
 
-
+        self.auto_dl_am_pm.setCurrentIndex(self.auto_dl_am_pm.findText(time_of_day))
+        self.auto_dl_hour.setText(hour)
+        self.auto_dl_min.setText(min)
