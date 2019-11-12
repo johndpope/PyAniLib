@@ -1427,6 +1427,13 @@ class QtWindowUtil:
         self.__win.setWindowIcon(icon)
 
 
+class Image(QtWidgets.QLabel):
+    def __init__(self, image_path):
+        super(Image, self).__init__()
+        self.pixmap = QtGui.QPixmap(image_path)
+        self.setPixmap(self.pixmap)
+
+
 class ImageButton(QtWidgets.QAbstractButton):
     """
     Creates a pyqt button that uses images (a png, jpeg, gif or other supported Qt format) and
@@ -1482,6 +1489,9 @@ class ImageButton(QtWidgets.QAbstractButton):
 
 
 class SliderWidget(QtWidgets.QSlider):
+    """
+    Custom slider
+    """
     def mousePressEvent(self, event):
         super(SliderWidget, self).mousePressEvent(event)
         if event.button() == QtCore.Qt.LeftButton:

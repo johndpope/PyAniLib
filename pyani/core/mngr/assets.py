@@ -743,12 +743,13 @@ class AniAssetMngr(AniCoreMngr):
             else:
                 asset_components = assets_dict[asset_type].keys()
 
+            # build path to asset types directory, ex /LongGong/asset/set
+            # do this here because all asset components share the same asset type root path
+            asset_type_root_path = self.app_vars.asset_types[asset_type][asset_components.keys()[0]]["root path"]
+
             for asset_component in asset_components:
                 if asset_component not in self._asset_info[asset_type]:
                     self._asset_info[asset_type][asset_component] = dict()
-
-                # build path to asset types directory, ex /LongGong/asset/set
-                asset_type_root_path = self.app_vars.asset_types[asset_type][asset_component]["root path"]
 
                 # if no asset names provided, rebuild all assets for asset component
                 if not pyani.core.util.find_val_in_nested_dict(assets_dict, [asset_type, asset_component]):
@@ -763,7 +764,6 @@ class AniAssetMngr(AniCoreMngr):
                             # build a list of asset names as Seq###_Shot###
                             for seq in self.ani_vars.get_sequence_list():
                                 self.ani_vars.update(seq_name=seq)
-                                # fire off method in thread per sequence to get audio for shots
                                 for shot in self.ani_vars.get_shot_list():
                                     asset_names.append("{0}/{1}".format(seq, shot))
 
@@ -776,7 +776,7 @@ class AniAssetMngr(AniCoreMngr):
                 else:
                     # grab the assets corresponding to the asset type
                     asset_names = assets_dict[asset_type][asset_component]
-                
+
                 # now use multi-threading to check each asset for version, components, and files
                 for asset_name in asset_names:
                     worker = pyani.core.ui.Worker(

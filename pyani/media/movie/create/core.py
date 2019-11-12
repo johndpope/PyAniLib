@@ -341,7 +341,7 @@ class AniShoot:
         # format image list for ffmpeg
         width, height = seq[0].size
         formatted_size = "{0}x{1}".format(width, height)
-        in_path = "{0}\{1}.{2}.{3}".format(seq.directory(), seq[0].base_name, seq.padding(), seq[0].ext)
+        in_path = "{0}\\{1}.{2}.{3}".format(seq.directory(), seq[0].base_name, seq.padding(), seq[0].ext)
 
         logger.info("FFMPEG path is {0}\nImage sequence is {1}\n Start Frame is {2}\n Movie path is {3}".format(
                 self.movie_create_app,
@@ -356,7 +356,7 @@ class AniShoot:
             preset = "ultrafast"
         else:
             quality = self.default_quality
-            preset = "slower"
+            preset = "slow"
 
         '''
         Basically, .h264 needs even dimensions so this will (passed to the vf flag):
@@ -366,12 +366,8 @@ class AniShoot:
         Multiply it by 2 again, thus making it an even number
         Add black padding pixels up to this number
         To change pad color use :color=color_name, see https://ffmpeg.org/ffmpeg-filters.html#pad
-        '''
-        rescale = "pad=ceil(iw/2)*2:ceil(ih/2)*2"
-        color_matrix = "colormatrix=bt601:bt709"
-        vf_options = rescale + "," + color_matrix
-
-        try:
+        
+        
             (
                 ffmpeg
                     .input(in_path, start_number=user_frame_start, apply_trc='linear')
@@ -380,6 +376,28 @@ class AniShoot:
                     .overwrite_output()
                     .run(cmd=self.movie_create_app)
             )
+            
+            
+        rescale = "pad=ceil(iw/2)*2:ceil(ih/2)*2"
+        color_matrix = "colormatrix=bt601:bt709"
+        vf_options = rescale + "," + color_matrix
+        
+        works:
+        C:\PyAniTools\apps\pyShoot\ffmpeg\bin\ffmpeg.exe -apply_trc iec61966_2_1 -i C:\Users\Patrick\Desktop\rs_Env.1050.exr -vcodec libx264rgb -pix_fmt yuv420p -preset slow -crf 18 -r 25 C:\Users\Patrick\Desktop\test1.mp4
+        C:\PyAniTools\apps\pyShoot\ffmpeg\bin\ffmpeg.exe -apply_trc iec61966_2_1 -i C:\Users\Patrick\Downloads\050_020_render_layer\env_back\env_back.1062.exr -vcodec libx264rgb -pix_fmt yuv420p -preset slow -crf 18 -r 25 C:\Users\Patrick\Downloads\050_020_render_layer\env_back\env_back.1062.mp4
+        '''
+        rescale = "pad=ceil(iw/2)*2:ceil(ih/2)*2"
+        vf_options = rescale
+        try:
+            (
+                ffmpeg
+                    .input(in_path, start_number=user_frame_start, apply_trc='iec61966_2_1')
+                    .output(out_path, crf=quality, preset=preset, video_size=formatted_size, pix_fmt='yuv420p',
+                            vcodec='libx264rgb', tune='animation', format='mp4', acodec='aac', vf=vf_options)
+                    .overwrite_output()
+                    .run(cmd=self.movie_create_app)
+            )
+
             return None
 
         except ffmpeg.Error as e:
@@ -627,11 +645,11 @@ class AniShoot:
         for index in range(0, len(image_seq)-1, steps):
             # grab the current frame
             image_to_copy = image_seq[index].path
-            src.append(image_to_copy)
-            # loop through current frame to current frame + step size
+            # loop through current frame to current frame + step size to build list of frames for src and dest
             for sub_index in range(index+1, (index+steps)):
                 # copy the current frame to the frame steps
                 image_to_overwrite = image_seq[sub_index].path
+                src.append(image_to_copy)
                 dest.append(image_to_overwrite)
 
         try:

@@ -8,7 +8,6 @@ import json
 from scandir import scandir
 import subprocess
 from bisect import bisect_left
-from win32com.client import Dispatch
 import logging
 import Queue
 import threading
@@ -213,7 +212,14 @@ class WinTaskScheduler:
                 split_line = line.split(" ")[-2:]
                 run_time = " ".join(split_line)
                 run_time = run_time.replace("\r", "")
-                time_object = datetime.datetime.strptime(run_time, "%I:%M:%S %p")
+                try:
+                    # windows 10 does a hour:minute:second pm/am format
+                    time_object = datetime.datetime.strptime(run_time, "%I:%M:%S %p")
+                except ValueError:
+                    # windows 7 provides a date and time, so convert run time to a time object as just time
+                    # windows 7 does day/month/year hours:minutes:seconds
+                    time_object = datetime.datetime.strptime(run_time, "%d/%m/%Y %H:%M:%S")
+
                 logging.info("Run time for task {0} is {1}".format(self.task_name, time_object.strftime("%I:%M %p")))
                 return time_object
 
@@ -305,6 +311,7 @@ class ThreadedCopy:
             t.daemon = True
             t.start()
         for i in range(0, len(src)):
+            #print src[i], dest[i]
             fileQueue.put((src[i], dest[i]))
         fileQueue.join()
 
@@ -664,10 +671,14 @@ def open_excel(file_path):
     Open an excel file in excel
     :param file_path: the file path of the excel file, newest excel does not accept forward slash in path
     """
-    xl = Dispatch("Excel.Application")
-    # otherwise excel is hidden
-    xl.Visible = True
-    xl.Workbooks.Open(file_path)
+    try:
+        from win32com.client import Dispatch
+        xl = Dispatch("Excel.Application")
+        # otherwise excel is hidden
+        xl.Visible = True
+        xl.Workbooks.Open(file_path)
+    except ImportError:
+        print("Cannot run win32com.clinet dispatch. Ignore this error if running Nuke.")
 
 
 def call_ext_py_api(command, interpreter=None):

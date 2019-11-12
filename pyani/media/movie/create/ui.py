@@ -82,6 +82,34 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         self.movie_output_name = QtWidgets.QLineEdit("")
         self.create_button = QtWidgets.QPushButton('Create')
         self.close_button = QtWidgets.QPushButton('Close')
+
+        # labels
+        self.images_options_img =  pyani.core.ui.Image("images\\image_options.png")
+        self.frame_options_img =  pyani.core.ui.Image("images\\frame_options.png")
+        self.movie_options_img =  pyani.core.ui.Image("images\\movie_options.png")
+
+        # buttons
+        self.btn_select_images = pyani.core.ui.ImageButton(
+            "images\\select_images_off.png",
+            "images\\select_images_on.png",
+            "images\\select_images_on.png",
+            size=(62, 84)
+        )
+        # buttons
+        self.btn_save_movie = pyani.core.ui.ImageButton(
+            "images\\save_movie_off.png",
+            "images\\save_movie_on.png",
+            "images\\save_movie_on.png",
+            size=(62, 84)
+        )
+        # buttons
+        self.btn_create_movie = pyani.core.ui.ImageButton(
+            "images\\create_off.png",
+            "images\\create_on.png",
+            "images\\create_on.png",
+            size=(216, 86)
+        )
+
         # defined later using ui function in create layout()
         self.movie_quality_cbox = None
         self.movie_combine_cbox = None
@@ -103,30 +131,33 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         """Build the layout of the UI
         """
 
+        # push buttons to right
+        h_layout_actions = QtWidgets.QHBoxLayout()
+        h_layout_actions.addStretch(1)
+        h_layout_actions.addWidget(self.btn_create_movie)
+        h_layout_actions.addItem(QtWidgets.QSpacerItem(40, 0))
+        self.main_layout.addLayout(h_layout_actions)
+        # add spacer
+        self.main_layout.addItem(QtWidgets.QSpacerItem(0, 75))
+
         # ----------------------
         #  image options
         # ----------------------
-        # open file dialog to select images
-        image_options_label = QtWidgets.QLabel("Image Options")
-        image_options_label.setFont(self.titles)
-        self.files_button.setMinimumSize(150, 30)
-
         # title
-        self.main_layout.addWidget(image_options_label)
-        self.main_layout.addItem(self.title_vert_spacer)
+        self.main_layout.addWidget(self.images_options_img)
 
         # image options spaced horizontally
         h_layout_files = QtWidgets.QHBoxLayout()
         h_layout_files.addWidget(self.files_display)
-        h_layout_files.addWidget(self.files_button)
+        h_layout_files.addItem(QtWidgets.QSpacerItem(30, 0))
+        h_layout_files.addWidget(self.btn_select_images)
+        h_layout_files.addItem(QtWidgets.QSpacerItem(40, 0))
         self.main_layout.addLayout(h_layout_files)
 
         # ----------------------
         # frame options
         # ----------------------
         # hold frames
-        frame_options_label = QtWidgets.QLabel("Frame Options")
-        frame_options_label.setFont(self.titles)
         frame_range_label = QtWidgets.QLabel("Frame Range")
         self.frame_range_input.setMinimumWidth(300)
         directions = ("Takes a frame range (denoted with '-' or single frames (separated with commas).\n"
@@ -138,11 +169,11 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         self.steps_sbox.setMinimum(1)
 
         # add spacer
-        self.main_layout.addItem(self.v_spacer)
-        self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
+        self.main_layout.addItem(QtWidgets.QSpacerItem(0, 25))
         # title
-        self.main_layout.addWidget(frame_options_label)
-        self.main_layout.addItem(self.title_vert_spacer)
+        self.main_layout.addWidget(self.frame_options_img)
+        # add spacer
+        self.main_layout.addItem(QtWidgets.QSpacerItem(0, 25))
         # use a grid for the options so they align correctly
         g_layout_frame_options = QtWidgets.QGridLayout()
         g_layout_frame_options.setHorizontalSpacing(50)
@@ -163,8 +194,6 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         # ----------------------
         # movie options
         # ----------------------
-        movie_options_label = QtWidgets.QLabel("Movie Options")
-        movie_options_label.setFont(self.titles)
         self.movie_output_button.setMinimumSize(150, 30)
         movie_quality_label, self.movie_quality_cbox = pyani.core.ui.build_checkbox(
             "High Quality",
@@ -188,15 +217,15 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         )
 
         # add spacer
-        self.main_layout.addItem(self.v_spacer)
-        self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
+        self.main_layout.addItem(QtWidgets.QSpacerItem(0, 50))
         # title
-        self.main_layout.addWidget(movie_options_label)
-        self.main_layout.addItem(self.title_vert_spacer)
+        self.main_layout.addWidget(self.movie_options_img)
 
         h_layout_mov_name = QtWidgets.QHBoxLayout()
         h_layout_mov_name.addWidget(self.movie_output_name)
-        h_layout_mov_name.addWidget(self.movie_output_button)
+        h_layout_mov_name.addItem(QtWidgets.QSpacerItem(30, 0))
+        h_layout_mov_name.addWidget(self.btn_save_movie)
+        h_layout_mov_name.addItem(QtWidgets.QSpacerItem(40, 0))
         self.main_layout.addLayout(h_layout_mov_name)
 
         # use a grid for the options so they align correctly
@@ -224,41 +253,23 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
 
         self.main_layout.addLayout(g_layout_movie_options)
 
-        # ----------------------
-        # actions
-        # ----------------------
-        self.create_button.setMinimumSize(150, 40)
-        self.create_button.setStyleSheet("background-color:{0};".format(pyani.core.ui.GREEN))
-        self.close_button.setMinimumSize(150, 40)
-        self.close_button.setStyleSheet("background-color:{0};".format(pyani.core.ui.GOLD))
         # add spacer
         self.main_layout.addItem(self.v_spacer)
-        # push buttons to bottom
-        self.main_layout.addStretch(1)
-        # push buttons to right
-        h_layout_actions = QtWidgets.QHBoxLayout()
-        h_layout_actions.addStretch(1)
-        h_layout_actions.addWidget(self.create_button)
-        h_layout_actions.addWidget(self.close_button)
-        self.main_layout.addLayout(h_layout_actions)
-
         self.add_layout_to_win()
 
     def set_slots(self):
         """Create the slots/actions that UI buttons / etc... do
         """
         # get selection which launches file dialog
-        self.files_button.clicked.connect(self.load_file_dialog)
+        self.btn_select_images.clicked.connect(self.load_file_dialog)
         # open dialog to select output path
-        self.movie_output_button.clicked.connect(self.save_movie)
+        self.btn_save_movie.clicked.connect(self.save_movie)
         # if state changes, update selection
         self.movie_combine_cbox.stateChanged.connect(self.movie_combine_update)
         # if state changes, update selection
         self.frame_hold_cbox.stateChanged.connect(self.update_hold_frame)
         # process options and create movie
-        self.create_button.clicked.connect(self.create_movie)
-        # call close built-in function
-        self.close_button.clicked.connect(self.close_and_cleanup)
+        self.btn_create_movie.clicked.connect(self.create_movie)
 
     def dropEvent(self, e):
         """
@@ -269,9 +280,12 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         """
         self.drop_event_wrapper(e, self.load_drag_drop)
 
-    def close_and_cleanup(self):
+    def closeEvent(self, event):
+        """
+        Custom close window event
+        :param event: the window close event
+        """
         self.shoot.cleanup()
-        self.close()
 
     def movie_combine_update(self):
         """
@@ -446,6 +460,7 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
                                           )
         if msg:
             self.msg_win.show_error_msg("Invalid Option", msg)
+            self.progress_update.hide()
             return False
 
         quality = self.movie_quality_cbox.checkState()

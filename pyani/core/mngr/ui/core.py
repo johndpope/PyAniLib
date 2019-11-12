@@ -456,8 +456,8 @@ class AniAssetUpdateReport(QtWidgets.QDialog):
         self.header_line_style = "border: 4px; color: #ffffff; background-color: #ffffff; border-radius: 2px;"
 
         self.setWindowTitle("Asset Update Report")
-        self.setMinimumWidth(600)
-        self.setMinimumHeight(800)
+        self.setMinimumWidth(800)
+        self.setMinimumHeight(900)
         self.btn_asset_update_report_close = QtWidgets.QPushButton("Close")
         self.btn_asset_update_report_close.clicked.connect(self.close)
 
@@ -481,19 +481,7 @@ class AniAssetUpdateReport(QtWidgets.QDialog):
         :param asset_mngr: an asset manager object - pyani.core.mngr.assets
         :param tools_mngr: a tool manager object - pyani.core.mngr.tools
         """
-        '''
-        format of the dicts below is:
-        {
-            asset_type: {
-                asset_category: [
-                    {
-                        asset_name : version
-                    },
-                    ...
-                ]
-            }
-        }
-        '''
+        # see pyani.core.mngr.core.find_new_and_updated_assets() for format of dicts
         if asset_mngr:
             assets_added, assets_modified, assets_deleted = asset_mngr.find_changed_assets()
         else:
@@ -519,17 +507,8 @@ class AniAssetUpdateReport(QtWidgets.QDialog):
         """
         Shows a report on screen with assets that were added, removed or modified during an update. emits a signal
         when finished.
-        :param assets_added: dictionary of assets added in format:
-        {
-            asset_type: {
-                asset_category: [
-                    {
-                        asset_name : version
-                    },
-                    ...
-                ]
-            }
-        }
+        :param assets_added: dictionary of assets added, see see pyani.core.mngr.core.find_new_and_updated_assets()
+        for format of dicts
         :param assets_modified: dictionary of assets that have had files updated/modified. in same format as assets
         added.
         :param assets_deleted: dictionary of assets that have been removed. in same format as assets added.
@@ -606,37 +585,35 @@ class AniAssetUpdateReport(QtWidgets.QDialog):
 
     def _order_by_asset_category(self, assets_list):
         """
-        orders the dictionary by category in this format:
+        orders the dictionary by category in this format, and then sorts assets by name:
         {
             asset_category: {
                 'display name' : name
                 'assets': [
-                    {
-                        asset_name : version
-                    },
+                    (
+                        asset_name, {asset info such as version, file names, etc}
+                    ),
+                    (
+                        asset_name, {asset info such as version, file names, etc}
+                    ),
                     ...
                 ]
             },
             ...
         }
-        :param assets_list: a dictionary in the format:
-        {
-            asset_type: {
-                asset_category: [
-                    {
-                        asset_name : version
-                    },
-                    ...
-                ]
-            }
-        }
+        :param assets_list: a dictionary in the format found here: pyani.core.mngr.core.find_new_and_updated_assets()
         """
         # convert unordered to ordered
         for asset_type in assets_list:
             for asset_category in assets_list[asset_type]:
-                self.assets_grouped_by_cat[asset_category]['assets'].extend(
-                    sorted(assets_list[asset_type][asset_category])
-                )
+                # convert to an ordered list from an unordered dict. converts the dict to a
+                # list of tuples sorted by name
+                dict_to_sorted_list_tuples = [
+                    (key, assets_list[asset_type][asset_category][key])
+                    for key in sorted(assets_list[asset_type][asset_category].keys())
+                ]
+                self.assets_grouped_by_cat[asset_category]['assets'] = dict_to_sorted_list_tuples
+
 
     def _create_asset_list_for_update_report(self):
         """
@@ -663,15 +640,46 @@ class AniAssetUpdateReport(QtWidgets.QDialog):
                                     self.font_size_body,
                                     self.font_family
                                 )
-                for asset_info in self.assets_grouped_by_cat[asset_category]['assets']:
-                    # get first element since a single entry dictionary
-                    (asset_name, version), = asset_info.items()
-                    if version:
+
+                for asset_name, asset_info in self.assets_grouped_by_cat[asset_category]['assets']:
+                    if asset_info['version']:
                         html_report += "<li>{0} : <span style='color:{2};'><i>Version {1}</i></span></li>".format(
-                            asset_name, version, pyani.core.ui.CYAN
+                            asset_name, asset_info['version'], pyani.core.ui.CYAN
                         )
                     else:
                         html_report += "<li>{0}</li>".format(asset_name)
+
+                    if asset_info['files added']:
+                        html_report += "<ul>" \
+                                       "<li><span style='color:{0};'>ADDED:<span></li>".format(pyani.core.ui.GREEN)
+                        html_report += "<ul>"
+                        # add files that were added, modified or removed
+                        for file_name in asset_info['files added']:
+                            html_report += "<li>{0}</li>".format(file_name)
+                        html_report += "</ul>" \
+                                       "</ul>"
+
+                    if asset_info['files modified']:
+                        html_report += "<ul>" \
+                                    "<li><span style='color:{0};'>UPDATED:<span></li>".format(pyani.core.ui.GOLD)
+                        html_report += "<ul>"
+                        # add files that were added, modified or removed
+                        for file_name in asset_info['files modified']:
+                            html_report += "<li>{0}</li>".format(file_name)
+                        html_report += "</ul>" \
+                                       "</ul>"
+
+                    if asset_info['files removed']:
+                        html_report += "<ul>" \
+                                       "<li><span style='color:{0};'>REMOVED:<span></li>".format(
+                                            pyani.core.ui.RED.name()
+                                        )
+                        html_report += "<ul>"
+                        # add files that were added, modified or removed
+                        for file_name in asset_info['files removed']:
+                            html_report += "<li>{0}</li>".format(file_name)
+                        html_report += "</ul>" \
+                                       "</ul>"
 
                 html_report += "</ul>" \
                                "</div>"

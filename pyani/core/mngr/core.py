@@ -1050,7 +1050,15 @@ class AniCoreMngr(QtCore.QObject):
         {
             asset_type: {
                 asset_category: [
-                    list of assets
+                    asset name: {
+                        'version' : version
+                        'files added' : [files]
+                        'files removed' : [files]
+                        'files modified' : [files]
+                    },
+                    asset_name: {
+                    },
+                    ...
                 ]
             }
         }
@@ -1064,6 +1072,14 @@ class AniCoreMngr(QtCore.QObject):
         for asset_type in timestamp_before_dl:
             for asset_category in timestamp_before_dl[asset_type]:
                 for asset_name in timestamp_before_dl[asset_type][asset_category]:
+                    asset_info = {
+                        'version': None,
+                        'files added': list(),
+                        'files removed': list(),
+                        'files modified': list()
+                    }
+                    files_list = list()
+                    version = None
                     for file_name, modified_time_before_dl in timestamp_before_dl[asset_type][asset_category][asset_name].items():
                         # ignore metadata files
                         if self.app_vars.cgt_metadata_filename not in file_name:
@@ -1072,15 +1088,29 @@ class AniCoreMngr(QtCore.QObject):
                                 if asset_type not in changed_assets:
                                     changed_assets[asset_type] = dict()
                                 if asset_category not in changed_assets[asset_type]:
-                                    changed_assets[asset_type][asset_category] = list()
-                                # get version if exists, returns {asset name: version} where version is string or none
-                                asset_info = self._get_latest_version(assets_after_sync, asset_type, asset_category, asset_name)
-                                changed_assets[asset_type][asset_category].append(asset_info)
+                                    changed_assets[asset_type][asset_category] = dict()
+                                # get version if exists, only version asset, so version will be the same for all files
+                                # belonging to an asset
+                                version = self._get_latest_version(
+                                    assets_after_sync, asset_type, asset_category, asset_name
+                                )
+                                files_list.append(file_name)
+                    if files_list:
+                        asset_info['version'] = version
+                        # add files to dict and add to changed assets
+                        asset_info['files modified'] = files_list
+                        changed_assets[asset_type][asset_category][asset_name] = asset_info
 
         # check for removed assets and added or removed files from existing assets
         for asset_type in assets_before_sync:
             for asset_category in assets_before_sync[asset_type]:
                 for asset_name in assets_before_sync[asset_type][asset_category]:
+                    asset_info = {
+                        'version': None,
+                        'files added': list(),
+                        'files removed': list(),
+                        'files modified': list()
+                    }
                     # first see if the asset still exists
                     if asset_name in assets_after_sync[asset_type][asset_category]:
                         # NOTE: key can be called files or file name so check for both
@@ -1102,36 +1132,61 @@ class AniCoreMngr(QtCore.QObject):
                             if asset_type not in changed_assets:
                                 changed_assets[asset_type] = dict()
                             if asset_category not in changed_assets[asset_type]:
-                                changed_assets[asset_type][asset_category] = list()
+                                changed_assets[asset_type][asset_category] = dict()
+                            # if asset_name not in changed_assets[asset_type][asset_category]:
+                            # get version if exists, returns {asset name: version} where version is string or none
+                            version = self._get_latest_version(
+                                assets_after_sync, asset_type, asset_category, asset_name
+                            )
+                            asset_info['version'] = version
+
+                            files_removed = set(files_before_sync) - set(files_after_sync)
+                            if files_removed:
+                                asset_info['files removed'] = list(files_removed)
+
+                            files_added = set(files_after_sync) - set(files_before_sync)
+                            if files_added:
+                                asset_info['files added'] = list(files_added)
+
                             # asset may have already been added to the list from the timestamp check,
-                            # don't add twice
+                            # don't add twice, need to check list of assets
                             if asset_name not in changed_assets[asset_type][asset_category]:
-                                # get version if exists, returns {asset name: version} where version is string or none
-                                asset_info = self._get_latest_version(assets_after_sync, asset_type, asset_category, asset_name)
-                                changed_assets[asset_type][asset_category].append(asset_info)
+                                changed_assets[asset_type][asset_category][asset_name] = asset_info
+                            else:
+                                changed_assets[asset_type][asset_category][asset_name]['files removed'] = list(files_removed)
+                                changed_assets[asset_type][asset_category][asset_name]['files added'] = list(files_added)
+
                     # asset removed
                     else:
                         if asset_type not in removed_assets:
                             removed_assets[asset_type] = dict()
                         if asset_category not in removed_assets[asset_type]:
-                            removed_assets[asset_type][asset_category] = list()
+                            removed_assets[asset_type][asset_category] = dict()
                         # get version if exists, returns {asset name: version} where version is string or none
-                        asset_info = self._get_latest_version(assets_before_sync, asset_type, asset_category, asset_name)
-                        removed_assets[asset_type][asset_category].append(asset_info)
+                        version = self._get_latest_version(assets_before_sync, asset_type, asset_category, asset_name)
+                        asset_info['version'] = version
+                        removed_assets[asset_type][asset_category][asset_name] = asset_info
 
         # check for new assets
         for asset_type in assets_after_sync:
             for asset_category in assets_after_sync[asset_type]:
                 for asset_name in assets_after_sync[asset_type][asset_category]:
+                    asset_info = {
+                        'version': None,
+                        'files added': list(),
+                        'files removed': list(),
+                        'files modified': list()
+                    }
                     # first see if the asset still exists
                     if asset_name not in assets_before_sync[asset_type][asset_category]:
                         if asset_type not in new_assets:
                             new_assets[asset_type] = dict()
                         if asset_category not in new_assets[asset_type]:
-                            new_assets[asset_type][asset_category] = list()
+                            new_assets[asset_type][asset_category] = dict()
                         # get version if exists, returns {asset name: version} where version is string or none
-                        asset_info = self._get_latest_version(assets_after_sync, asset_type, asset_category, asset_name)
-                        new_assets[asset_type][asset_category].append(asset_info)
+                        version = self._get_latest_version(assets_after_sync, asset_type, asset_category, asset_name)
+                        asset_info['version'] = version
+                        new_assets[asset_type][asset_category][asset_name] = asset_info
 
         return new_assets, changed_assets, removed_assets
 
@@ -1145,8 +1200,7 @@ class AniCoreMngr(QtCore.QObject):
         :param asset_category: the asset component/category to update- see pyani.core.appvars.py for asset components/
         categories
         :param asset_name: asset name
-        :return: a dictionary with the asset name: version. dictionary used rather than tuple since more easily
-        expandable to include other asset information if needed
+        :return: the version as a string
         """
         # if 'version info' key is present it's a tool, otherwise asset
         if 'version info' in assets_cache[asset_type][asset_category][asset_name]:
@@ -1159,8 +1213,7 @@ class AniCoreMngr(QtCore.QObject):
         # other asset
         else:
             version = assets_cache[asset_type][asset_category][asset_name]['version']
-        asset_info = {asset_name: version}
-        return asset_info
+        return version
 
     @staticmethod
     def convert_server_path_to_local_server_representation(server_path, directory_only=False):
