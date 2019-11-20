@@ -1994,8 +1994,10 @@ class TabsWidget(QtWidgets.QTabWidget):
             self.tab = TabBarWidget(self)
             self.setTabBar(self.tab)
 
-        # create the initial tab
+        # create the initial tab and set font
         self.add_tab(tab_name)
+        self.setFont(QtGui.QFont(FONT_FAMILY))
+
         self.create_layout()
         self.set_slots()
 

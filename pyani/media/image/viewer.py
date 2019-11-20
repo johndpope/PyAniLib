@@ -219,39 +219,37 @@ class AniImageSeqPlaybackController(QtWidgets.QWidget):
 
         # buttons
         self.btn_play = pyani.core.ui.ImageButton(
-            "images\play_off.png",
-            "images\play_on.png",
-            "images\play_on.png"
+            "images\\play_off.png",
+            "images\\play_on.png",
+            "images\\play_on.png"
         )
         self.btn_stop = pyani.core.ui.ImageButton(
-            "images\stop_off.png",
-            "images\stop_on.png",
-            "images\stop_on.png"
+            "images\\stop_off.png",
+            "images\\stop_on.png",
+            "images\\stop_on.png"
         )
         self.btn_pause = pyani.core.ui.ImageButton(
-            "images\pause_off.png",
-            "images\pause_on.png",
-            "images\pause_on.png"
+            "images\\pause_off.png",
+            "images\\pause_on.png",
+            "images\\pause_on.png"
         )
         self.btn_step_fwd = pyani.core.ui.ImageButton(
-            "images\step_fwd_off.png",
-            "images\step_fwd_on.png",
-            "images\step_fwd_on.png"
+            "images\\step_fwd_off.png",
+            "images\\step_fwd_on.png",
+            "images\\step_fwd_on.png"
         )
         self.btn_step_back = pyani.core.ui.ImageButton(
-            "images\step_back_off.png",
-            "images\step_back_on.png",
-            "images\step_back_on.png"
+            "images\\step_back_off.png",
+            "images\\step_back_on.png",
+            "images\\step_back_on.png"
         )
         self.btn_loop = pyani.core.ui.ImageButton(
-            "images\loop_off.png",
-            "images\loop_on.png",
-            "images\loop_on.png"
+            "images\\loop_off.png",
+            "images\\loop_on.png",
+            "images\\loop_on.png"
         )
-        self.loop_disabled_img = \
-            "images\loop_disabled.png"
-        self.loop_enabled_img = \
-            "images\loop_off.png"
+        self.loop_disabled_img = "images\\loop_disabled.png"
+        self.loop_enabled_img = "images\\loop_off.png"
 
         self.build_widget()
         # set signal/slots
@@ -496,6 +494,9 @@ class AniExrViewerWidget(QtWidgets.QWidget):
 
     # the pyqt signal used to communicate with the viewer class object AniImageViewer when its in a thread
     imageChanged = pyqtSignal(QtGui.QPixmap)
+    # pyqt signal used to communicate that an image(s) loaded and what the file name is so it can
+    # be used
+    imageLoaded = pyqtSignal(object)
 
     def __init__(self):
         super(AniExrViewerWidget, self).__init__()
@@ -521,34 +522,39 @@ class AniExrViewerWidget(QtWidgets.QWidget):
 
         # main ui elements - styling set in the create ui functions
         self.layer_list_menu = QtWidgets.QComboBox()
-        self.btn_image_select = QtWidgets.QPushButton("Select Image")
         self.image_file_path = QtWidgets.QLineEdit("")
         self.btn_next = pyani.core.ui.ImageButton(
-            "images\layer_next_off.png",
-            "images\layer_next_on.png",
-            "images\layer_next_off.png",
+            "images\\layer_next_off.png",
+            "images\\layer_next_on.png",
+            "images\\layer_next_off.png",
             size=(45, 32)
         )
         self.btn_prev = pyani.core.ui.ImageButton(
-            "images\layer_prev_off.png",
-            "images\layer_prev_on.png",
-            "images\layer_prev_off.png",
+            "images\\layer_prev_off.png",
+            "images\\layer_prev_on.png",
+            "images\\layer_prev_off.png",
             size=(45, 32)
         )
         self.btn_info = pyani.core.ui.ImageButton(
-            "images\info_off.png",
-            "images\info_on.png",
-            "images\info_on.png"
+            "images\\info_off.png",
+            "images\\info_on.png",
+            "images\\info_on.png"
         )
         self.btn_zoom_in = pyani.core.ui.ImageButton(
-            "images\zoom_plus_off.png",
-            "images\zoom_plus_on.png",
-            "images\zoom_plus_on.png"
+            "images\\zoom_plus_off.png",
+            "images\\zoom_plus_on.png",
+            "images\\zoom_plus_on.png"
         )
         self.btn_zoom_out = pyani.core.ui.ImageButton(
-            "images\zoom_minus_off.png",
-            "images\zoom_minus_on.png",
-            "images\zoom_minus_on.png"
+            "images\\zoom_minus_off.png",
+            "images\\zoom_minus_on.png",
+            "images\\zoom_minus_on.png"
+        )
+        self.btn_image_select = pyani.core.ui.ImageButton(
+            "images\\select_images_off.png",
+            "images\\select_images_on.png",
+            "images\\select_images_on.png",
+            size=(171, 44)
         )
         # for popup window displaying exr metadata
         self.metadata_popup_win = None
@@ -563,17 +569,13 @@ class AniExrViewerWidget(QtWidgets.QWidget):
 
         self.top_layout = QtWidgets.QVBoxLayout()
 
-        # set font size and style for title labels
-        self.titles = QtGui.QFont()
-        self.titles.setPointSize(14)
-        self.titles.setBold(True)
-        self.bold_font = QtGui.QFont()
-        self.bold_font.setBold(True)
+        # text font to use for ui
+        self.font_family = pyani.core.ui.FONT_FAMILY
+        self.font_size = pyani.core.ui.FONT_SIZE_DEFAULT
+
         # spacer to use between sections
         self.v_spacer = QtWidgets.QSpacerItem(0, 35)
         self.empty_space = QtWidgets.QSpacerItem(1, 1)
-        self.horizontal_spacer = QtWidgets.QSpacerItem(50, 0)
-        self.title_vert_spacer = QtWidgets.QSpacerItem(0, 15)
 
         self.create_layout()
         self.set_slots()
@@ -585,11 +587,14 @@ class AniExrViewerWidget(QtWidgets.QWidget):
         # |    label    | file path --|-->       |     btn     |      space       |
         g_layout_header = QtWidgets.QGridLayout()
         # image selection
-        image_label = QtWidgets.QLabel("Image:")
+        image_label = QtWidgets.QLabel(
+            "<span style='font-size:{0}pt; font-family:{1}; color:#ffffff;'>Image(s)</span>".format(
+                self.font_size,
+                self.font_family
+            )
+        )
         g_layout_header.addWidget(image_label, 0, 0)
         g_layout_header.addWidget(self.image_file_path, 0, 1)
-        self.btn_image_select.setStyleSheet("background-color:{0};".format(pyani.core.ui.GREEN))
-        self.btn_image_select.setMinimumSize(150, 30)
         g_layout_header.addWidget(self.btn_image_select, 0, 2)
         g_layout_header.addItem(self.empty_space, 0, 3)
         g_layout_header.setColumnStretch(1, 2)
@@ -600,29 +605,54 @@ class AniExrViewerWidget(QtWidgets.QWidget):
         # |  channel list  |   space   |   prev    |   next   |   space  |  exr info  |  space  | zoom | space  |
         g_layout_options = QtWidgets.QGridLayout()
         # layer list
-        layer_list_label = QtWidgets.QLabel("Exr Layers:")
+        layer_list_label = QtWidgets.QLabel(
+            "<span style='font-size:{0}pt; font-family:{1}; color:#ffffff;'>Exr Layers</span>".format(
+                self.font_size,
+                self.font_family
+            )
+        )
         g_layout_options.addWidget(layer_list_label, 0, 0)
         g_layout_options.addWidget(self.layer_list_menu, 0, 1)
         g_layout_options.addItem(QtWidgets.QSpacerItem(15, 0), 0, 2)
         # prev button
-        prev_label = QtWidgets.QLabel("Prev Layer")
+        prev_label = QtWidgets.QLabel(
+            "<span style='font-size:{0}pt; font-family:{1}; color:#ffffff;'>Prev Layer</span>".format(
+                self.font_size,
+                self.font_family
+            )
+        )
         g_layout_options.addWidget(prev_label, 0, 3)
         g_layout_options.addWidget(self.btn_prev, 0, 4)
         g_layout_options.addItem(QtWidgets.QSpacerItem(25, 0), 0, 5)
         # next button
-        next_label = QtWidgets.QLabel("Next Layer")
+        next_label = QtWidgets.QLabel(
+            "<span style='font-size:{0}pt; font-family:{1}; color:#ffffff;'>Next Layer</span>".format(
+                self.font_size,
+                self.font_family
+            )
+        )
         g_layout_options.addWidget(self.btn_next, 0, 6)
         g_layout_options.addWidget(next_label, 0, 7)
         # space
         g_layout_options.addItem(self.empty_space, 0, 8)
         # exr info
-        exr_header_info_title = QtWidgets.QLabel("Exr Header Information:")
+        exr_header_info_title = QtWidgets.QLabel(
+            "<span style='font-size:{0}pt; font-family:{1}; color:#ffffff;'>Exr Header Information</span>".format(
+                self.font_size,
+                self.font_family
+            )
+        )
         g_layout_options.addWidget(exr_header_info_title, 0, 9)
         g_layout_options.addWidget(self.btn_info, 0, 10)
         # space
         g_layout_options.addItem(self.empty_space, 0, 11)
         # zoom
-        zoom_title = QtWidgets.QLabel("Zoom:")
+        zoom_title = QtWidgets.QLabel(
+            "<span style='font-size:{0}pt; font-family:{1}; color:#ffffff;'>Zoom</span>".format(
+                self.font_size,
+                self.font_family
+            )
+        )
         g_layout_options.addWidget(zoom_title, 0, 12)
         g_layout_options.addWidget(self.btn_zoom_in, 0, 13)
         g_layout_options.addItem(QtWidgets.QSpacerItem(25, 0), 0, 14)
@@ -914,6 +944,9 @@ class AniExrViewerWidget(QtWidgets.QWidget):
                 self.image_file_path.setText(exr_img_path)
                 # load the actual pixel data
                 self._load_exr_layers()
+
+            # pass image name to tab
+            self.imageLoaded.emit(self.image_file_path.text().split("/")[-1])
         else:
             error = "Could not load files, drag and drop or file dialog error."
             logger.error(error)
@@ -1172,10 +1205,13 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
         self.set_keyboard_shortcuts()
 
         # create the tabs
-        self.tabs = pyani.core.ui.TabsWidget(dynamic_tab_bar=True, tab_name="Exr Viewer #1")
+        default_tab_name = "Exr Viewer #1"
+        self.tabs = pyani.core.ui.TabsWidget(dynamic_tab_bar=True, tab_name=default_tab_name)
 
         self.exr_viewers = []
         self.exr_viewers.append(AniExrViewerWidget())
+        # connect so we can change the tab name when an image(s) is loaded
+        self.exr_viewers[0].imageLoaded.connect(self.update_tab_name)
 
         self.create_layout()
         self.set_slots()
@@ -1185,9 +1221,9 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
         """
         self.main_layout.addWidget(self.tabs)
 
-        layout1 = QtWidgets.QVBoxLayout()
-        layout1.addWidget(self.exr_viewers[0])
-        self.tabs.update_tab(layout1)
+        exr_layout = QtWidgets.QVBoxLayout()
+        exr_layout.addWidget(self.exr_viewers[0])
+        self.tabs.update_tab(exr_layout)
 
         self.main_layout.addItem(self.v_spacer)
         # add the layout to the main app widget
@@ -1213,11 +1249,20 @@ class AniExrViewerGui(pyani.core.ui.AniQMainWindow):
 
     def add_exr_viewer(self, index):
         self.exr_viewers.append(AniExrViewerWidget())
+        # connect the newly created exr viewer so we can change the tab name once images are loaded
+        self.exr_viewers[-1].imageLoaded.connect(self.update_tab_name)
         self.tabs.setCurrentIndex(index)
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.exr_viewers[-1])
         self.tabs.update_tab(layout)
         self.tabs.update_tab_name("Exr Viewer #{0}".format(str(index+1)))
+
+    def update_tab_name(self, name):
+        """
+        Updates the tab name with the image file name
+        :param name: file name of the images
+        """
+        self.tabs.update_tab_name(name)
 
     def dropEvent(self, e):
         """
