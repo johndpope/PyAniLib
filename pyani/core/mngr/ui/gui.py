@@ -171,11 +171,6 @@ class AssetComponentTab(QtWidgets.QWidget):
         self.asset_mngr.finished_tracking.connect(self.tracking_finished)
         self.track_asset_changes_cbox.clicked.connect(self.update_tracking_preferences)
 
-    def show_sync_and_download_report(self):
-        """
-        Launches the report on which assets where added, modified, or removed
-        """
-
     def sync_finished(self, asset_component):
         """
         Runs when the cgt sync finishes. the asset manager class send the signal and name of the asset component that
@@ -417,13 +412,13 @@ class AssetComponentTab(QtWidgets.QWidget):
         # shot assets will only ever return shot as the asset type, so first list element always exists
         if asset_types[0] == "shot":
             asset_type = asset_types[0]
-            assets_info = self.asset_mngr.get_asset_info_by_asset_component(asset_type, self.asset_component)
+            asset_names = self.asset_mngr.get_assets_by_asset_component(asset_type, self.asset_component)
 
             asset_info_modified = dict()
             # loop through all seq/shot assets, asset info is currently a list of "seq###/shot###":asset info
             # but we want a list of seq and their shots that have the specified asset component (excludes shots
             # that don't have the asset component)
-            for asset_name, asset_properties in assets_info.items():
+            for asset_name in asset_names:
                 seq, shot = tuple(asset_name.split("/"))
                 if seq not in asset_info_modified:
                     asset_info_modified[seq] = list()
@@ -456,13 +451,17 @@ class AssetComponentTab(QtWidgets.QWidget):
         # show assets
         else:
             for asset_type in asset_types:
-                assets_info = self.asset_mngr.get_asset_info_by_asset_component(asset_type, self.asset_component)
+                asset_names = self.asset_mngr.get_assets_by_asset_component(asset_type, self.asset_component)
                 assets_list = []
                 # for all asset names, make a list of tree item objects that have asset name and optionally version
-                for asset_name, asset_properties in sorted(assets_info.items()):
-                    if self.app_vars.asset_types[asset_type][self.asset_component]['is versioned']:
-
-                        row_text = [asset_name, asset_properties["version"]]
+                for asset_name in sorted(asset_names):
+                    if self.asset_mngr.is_asset_versioned(asset_type, self.asset_component):
+                        asset_version = self.asset_mngr.get_asset_version_from_cache(
+                            asset_type,
+                            self.asset_component,
+                            asset_name
+                        )
+                        row_text = [asset_name, asset_version]
                         # will be 3 since version assets have approved and work folders and we have a column for that
                         # after version
                         col_count = 3
@@ -473,7 +472,7 @@ class AssetComponentTab(QtWidgets.QWidget):
                         ):
                             # check if file doesn't exist on server - this let's user know so they don't wonder why
                             # update isn't getting any files
-                            if not asset_properties['file name']:
+                            if not self.asset_mngr.get_asset_files(asset_type, self.asset_component, asset_name):
                                 # found missing file on server, set to strikeout - see pyani.core.ui.CheckboxTreeWidget
                                 # for available formatting options
                                 row_text[0] = "strikethrough:{0}".format(row_text[0])
@@ -491,7 +490,7 @@ class AssetComponentTab(QtWidgets.QWidget):
                             row_color = [pyani.core.ui.WHITE, pyani.core.ui.WHITE]
                             # check if file doesn't exist on server - this let's user know so they don't wonder why
                             # update isn't getting any files
-                            if not asset_properties['file name']:
+                            if not self.asset_mngr.get_asset_files(asset_type, self.asset_component, asset_name):
                                 # found missing file on server, set to strikeout - see pyani.core.ui.CheckboxTreeWidget
                                 # for available formatting options
                                 row_text[0] = "strikethrough:{0}".format(row_text[0])
@@ -501,21 +500,32 @@ class AssetComponentTab(QtWidgets.QWidget):
                         if row_text[1] == "":
                             row_text[1] = "n/a"
 
-                        # check if the version on disk is older than the cloud version - will only exist and be
-                        # accurate if asset is in update config file. If file was added then removed, can't guarantee
-                        # version information, may have updated the asset via cgt interface.
+                        # check if the version on disk is older than the cloud version
+                        '''
+                        old code which required asset be in update config
                         if self.asset_mngr.is_asset_in_update_config(
                                 asset_type, self.asset_component, asset_name
                         ):
                             json_data = pyani.core.util.load_json(
-                                os.path.join(asset_properties["local path"], self.app_vars.cgt_metadata_filename)
+                                os.path.join(
+                                    self.asset_mngr.get_asset_local_dir_from_cache(asset_type, self.asset_component, asset_name),
+                                    self.app_vars.cgt_metadata_filename
+                                )
                             )
                         else:
                             json_data = None
+                        '''
+                        json_data = pyani.core.util.load_json(
+                            os.path.join(
+                                self.asset_mngr.get_asset_local_dir_from_cache(asset_type, self.asset_component,
+                                                                               asset_name),
+                                self.app_vars.cgt_metadata_filename
+                            )
+                        )
 
                         if isinstance(json_data, dict):
-                            if not json_data["version"] == asset_properties["version"]:
-                                row_text[1] = "{0} / ({1})".format(json_data["version"], asset_properties["version"])
+                            if not json_data["version"] == asset_version:
+                                row_text[1] = "{0} / ({1})".format(json_data["version"], asset_version)
                                 # keep the first color, but replace white with red for version
                                 row_color = [row_color[0], pyani.core.ui.RED.name()]
 
@@ -594,15 +604,6 @@ class AssetComponentTab(QtWidgets.QWidget):
         if self.show_only_auto_update_assets_cbox.checkState():
             # get all checked assets - we want the ones selected in this session as well
             unchecked_assets = self.asset_tree.get_tree_unchecked()
-
-            '''
-            seems to do nothing:
-            unchecked_assets_no_asset_types = [
-                unchecked_asset for unchecked_asset in unchecked_assets \
-                if unchecked_asset not in self.app_vars.asset_types
-            ]
-            '''
-
             self.asset_tree.hide_items(unchecked_assets)
             self.asset_tree.expand_all()
         else:

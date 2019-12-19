@@ -946,6 +946,7 @@ class AniQMainWindow(QtWidgets.QMainWindow):
                     self.tool_category,
                     self.tool_name
                 )
+
                 if self.local_version == self.cgt_version:
                     self.vers_label.setText(
                         "<span style='font-size:{0}pt; font-family:{1}; color:#ffffff;'>Version: {2}</span>".format(

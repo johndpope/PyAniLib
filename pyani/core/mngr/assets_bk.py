@@ -660,6 +660,10 @@ class AniAssetMngr(AniCoreMngr):
                         if file_names:
                             # could be more than one file
                             for file_name in file_names:
+                                server_path = "{0}/{1}".format(
+                                    self.get_asset_server_dir_from_cache(asset_type, asset_component, asset_name),
+                                    file_name
+                                )
                                 local_path = self.get_asset_local_dir_from_cache(asset_type, asset_component, asset_name)
 
                                 # get timestamps of tools being downloaded - create keys if needed
@@ -680,7 +684,7 @@ class AniAssetMngr(AniCoreMngr):
                                 worker = pyani.core.ui.Worker(
                                     self.server_file_download,
                                     False,
-                                    [file_name],
+                                    [server_path],
                                     local_file_paths=[local_path],
                                     update_local_version=True
                                 )
@@ -751,7 +755,7 @@ class AniAssetMngr(AniCoreMngr):
             # if no asset components were provided, rebuild for all components, otherwise rebuild for the
             # asset type's component that was provided
             if not pyani.core.util.find_val_in_nested_dict(assets_dict, [asset_type]):
-                asset_components = self.app_vars.asset_types[asset_type].keys()
+                asset_components = self.app_vars.asset_types[asset_type]
             else:
                 # get asset components provided
                 asset_components = assets_dict[asset_type].keys()
@@ -765,159 +769,62 @@ class AniAssetMngr(AniCoreMngr):
                 if asset_component not in self._asset_info[asset_type]:
                     self._asset_info[asset_type][asset_component] = dict()
 
-                # if asset names provided, get asset names
-                if pyani.core.util.find_val_in_nested_dict(assets_dict, [asset_type, asset_component]):
+                # if no asset names provided, rebuild all assets for asset component
+                if not pyani.core.util.find_val_in_nested_dict(assets_dict, [asset_type, asset_component]):
+                    asset_names = list()
+                    # handle shot assets' asset name differently than show assets' asset names
+                    if asset_type == "shot":
+                        # make sure the sequence shot list loads
+                        error = self.ani_vars.load_seq_shot_list()
+                        if error:
+                            return error
+                        else:
+                            # build a list of asset names as Seq###_Shot###
+                            for seq in self.ani_vars.get_sequence_list():
+                                self.ani_vars.update(seq_name=seq)
+                                for shot in self.ani_vars.get_shot_list():
+                                    asset_names.append("{0}/{1}".format(seq, shot))
+
+                    # show assets
+                    else:
+                        # get all assets in the directory
+                        asset_names = self.server_get_dir_list(asset_type_root_path)
+
+                # asset names given so only update these assets
+                else:
                     # grab the assets corresponding to the asset type
                     asset_names = assets_dict[asset_type][asset_component]
-                else:
-                    asset_names = None
 
-                # now use multi-threading to get file info for assets by component type
-                worker = pyani.core.ui.Worker(
-                    self.server_get_asset_info,
-                    False,
-                    asset_type_root_path,
-                    asset_type,
-                    asset_component,
-                    asset_names=asset_names
-                )
-                self.thread_total += 1.0
-                self.thread_pool.start(worker)
-                # reset error list
-                self.init_thread_error()
-                # slot that is called when a thread finishes, pass the call back function to call when its done
-                # check if thread callback is cache update or cache update with download, if no callback,
-                # use the default cache complete callback
-                if not thread_callback:
-                    worker.signals.finished.connect(
-                        functools.partial(self._thread_server_cache_complete, self.server_save_local_cache)
+                # now use multi-threading to check each asset for version, components, and files
+                for asset_name in asset_names:
+                    worker = pyani.core.ui.Worker(
+                        self.server_get_asset_info,
+                        False,
+                        asset_type_root_path,
+                        asset_type,
+                        asset_name,
+                        asset_component
                     )
-                else:
-                    active_asset_component = thread_callback_args[0]
-                    save_method = thread_callback_args[1]
-                    worker.signals.finished.connect(
-                        functools.partial(self._thread_server_sync_complete, active_asset_component, save_method)
-                    )
-                worker.signals.error.connect(self.error_thread_signal)
-
-    def server_get_asset_info(self, root_path, asset_type, asset_component, asset_names=None):
-        """
-        gets file info for assets by component type from cgt server and adds to asset info cache in permanent dir
-        :param root_path: the path to the asset names, for example /LongGong/asset/set/
-        :param asset_type: the type of asset, see pyani.core.appvars for asset types
-        :param asset_component: the asset component, see pyani.core.appvars for asset components
-        :param asset_names: list of asset names
-        :return error message or none
-        """
-        # the file name to store file info from CGT
-        if asset_component.split("/") > 1:
-            prefix = asset_type + "_" + asset_component.replace("/", "_")
-        else:
-            prefix = asset_type + "_" + asset_component
-        json_temp_file_info_path = os.path.join(
-            self.app_vars.cgt_temp_file_cache_dir,
-            prefix + "_" + self.app_vars.cgt_tmp_file_cache_filename
-        )
-
-        # get file info for assets from CGT
-        error = self.server_get_file_listing_using_folder_filter(root_path, asset_component, json_temp_file_info_path)
-        if error:
-            error_fmt = "Error getting file information from cgt server. Error is {0}".format(error)
-            self.send_thread_error(error_fmt)
-            return error_fmt
-
-        # process and add cgt file info for assets to asset info cache
-        self._create_asset_info(
-            root_path, json_temp_file_info_path, asset_type, asset_component, asset_names=asset_names
-        )
-
-        return None
-
-    def _create_asset_info(self, root_path, json_temp_file_info_path, asset_type, asset_component, asset_names=None):
-        """
-        creates the asset info cache stored in permanent data dir
-        :param root_path: the path to the asset names, for example /LongGong/asset/set/
-        :param json_temp_file_info_path: path where the server file info is stored
-        :param asset_type: the type of asset, see pyani.core.appvars for asset types
-        :param asset_component: the asset component, see pyani.core.appvars for asset components
-        :param asset_names: list of asset names
-        """
-
-        asset_info_sorted = self._presort_cgt_asset_info(
-            root_path, json_temp_file_info_path, asset_type, asset_component, asset_names=asset_names
-        )
-
-        # go through all folders under the root path
-        for asset_name in asset_info_sorted:
-
-            # check if the asset exists already, if not add the asset name key and create file list key for asset
-            if asset_name not in self._asset_info[asset_type][asset_component]:
-                self._asset_info[asset_type][asset_component][asset_name] = dict()
-
-            # check if asset has files in approved
-            if 'approved' in asset_info_sorted[asset_name]:
-                self._asset_info[asset_type][asset_component][asset_name]["approved"] = True
-                # get directory - all files in same directory so just use first file but make sure actually has files
-                if asset_info_sorted[asset_name]['approved']:
-                    cgt_dir = asset_info_sorted[asset_name]['approved'][0].split('approved')[0] + "approved"
-                else:
-                    cgt_dir = asset_info_sorted[asset_name]['component path'] + "approved"
-                # get files
-                file_list = asset_info_sorted[asset_name]['approved']
-                # check if the asset is versioned. A publishable asset may not be versioned, like audio
-                if self.is_asset_versioned(asset_type, asset_component):
-                    # make sure there is a history
-                    if 'approved/history' in asset_info_sorted[asset_name]:
-                        _, version = self.core_get_latest_version(
-                            file_list=asset_info_sorted[asset_name]['approved/history']
+                    self.thread_total += 1.0
+                    self.thread_pool.start(worker)
+                    # reset error list
+                    self.init_thread_error()
+                    # slot that is called when a thread finishes, pass the call back function to call when its done
+                    # check if thread callback is cache update or cache update with download, if no callback,
+                    # use the default cache complete callback
+                    if not thread_callback:
+                        worker.signals.finished.connect(
+                            functools.partial(self._thread_server_cache_complete, self.server_save_local_cache)
                         )
                     else:
-                        version = ""
-                # asset not versioned but is approved - ex: audio files
-                else:
-                    version = ""
+                        active_asset_component = thread_callback_args[0]
+                        save_method = thread_callback_args[1]
+                        worker.signals.finished.connect(
+                            functools.partial(self._thread_server_sync_complete, active_asset_component, save_method)
+                        )
+                    worker.signals.error.connect(self.error_thread_signal)
 
-            # check if asset has a work folder
-            elif 'work' in asset_info_sorted[asset_name]:
-                self._asset_info[asset_type][asset_component][asset_name]["approved"] = False
-                # get directory - all files in same directory so just use first file but make sure actually has files
-                if asset_info_sorted[asset_name]['work']:
-                    cgt_dir = asset_info_sorted[asset_name]['work'][0].split('work')[0] + "work"
-                else:
-                    cgt_dir = asset_info_sorted[asset_name]['component path'] + "work"
-
-                # get version first, then can grab the file we want
-                _, version = self.core_get_latest_version(file_list=asset_info_sorted[asset_name]['work'])
-                # filter for the files that have the version we want
-                file_list = [file_name for file_name in asset_info_sorted[asset_name]['work'] if version in file_name]
-
-            # check if asset is not publishable
-            elif '.' in asset_info_sorted[asset_name]:
-                # get directory - all files in same directory so just use first file
-                cgt_dir = '/'.join(asset_info_sorted[asset_name]['.'][0].split('/')[:-1])
-                # these aren't versioned
-                version = ""
-                file_list = asset_info_sorted[asset_name]['.']
-            # asset doesn't have files
-            else:
-                # get directory of component since files, remove right most '/' to be consistent with other asset
-                # cgt dir paths
-                cgt_dir = asset_info_sorted[asset_name]['component path'].rstrip('/')
-                # these aren't versioned
-                version = ""
-                # no files
-                file_list = list()
-
-            self._asset_info[asset_type][asset_component][asset_name]["cgt cloud dir"] = cgt_dir
-            self._asset_info[asset_type][asset_component][asset_name]["local path"] = \
-                self.convert_server_path_to_local_server_representation(cgt_dir)
-            # save the version and file name
-            self._asset_info[asset_type][asset_component][asset_name]["version"] = version
-            self._asset_info[asset_type][asset_component][asset_name]["files"] = file_list
-
-        return None
-
-    def server_get_asset_info_depr(self, root_path, asset_type, asset_name, asset_component):
+    def server_get_asset_info(self, root_path, asset_type, asset_name, asset_component):
         """
         Gets a single asset's version, server path, local path, notes path, and files from server.
         Handles both shot and show assets. Also handles multiple files for an asset.
@@ -1021,7 +928,7 @@ class AniAssetMngr(AniCoreMngr):
                 self._asset_info[asset_type][asset_component][asset_name]["file name"] = \
                     self.server_get_file_names(server_asset_component_path)
 
-    def server_asset_component_has_notes_depr(self, notes_path):
+    def server_asset_component_has_notes(self, notes_path):
         """
         Checks if an asset component has notes, for example does the rig have notes
         :param notes_path: a string containing the server path to the notes,
@@ -1038,7 +945,7 @@ class AniAssetMngr(AniCoreMngr):
             else:
                 return False
 
-    def server_get_file_names_depr(self, server_path_to_files):
+    def server_get_file_names(self, server_path_to_files):
         """
         gets a list of files from the server given a server path
         :param server_path_to_files: the absolute path for the directory listing
@@ -1046,7 +953,7 @@ class AniAssetMngr(AniCoreMngr):
         """
         return self.server_get_dir_list(server_path_to_files, dirs_only=False, files_only=True)
 
-    def server_asset_has_component_depr(self, server_asset_path, asset_component):
+    def server_asset_has_component(self, server_asset_path, asset_component):
         """
         Check if an asset has the component. A component is a directory under the asset name on server. For example:
         if "rig" is a component and we have a character asset 'Hei', then we are looking for
@@ -1073,7 +980,7 @@ class AniAssetMngr(AniCoreMngr):
         # component / directories exist
         return True
 
-    def server_is_asset_component_approved_depr(self, server_asset_component_path):
+    def server_is_asset_component_approved(self, server_asset_component_path):
         """
         Checks if an asset has an approved folder, meaning it was published.
         :param server_asset_component_path: the server path to the asset's component
@@ -1126,153 +1033,6 @@ class AniAssetMngr(AniCoreMngr):
         return self.find_new_and_updated_assets(
             self._assets_timestamp_before_dl, self._existing_assets_before_sync, self._asset_info
         )
-
-    def _presort_cgt_asset_info(self, root_path, json_temp_file_info_path, asset_type, asset_component, asset_names=None):
-        """
-        sorts the assets from being a list of dicts, where each dict contains a path to an asset's file to a list of
-        dicts, one per asset, with all the file paths for that asset. For example, we go from:
-        [
-            {/LongGong/asset/set/setAltar/model/cache/cache1.gpu, some other file stats},
-            {/LongGong/asset/set/setAltar/model/cache/cache2.gpu, some other file stats},
-        ]
-         to
-
-        {
-            setAltar:
-            {
-                '.' : [
-                    /LongGong/asset/set/setAltar/model/cache/cache1.gpu,
-                    /LongGong/asset/set/setAltar/model/cache/cache2.gpu
-                ]
-            }
-        }
-
-        format is:
-        {
-            asset name:
-            {
-                'approved' : [file names as a list of strings]
-                'approved/history : [file names as a list of strings]
-                'work' : [file names as a list of strings]
-                '.' :  [file names as a list of strings]
-                'component path' : string of the server path to the component, like
-                /LongGong/asset/set/setAltar/model/cache
-            },
-            more assets....
-        }
-
-        Published assets will have one or all of the keys: approved, approved/history, work. Non-published assets will
-        have '.'
-        :param root_path: the path to the asset names, for example /LongGong/asset/set/
-        :param json_temp_file_info_path: path where the server file info is stored
-        :param asset_type: the asset type - see pyani.core.appvars.py for asset components
-        :param asset_component: the asset component - see pyani.core.appvars.py for asset components
-        :param asset_names: optional list of asset names to update rather than update all assets for a given asset type
-        and component
-        :return: a dict of asset names and their associated files
-        """
-
-        # load the asset info retrieved from the server
-        files_in_path = pyani.core.util.load_json(json_temp_file_info_path)
-        if not isinstance(files_in_path, list):
-            error_fmt = "Error loading temp cgt file listing cache. Error is: {0}".format(files_in_path)
-            self.send_thread_error(error_fmt)
-            return error_fmt
-
-        root_path_list = root_path.split("/")
-
-        asset_info_sorted = dict()
-
-        # go through all files under the root path
-        for file_path in files_in_path:
-            cgt_path = unicode(file_path["path"])
-            # decompose the cgtw path into a list
-            cgt_path_list = cgt_path.rstrip("/").split("/")
-
-            # make sure path is not the root path
-            if len(cgt_path_list) > len(root_path_list):
-
-                # asset name for shot assets is different than show assets
-                if asset_type is "shot":
-                    asset_name = "{0}/{1}".format(
-                        cgt_path_list[len(root_path_list)], cgt_path_list[len(root_path_list)+1]
-                    )
-                else:
-                    asset_name = cgt_path_list[len(root_path_list)]
-
-                # check if asset names were provided and if asset names provided check if the current asset is in list.
-                # if not skip processing.
-                if asset_names and asset_name not in asset_names:
-                    continue
-
-                # check if asset is published and goes through approval. Some asset components like rigs get approved
-                # and have approved and work folders. Others like gpu caches don't.
-                if self.is_asset_publishable(asset_type, asset_component):
-                    # loop through folders that have asset information we want
-                    for asset_folder in self.app_vars.asset_folder_list:
-                        # check if path has one of the folders we want
-                        if cgt_path.find("/" + asset_folder + "/") != -1:
-                            # check if the asset dict has the asset, if not add
-                            if asset_name not in asset_info_sorted:
-                                asset_info_sorted[asset_name] = dict()
-
-                            # check if the folder has been added, if not add
-                            if asset_folder not in asset_info_sorted[asset_name]:
-                                asset_info_sorted[asset_name][asset_folder] = list()
-
-                            # add root_path for component
-                            asset_info_sorted[asset_name]['component path'] = cgt_path.split(asset_folder)[0]
-
-                            # make sure we don't grab nested folders beneath the folders we want, first split
-                            # at the folder
-                            cgt_path_folder_parts = cgt_path.split(asset_folder)
-                            # now split after the folder so we can see if there are nested folders
-                            cgt_path_parts_after_history = cgt_path_folder_parts[1].split("/")
-                            # there are nested folders if the count is > 2, so ignore. ie when split
-                            # at '/', get ['','file] or ['','nested folder1',...]
-                            if len(cgt_path_parts_after_history) <= 2:
-                                # append file name
-                                asset_info_sorted[asset_name][asset_folder].append(cgt_path)
-
-                            # no need to continue processing, found one of the folders we want
-                            break
-                # asset isn't publishable
-                else:
-                    # split the component into a list if its multi-part like model/cache
-                    component_list = asset_component.rstrip("/").split("/")
-                    component_index = self._server_path_contains_asset_component(component_list, cgt_path_list)
-                    # component found in path
-                    if component_index:
-                        start, end = component_index
-                        if len(cgt_path_list) - end == 2:
-                            # check for asset name
-                            if asset_name not in asset_info_sorted and (asset_names is None or asset_name in asset_names):
-                                asset_info_sorted[asset_name] = {'.': [cgt_path]}
-                            # asset exists
-                            else:
-                                # check if any files have been added under the asset name
-                                if '.' not in asset_info_sorted[asset_name]:
-                                    asset_info_sorted[asset_name]['.'] = []
-                                asset_info_sorted[asset_name]['.'].append(cgt_path)
-
-        return asset_info_sorted
-
-    @staticmethod
-    def _server_path_contains_asset_component(component_list, cgt_path):
-        """
-        Checks if a component is in the cgt path.
-        :param component_list: This is a list, such as [rig] or [model, cache] since some components are multi-part
-        like model cache
-        :param cgt_path: the cgt server path as a string
-        :return: the tuple of where the component starts in the path and ends in the path, or False if doesn't exist
-        """
-        # loop through path looking for component
-        for i in xrange(1 + len(cgt_path) - len(component_list)):
-            # if we find the component, return the start and end position
-            if component_list == cgt_path[i:i+len(component_list)]:
-                # return the start and end position of the component in the cgt path
-                return i, i + len(component_list) - 1
-        return False
 
     def _reset_thread_counters(self):
         # reset threads counters

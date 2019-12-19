@@ -629,6 +629,48 @@ class AniCoreMngr(QtCore.QObject):
         """
         return pyani.core.util.load_json(file_path)
 
+    def server_get_file_listing_using_folder_filter(self, server_path, folder_filter, temp_file_name):
+        """
+        Called to get a file information for a given path. Gets all files under the folder provided (folder_filter) and
+        ignores files that don't have the folder in the path.
+        Writes the data to the temp file given.
+        :param server_path: the path to the data
+        :param folder_filter: a folder to limit file listing to, for example, 'rig' only grabs file info for
+        files under the rig folder
+        :param temp_file_name: where to write the file info to
+        :return: an error string or None
+        :exception: CGTError if can't connect or CGT returns an error
+        """
+        # the python script to call that connects to cgt
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_file_info.py")
+        # the command that subprocess will execute
+        command = [
+            py_script,
+            self.app_vars.cgt_ip,
+            self.app_vars.cgt_user,
+            self.app_vars.cgt_pass,
+            server_path,  # path to directory to get file list
+            "--folder_filter=" + folder_filter,
+            "--temp_file=" + temp_file_name
+        ]
+
+        try:
+            output, error = pyani.core.util.call_ext_py_api(command)
+
+            # check for subprocess errors
+            if error:
+                error_fmt = "Error occurred launching subprocess. Error is {0}".format(error)
+                self.send_thread_error(error_fmt)
+                return error_fmt
+
+        # CGT errors
+        except pyani.core.util.CGTError as error:
+            error_fmt = "Error occurred connecting to CGT. Error is {0}".format(error)
+            self.send_thread_error(error_fmt)
+            return error_fmt
+
+        return None
+
     def server_get_dir_list(self,
                             server_path,
                             dirs_only=True,
@@ -649,36 +691,32 @@ class AniCoreMngr(QtCore.QObject):
         :exception: CGTError if can't connect or CGT returns an error
         """
         # the python script to call that connects to cgt
-        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_file_info.py")
         # the command that subprocess will execute
         command = [
             py_script,
-            server_path,  # path to directory to get file list
-            "",  # getting a file list so no download paths
             self.app_vars.cgt_ip,
             self.app_vars.cgt_user,
-            self.app_vars.cgt_pass
+            self.app_vars.cgt_pass,
+            server_path  # path to directory to get file list
         ]
         # the actual parameter in app bridge file is get_file_list_no_walk, so we set to the opposite of the value
         # passed in
-        if walk_dirs:
-            command.append("False")
-        else:
-            command.append("True")
+        if not walk_dirs:
+            command.append("--no_walk=True")
         # add optional parameters to indicate whether we want files, folders, or both
         if files_and_dirs:
             # tell cgt to only get files
-            command.append("files_and_dirs")
+            command.append("--file_mode=files_and_dirs")
         elif files_only:
             # tell cgt to only get files
-            command.append("files")
+            command.append("--file_mode=files")
         elif dirs_only:
             # tell cgt to only get files
-            command.append("dirs")
+            command.append("--file_mode=dirs")
 
         try:
             output, error = pyani.core.util.call_ext_py_api(command)
-
             # check for subprocess errors
             if error:
                 error_fmt = "Error occurred launching subprocess. Error is {0}".format(error)
@@ -711,22 +749,17 @@ class AniCoreMngr(QtCore.QObject):
         :exception: CGTError if can't connect or CGT returns an error
         """
         # the python script to call that connects to cgt
-        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_file_info.py")
         # the command that subprocess will execute
         command = [
             py_script,
-            server_path,  # path to directory to get file list
-            "",  # getting a file list so no download paths
             self.app_vars.cgt_ip,
             self.app_vars.cgt_user,
-            self.app_vars.cgt_pass
+            self.app_vars.cgt_pass,
+            server_path  # path to directory to get file list
         ]
-        # expects these optional parameters for recursion and files or directories for listing, not used but
-        # since we didn't do keywords, have to provide
-        command.append("False")
-        command.append("files_and_dirs")
         # this says check if file or dir
-        command.append("True")
+        command.append("--is_file=True")
 
         try:
             output, error = pyani.core.util.call_ext_py_api(command)
@@ -757,24 +790,17 @@ class AniCoreMngr(QtCore.QObject):
         :exception: CGTError if can't connect or CGT returns an error
         """
         # the python script to call that connects to cgt
-        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_file_info.py")
         # the command that subprocess will execute
         command = [
             py_script,
-            server_path,  # path to directory to get file
-            "",  # getting a file list so no download paths
             self.app_vars.cgt_ip,
             self.app_vars.cgt_user,
-            self.app_vars.cgt_pass
+            self.app_vars.cgt_pass,
+            server_path  # path to directory to get file
         ]
-        # expects these optional parameters for recursion and files or directories for listing, not used but
-        # since we didn't do keywords, have to provide
-        command.append("False")
-        command.append("files_and_dirs")
-        # this says check if file or dir - not interested in this so False
-        command.append("False")
         # check if path exists
-        command.append("True")
+        command.append("--path_exists=True")
 
         try:
             output, error = pyani.core.util.call_ext_py_api(command)
@@ -805,26 +831,17 @@ class AniCoreMngr(QtCore.QObject):
         :exception: CGTError if can't connect or CGT returns an error
         """
         # the python script to call that connects to cgt
-        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_download.py")
+        py_script = os.path.join(self.app_vars.cgt_bridge_api_path, "cgt_file_info.py")
         # the command that subprocess will execute
         command = [
             py_script,
-            server_path,  # path to directory to get file
-            "",  # getting a file list so no download paths
             self.app_vars.cgt_ip,
             self.app_vars.cgt_user,
-            self.app_vars.cgt_pass
+            self.app_vars.cgt_pass,
+            server_path  # path to directory to get file
         ]
-        # expects these optional parameters for recursion and files or directories for listing, not used but
-        # since we didn't do keywords, have to provide
-        command.append("False")
-        command.append("files_and_dirs")
-        # this says check if file or dir - not interested in this so False
-        command.append("False")
-        # check if path exists
-        command.append("False")
         # get modified date
-        command.append("True")
+        command.append("--modified_date=True")
 
         try:
             output, error = pyani.core.util.call_ext_py_api(command)
@@ -939,14 +956,23 @@ class AniCoreMngr(QtCore.QObject):
 
         return None
 
-    def core_get_latest_version(self, server_path_to_files):
+    def core_get_latest_version(self, server_path_to_files=None, file_list=None):
         """
-        gets the latest file name and version of a file based off files having versions in their name
-        :param server_path_to_files: the cgt cloud path to the asset component's files
-        :return: the most recent file's name and version as a tuple (file name, version)
+        gets the latest file name and version of a file based off files having versions in their name. Must supply
+        either a server path or a file list to get a version, otherwise version returned will be an empty string
+        :param server_path_to_files: optional cgt cloud path to the asset component's files
+        :param file_list: optional list of files to get latest version from
+        :return: the most recent file's name and version as a tuple of strings (file name, version).
+        empty strings if neither parameter above is given
         """
-        # get the list of files, these should be a bunch of files with versions in the file name
-        file_list = self.server_get_dir_list(server_path_to_files, files_only=True)
+
+        # check if file list is provided, if not get from server
+        if not file_list:
+            # make sure a server path is given
+            if server_path_to_files:
+                # get the list of files, these should be a bunch of files with versions in the file name
+                file_list = self.server_get_dir_list(server_path_to_files, files_only=True)
+
         latest_version = ""
         version_num = ""
         # pattern to use to check for version in the file name
@@ -972,11 +998,13 @@ class AniCoreMngr(QtCore.QObject):
                 latest_version = sorted(cleaned_file_list, key=alphanum_key, reverse=True)[0]
                 # grab the version from the file name
                 version_num = re.search(version_pattern, latest_version).group()
+
         return latest_version, version_num
 
     def update_local_version(self, server_file_path, local_file_path_dir):
         """
-        Updates the version in the local metadata file. Creates file if doesn't exist
+        Updates the version in the local metadata file with the version in the server cache.
+        Creates file if doesn't exist.
         :param server_file_path: path to data files
         :param local_file_path_dir: the directory of the local file path of the downloaded file
         :return: None if no error, error as string if occurs
@@ -1014,7 +1042,7 @@ class AniCoreMngr(QtCore.QObject):
 
     def find_new_and_updated_assets(self, timestamp_before_dl, assets_before_sync, assets_after_sync):
         """
-
+        compares timestamps and files to find which assets were modified, deleted, or added
         :param timestamp_before_dl: a dictionary of assets with last modified timestamps. In format:
         {
             asset_type: {
@@ -1080,6 +1108,7 @@ class AniCoreMngr(QtCore.QObject):
                     }
                     files_list = list()
                     version = None
+
                     for file_name, modified_time_before_dl in timestamp_before_dl[asset_type][asset_category][asset_name].items():
                         # ignore metadata files
                         if self.app_vars.cgt_metadata_filename not in file_name:
@@ -1113,13 +1142,8 @@ class AniCoreMngr(QtCore.QObject):
                     }
                     # first see if the asset still exists
                     if asset_name in assets_after_sync[asset_type][asset_category]:
-                        # NOTE: key can be called files or file name so check for both
-                        if 'files' in assets_after_sync[asset_type][asset_category][asset_name]:
-                            files_before_sync = assets_before_sync[asset_type][asset_category][asset_name]['files']
-                            files_after_sync = assets_after_sync[asset_type][asset_category][asset_name]['files']
-                        else:
-                            files_before_sync = assets_before_sync[asset_type][asset_category][asset_name]['file name']
-                            files_after_sync = assets_after_sync[asset_type][asset_category][asset_name]['file name']
+                        files_before_sync = assets_before_sync[asset_type][asset_category][asset_name]['files']
+                        files_after_sync = assets_after_sync[asset_type][asset_category][asset_name]['files']
 
                         # sort so in same order, need to check though that there is a list because could be None
                         if files_before_sync:
@@ -1289,6 +1313,7 @@ class AniCoreMngr(QtCore.QObject):
         self.progress_win.setLabelText(label)
         self.progress_win.setValue(0)
         self.progress_win.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
+        self.progress_win.setMinimumWidth(300)
         self.progress_win.show()
         # makes sure progress shows over window, as windows os will place it under cursor behind other windows if
         # user moves mouse off off app

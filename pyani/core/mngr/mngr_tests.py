@@ -162,6 +162,7 @@ class TestWindow(QtWidgets.QDialog):
         self.core_mngr.finished_signal.connect(self.finished_job)
 
         self.asset_mngr.finished_cache_build_signal.connect(self.finished_job)
+        self.asset_mngr.error_thread_signal.connect(self.show_multithreaded_error)
         self.asset_mngr.finished_signal.connect(self.finished_job)
         self.asset_mngr.finished_tracking.connect(self.finished_job)
 

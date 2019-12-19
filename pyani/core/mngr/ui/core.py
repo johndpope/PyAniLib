@@ -79,7 +79,7 @@ class AniTaskListWindow(pyani.core.ui.AniQMainWindow):
             "name": app_name,
             "dir": self.tools_mngr.app_vars.local_pyanitools_core_dir,
             "type": "pyanitools",
-            "category": "apps"
+            "category": "core"
         }
 
         # pass win title, icon path, app manager, width and height
@@ -92,7 +92,7 @@ class AniTaskListWindow(pyani.core.ui.AniQMainWindow):
             700,
             error_logging,
             show_help=False,
-            disable_version=True
+            disable_version=False
         )
 
         if tools_mngr:

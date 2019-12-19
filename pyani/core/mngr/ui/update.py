@@ -172,7 +172,7 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
             error_logging,
             progress_list,
             "Update",
-            "Update",
+            "update",
             self.task_list,
             asset_mngr=self.asset_mngr,
             tools_mngr=self.tools_mngr

@@ -262,7 +262,6 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
         local_cgt_metadata = pyani.core.util.load_json(
             os.path.join(tool_directory, self.app_vars.cgt_metadata_filename)
         )
-
         # if can't load set to None
         if not isinstance(local_cgt_metadata, dict):
             return None
@@ -925,6 +924,9 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
             # only get extension if the name is a file
             server_path = "{0}/{1}".format(self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir'], tool)
 
+            if tool_type == "lib" and tool_category == "scandir":
+                print server_path
+
             # check if path is a file or directory
             if self.server_is_file(server_path):
                 tool_name_parts = tool.split(".")
@@ -944,6 +946,9 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
 
         for tool_name in tools_no_duplicates:
             file_list = [file_name for file_name in tools_found if tool_name in file_name]
+
+            if tool_type == "lib" and tool_category == "scandir":
+                print file_list
 
             # confirm whether this is a file list or directory, the obvious case when not a directory is
             # when we have more than one element in file list. However for single elements, we need to check,
@@ -965,6 +970,8 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                     self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir'],
                     file_list[0]
                 )
+                if tool_type == "lib" and tool_category == "scandir":
+                    print "single ", server_path
                 # a directory
                 if self.server_get_dir_list(server_path, files_only=True):
                     is_dir = True
@@ -979,7 +986,8 @@ class AniToolsMngr(pyani.core.mngr.core.AniCoreMngr):
                     is_dir = False
                     file_list[0] = self.app_vars.tool_types[tool_type][tool_category]['cgt cloud dir'] + "/" + \
                                    file_list[0]
-
+            if tool_type == "lib" and tool_category == "scandir":
+                print file_list
             server_tool_names_and_files[tool_type][tool_category][tool_name] = {
                 "is dir": is_dir,
                 "files": file_list

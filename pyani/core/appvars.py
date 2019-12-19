@@ -72,6 +72,9 @@ class AppVars:
         self.cgt_user = "publish"
         self.cgt_pass = "publish"
         self.cgt_ip = "172.18.100.246"
+        # when getting file information from server, store it in a temp file here
+        self.cgt_temp_file_cache_dir = os.path.normpath(os.path.join(self.local_temp_dir, "pyanitools"))
+        self.cgt_tmp_file_cache_filename = "cgt_file_dict.json"
 
         # TOOLS
 
@@ -223,6 +226,8 @@ class AppVars:
                 }
             }
         }
+        # list of folders we get file information for when getting assets
+        self.asset_folder_list = ["approved/history", "approved", "work"]
 
     # produce better output
     def __str__(self):
