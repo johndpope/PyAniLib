@@ -127,6 +127,7 @@ class WinTaskScheduler:
         :returns: true if enabled, false if not, or returns error as string
         """
         is_scheduled = self.is_task_scheduled()
+
         # check for errors getting state
         if not isinstance(is_scheduled, bool):
             return is_scheduled
@@ -207,6 +208,7 @@ class WinTaskScheduler:
         )
         output, error = p.communicate()
         logging.info("task query is: {0}".format(output))
+
         for line in output.split("\n"):
             if "Next Run Time:" in line:
                 split_line = line.split(" ")[-2:]
@@ -220,6 +222,7 @@ class WinTaskScheduler:
                 try:
                     # windows 10 does a hour:minute:second pm/am format
                     time_object = datetime.datetime.strptime(run_time, "%I:%M:%S %p")
+
                 except ValueError:
                     # windows 7 provides a date and time, so convert run time to a time object as just time
                     # windows 7 does day/month/year hours:minutes:seconds
@@ -385,7 +388,7 @@ def make_file(file_name):
             init_file.close()
         return None
     except (IOError, OSError) as e:
-        error_msg = "Could not move {0} to {1}. Received error {2}".format(file_name, e)
+        error_msg = "Could not make file {0}. Received error {1}".format(file_name, e)
         logger.error(error_msg)
         return error_msg
 
@@ -548,6 +551,24 @@ def get_subdirs(path):
         if not entry.name.startswith('.') and entry.is_dir():
             dir_list.append(entry.name)
     return dir_list
+
+
+def get_all_files(path, walk=True):
+    """
+    return a list of files in the directory including sub directories.
+    :param path: the directory path
+    :param walk: whether to get files in subdirs
+    :return: a list of files, none if no files
+    """
+    file_list = []
+    if os.path.exists(path):
+        for entry in scandir(path):
+            if entry.is_dir() and walk:
+                dir_path = os.path.join(path, entry.name)
+                file_list.extend(os.path.join(dir_path, file_name) for file_name in get_all_files(dir_path))
+            if entry.is_file():
+                file_list.append(entry.name)
+    return file_list
 
 
 def natural_sort(iterable):
@@ -911,13 +932,15 @@ def get_shot_name_from_string(string_containing_shot):
         return None
 
 
-def get_sequence_name_from_string(string_containing_sequence):
+def get_sequence_name_from_string(string_containing_sequence, pattern=None):
     """
     Finds the sequence name from a file path. Looks for Seq### or seq###. Sequence number is 2 or more digits
     :param string_containing_sequence: the absolute file path
+    :param pattern: optional regex pattern to use in case seq not in format seq or Seq
     :return: the seq name as Seq### or seq### or None if no seq found
     """
-    pattern = "[a-zA-Z]{3}\d{2,}"
+    if not pattern:
+        pattern = "[a-zA-Z]{3}\d{2,}"
     # make sure the string is valid
     if string_containing_sequence:
         # check if we get a result, if so return it

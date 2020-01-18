@@ -9,6 +9,7 @@ import pyani.core.appvars
 import pyani.core.mngr.assets
 import pyani.core.mngr.tools
 import pyani.core.mngr.ui.core
+import pyani.review.core
 
 # set the environment variable to use a specific wrapper
 # it can be set to pyqt, pyqt5, pyside or pyside2 (not implemented yet)
@@ -21,27 +22,687 @@ from qtpy import QtWidgets
 logger = logging.getLogger()
 
 
-class AssetComponentTab(QtWidgets.QWidget):
+class CoreTab(QtWidgets.QWidget):
     """
-    A class that provides a tab page for show and shot assets. the general format / display is:
+    A class that provides core functionality for tab pages for assets and tools.
+
+    the general format / display is:
 
     tab description (if provided)           buttons
 
-    tree list of assets
+    options (if provided)
+
+    tree list of items
     """
-    def __init__(self, name, asset_mngr, tab_desc=None, asset_component=None):
+
+    def __init__(
+            self,
+            name,
+            mngr,
+            tab_desc=None,
+            items_to_collapse=None,
+            show_tree=True,
+            options_layout_orientation="Horizontal"
+    ):
         """
         :param name: name of the tab, displayed on tab
-        :param asset_mngr: an asset manager object pyani.core.mngr.assets
+        :param mngr: a manager object, see available mngrs in pyani.core.mngr
+        :param tab_desc: an optional description
+        :param items_to_collapse: optional list of tree items to collapse by default (only supports collapsing parent
+        items, not specific children of a parent
+        :param show_tree: whether to show the tree area, default is true
+        :param options_layout_orientation: whether to put the options horizontally or vertically. Defaults to Horizontal
+        Values are 'Horizontal' or 'Vertical'
+        """
+        super(CoreTab, self).__init__()
+
+        # core variables
+        self.app_vars = pyani.core.appvars.AppVars()
+        self._name = name
+        self.asset_report = pyani.core.mngr.ui.core.AniAssetUpdateReport(self)
+        self.mngr = mngr
+
+        # make a msg window class for communicating with user
+        self.msg_win = pyani.core.ui.QtMsgWindow(self)
+
+        # text font to use for ui
+        self.font_family = pyani.core.ui.FONT_FAMILY
+        self.font_size = pyani.core.ui.FONT_SIZE_DEFAULT
+        self.font_size_notes_title = 14
+        self.font_size_notes_text = 10
+
+        # ui variables
+        self.tab_description = tab_desc
+        self.tab_description_label = QtWidgets.QLabel(tab_desc)
+        self.tab_description_label.setWordWrap(True)
+        self.tab_description_label.setMinimumWidth(700)
+
+        self.show_tree = show_tree
+        self.options_orientation = options_layout_orientation
+
+        self.show_only_auto_update_assets_label, self.show_only_auto_update_assets_cbox = pyani.core.ui.build_checkbox(
+            "Show Only Assets that are Auto-Updated.",
+            False,
+            "Shows assets that are in the auto update config file. These are the green colored assets below."
+        )
+        # buttons are a list of pyani.core.ui.ImageButton objects
+        self.buttons = list()
+
+        # options are a list of dicts, where each dict is
+        '''
+            "widget": pyqt widget
+            "label": pyqt qlabel widget
+        '''
+        self.options = list()
+
+        self.tree = None
+
+        self.parent_categories_to_collapse = items_to_collapse
+
+        # window to display notes
+        self.notes_window = QtWidgets.QDialog(parent=self)
+        self.notes_window.setMinimumSize(725, 500)
+        layout = QtWidgets.QVBoxLayout()
+        self.notes_display = QtWidgets.QTextEdit()
+        self.notes_display.setReadOnly(True)
+        layout.addWidget(self.notes_display)
+        self.notes_window.setLayout(layout)
+
+        # this widgets layout
+        self.layout = QtWidgets.QVBoxLayout()
+
+    @property
+    def name(self):
+        """
+        The tab name
+        """
+        return self._name
+
+    def get_layout(self):
+        """
+        The main layout object
+        """
+        return self.layout
+
+    def add_button(self, image_button):
+        """
+        adds a button to the tab
+        :param image_button: a pyani.core.ui.ImageButton object
+        """
+        self.buttons.append(image_button)
+
+    def add_option(self, option_widget, option_label):
+        """
+        adds an option to the tab
+        :param option_widget: a pyqt widget or a list of widgets
+        :param option_label: a pyqt QLabel
+        """
+        self.options.append(
+            {
+                "widget": option_widget,
+                "label": option_label
+            }
+        )
+
+    def build_layout(self, tree_data=None, col_count=None, existing_items_in_config_file=None):
+        """
+        builds the tab layout, can pass tree data if ready to build tree, or it will be blank
+        :param tree_data: a list of dicts, where dict is:
+        { root = CheckboxTreeWidgetItem, children = [list of CheckboxTreeWidgetItems] }
+        :param col_count: the max number of columns
+        :param existing_items_in_config_file: items in the config file
+        """
+
+        header = QtWidgets.QHBoxLayout()
+
+        # optional description
+        header.addWidget(self.tab_description_label)
+        header.addStretch(1)
+
+        # buttons
+        for button in self.buttons:
+            header.addWidget(button)
+            header.addItem(QtWidgets.QSpacerItem(10, 0))
+
+        # options section
+        if self.options_orientation == "Horizontal":
+            options_layout = QtWidgets.QHBoxLayout()
+            for option in self.options:
+                # get the widget, and check if its a list. If it's a list, we need to build a horizontal layout to
+                # contain all the widgets, otherwise we can just add single widgets straight to the layout
+                option_widget = option['widget']
+                if isinstance(option_widget, tuple):
+                    widget_layout = QtWidgets.QHBoxLayout()
+                    for widget in option_widget:
+                        widget_layout.addWidget(widget)
+                    options_layout.addLayout(widget_layout)
+                else:
+                    options_layout.addWidget(option['widget'])
+                options_layout.addWidget(option['label'])
+                options_layout.addItem(QtWidgets.QSpacerItem(40, 0))
+            options_layout.addStretch(1)
+        else:
+            options_layout = QtWidgets.QVBoxLayout()
+            for option in self.options:
+                option_sub_layout = QtWidgets.QHBoxLayout()
+                option_sub_layout.addWidget(option['label'])
+                # get the widget, and check if its a list. If it's a list, we need to build a horizontal layout to
+                # contain all the widgets, otherwise we can just add single widgets straight to the layout
+                option_widget = option['widget']
+                if isinstance(option_widget, tuple):
+                    widget_layout = QtWidgets.QHBoxLayout()
+                    for widget in option_widget:
+                        widget_layout.addWidget(widget)
+                        widget_layout.addItem(QtWidgets.QSpacerItem(10, 0))
+                    option_sub_layout.addLayout(widget_layout)
+                else:
+                    option_sub_layout.addWidget(option['widget'])
+                option_sub_layout.addStretch(1)
+                options_layout.addLayout(option_sub_layout)
+
+        self.layout.addLayout(header)
+        self.layout.addItem(QtWidgets.QSpacerItem(1, 20))
+        self.layout.addLayout(options_layout)
+
+        if self.show_tree:
+            self.build_tree(
+                tree_data=tree_data, col_count=col_count, existing_items_in_config_file=existing_items_in_config_file
+            )
+            self.layout.addWidget(self.tree)
+        else:
+            self.layout.addStretch(1)
+
+    def build_tree(self, tree_data=None, col_count=None, existing_items_in_config_file=None):
+        """
+        Calling this method with no existing tree creates a pyani.core.ui.CheckboxTreeWidget tree object.
+        Calling this method on an existing tree rebuilds the tree data
+        :param tree_data: a list of dicts, where dict is:
+        { root = CheckboxTreeWidgetItem, children = [list of CheckboxTreeWidgetItems] }
+        :param col_count: the max number of columns
+        :param existing_items_in_config_file: items in the config file
+        """
+
+        # if the tree has already been built, clear it and call build method
+        if self.tree:
+            self.tree.clear_all_items()
+            self.tree.build_checkbox_tree(
+                tree_data,
+                expand=True,
+                columns=col_count
+            )
+        # tree hasn't been built yet
+        else:
+            self.tree = pyani.core.ui.CheckboxTreeWidget(
+                tree_data,
+                expand=True,
+                columns=col_count
+            )
+
+        # collapse certain tool categories
+        if self.parent_categories_to_collapse:
+            for item_to_collapse in self.parent_categories_to_collapse:
+                self.tree.collapse_item(item_to_collapse)
+
+        # check on the assets already listed in the config file
+        self.tree.set_checked(existing_items_in_config_file)
+
+
+class ReviewTab(CoreTab):
+    """
+    A class that provides a tab page for reviewing asset tools
+    """
+    def __init__(self, name, core_mngr, tab_desc=None):
+        """
+        :param name: name of the tab, displayed on tab
+        :param core_mngr: a core manager object pyani.core.mngr.core
+        :param tab_desc: an optional description
+        """
+        super(ReviewTab, self).__init__(
+            name, core_mngr, tab_desc=tab_desc, items_to_collapse=None, show_tree=False, options_layout_orientation='Vertical'
+        )
+
+        # create a task scheduler object
+        self.task_scheduler = pyani.core.util.WinTaskScheduler(
+            "pyanitools_review_download", r"'{0}'".format(
+                self.app_vars.review_download_tool_path
+            )
+        )
+
+        # review manager object for downloading review assets
+        self.download_report = pyani.core.mngr.ui.core.AniAssetTableReport(self)
+        self.review_mngr = pyani.review.core.AniReviewMngr(core_mngr)
+        # provide report to review mngr so it can set data
+        self.review_mngr.set_report(self.download_report)
+
+        # setup tasks for downloading reviews
+
+        # create a task list manager placeholder, create instance in download function
+        self.task_mngr = None
+        self.progress_list = list()
+
+        # ui variables
+        self.btn_download = pyani.core.ui.ImageButton(
+            "images\\download_off.png",
+            "images\\download_on.png",
+            "images\\download_on.png",
+            size=(86, 86)
+        )
+        self.add_button(self.btn_download)
+
+        self.enable_auto_download_label = QtWidgets.QLabel("Turn on Automatic Downloads for Review Assets")
+        self.enable_auto_download_menu = QtWidgets.QComboBox()
+        self.enable_auto_download_menu.addItem("-------")
+        self.enable_auto_download_menu.addItem("Enabled")
+        self.enable_auto_download_menu.addItem("Disabled")
+
+        self.auto_dl_label = QtWidgets.QLabel("Change Download Time")
+        self.auto_dl_am_pm = QtWidgets.QComboBox()
+        self.auto_dl_am_pm.addItem("AM")
+        self.auto_dl_am_pm.addItem("PM")
+        self.auto_dl_hour = QtWidgets.QLineEdit("")
+        self.auto_dl_hour.setMaximumWidth(40)
+        self.auto_dl_min = QtWidgets.QLineEdit("")
+        self.auto_dl_min.setMaximumWidth(40)
+        self.save_auto_dl_time_button = pyani.core.ui.ImageButton(
+            "images\\save_pref_off.png",
+            "images\\save_pref_on.png",
+            "images\\save_pref_on.png",
+            size=(34, 30)
+        )
+
+        self.set_download_location_label = QtWidgets.QLabel("Set Download Location for Review Assets")
+        self.set_download_location_input = QtWidgets.QLineEdit("")
+        self.set_download_location_input.setMinimumWidth(400)
+        self.set_download_location_button = pyani.core.ui.ImageButton(
+            "images\\file_open_off.png",
+            "images\\file_open_on.png",
+            "images\\file_open_on.png",
+            size=(37, 30)
+        )
+        self.save_download_location_button = pyani.core.ui.ImageButton(
+            "images\\save_pref_off.png",
+            "images\\save_pref_on.png",
+            "images\\save_pref_on.png",
+            size=(34, 30)
+        )
+
+        self.replace_old_assets_label, self.replace_old_assets_cbox = pyani.core.ui.build_checkbox(
+            "Replace Old Review Assets With Latest",
+            False,
+            "Replaces old movies with new movies."
+        )
+
+        self.add_option(self.enable_auto_download_menu, self.enable_auto_download_label)
+        self.add_option(
+            (self.auto_dl_hour, self.auto_dl_min, self.auto_dl_am_pm,  self.save_auto_dl_time_button),
+            self.auto_dl_label
+        )
+        self.add_option(
+            (self.set_download_location_input, self.set_download_location_button, self.save_download_location_button),
+            self.set_download_location_label
+        )
+        self.add_option(self.replace_old_assets_cbox, self.replace_old_assets_label)
+
+        self.load_and_set_preferences()
+
+        self.build_layout()
+        self.set_slots()
+
+    def set_slots(self):
+        self.replace_old_assets_cbox.clicked.connect(self.set_update_assets_pref)
+        self.set_download_location_button.clicked.connect(self.get_download_location)
+        self.save_download_location_button.clicked.connect(self.set_download_location)
+        self.save_auto_dl_time_button.clicked.connect(self.set_download_time)
+        self.enable_auto_download_menu.currentIndexChanged.connect(self.set_auto_download_state)
+        self.btn_download.clicked.connect(self.download_review_assets)
+
+    def update_progress(self):
+        """
+        Updates progress when downloading review assets
+        """
+        # report progress to user so they know what's going on, do in tab description area
+        progress_step = self.progress_list.pop(0)
+        if self.progress_list:
+            progress_desc = (
+                "<p align ='right'><font style='font-size: 11pt; font-family:{0}; color: {1};'><b>Progress Update:</b>"
+                "</font><font style='font-size: 11pt; font-family:{0}; color: #ffffff;'> {2}</font></p>".format(
+                    self.font_family,
+                    pyani.core.ui.GREEN,
+                    progress_step
+                )
+            )
+            tab_desc = self.tab_description + progress_desc
+        # done, restore tab description
+        else:
+            tab_desc = self.tab_description
+
+        self.tab_description_label.setText(tab_desc)
+
+    def download_review_assets(self):
+        """
+        Downloads review assets
+        """
+        if self.review_mngr.review_exists():
+            self.progress_list = [
+                "Finding latest assets for review..This may take a few seconds...",
+                "Downloading assets for review..."
+            ]
+
+            # list of tasks to run, see pyani.core.mngr.ui.core.AniTaskListWindow for format
+            task_list = [
+                # find the latest assets for review
+                {
+                    'func': self.review_mngr.find_latest_assets_for_review,
+                    'params': [],
+                    'finish signal': self.review_mngr.mngr.finished_signal,
+                    'error signal': self.review_mngr.mngr.error_thread_signal,
+                    'thread task': True,
+                    'desc': "Found latest assets for review."
+                },
+                # download the latest assets for review
+                {
+                    'func': self.review_mngr.download_latest_assets_for_review,
+                    'params': [],
+                    'finish signal': self.review_mngr.mngr.finished_signal,
+                    'error signal': self.review_mngr.mngr.error_thread_signal,
+                    'thread task': False,
+                    'desc': "Downloaded latest assets for review."
+                }
+            ]
+
+            pref = self.review_mngr.mngr.get_preference("review asset download", "update", "update old assets")
+            # if the user preference is to replace old review assets with the latest, run the update
+            if isinstance(pref, dict):
+                pref_val = pref['update old assets']
+                if pref_val:
+                    task_list.append(
+                        {
+                            'func': self.review_mngr.update_review_assets_to_latest,
+                            'params': [],
+                            'finish signal': self.review_mngr.mngr.finished_signal,
+                            'error signal': self.review_mngr.mngr.error_thread_signal,
+                            'thread task': False,
+                            'desc': "Updated existing review assets."
+                        }
+                    )
+                self.progress_list.append("Updating existing review assets with the latest...")
+
+            task_list.append(
+                {
+                    'func': self.review_mngr.generate_download_report_data,
+                    'params': [],
+                    'finish signal': self.review_mngr.mngr.finished_signal,
+                    'error signal': self.review_mngr.mngr.error_thread_signal,
+                    'thread task': True,
+                    'desc': "Created table data for report."
+                }
+            )
+            self.progress_list.append("Creating table data for report...")
+
+            self.task_mngr = pyani.core.mngr.ui.core.AniTaskList(task_list, ui_callback=self.update_progress)
+
+            if self.review_mngr.review_exists():
+                # NOTE: do this here because the super needs to be called first to create the window
+                # used to create an html report to show in a QtDialogWindow
+                self.download_report = pyani.core.mngr.ui.core.AniAssetTableReport(self)
+
+                # provide report to review mngr so it can set data
+                self.review_mngr.set_report(self.download_report)
+                # move update window so it doesn't cover the main update window
+                post_tasks = [
+                    {
+                        'func': self.download_report.generate_table_report,
+                        'params': []
+                    }
+                ]
+                self.task_mngr.set_post_tasks(post_tasks)
+
+            self.task_mngr.start_tasks()
+        # no review files, let user know
+        else:
+            msg = (
+                "<p align='center' style='font-size: 9pt; font-family:{0}; color: {1};'>"
+                "No review files exist for today's date."
+                "</p>".format(
+                    pyani.core.ui.FONT_FAMILY,
+                    pyani.core.ui.RED.name()
+                )
+            )
+            msg_win = pyani.core.ui.QtMsgWindow(self)
+            msg_win.show_error_msg("No Review Assets", msg)
+
+    def load_and_set_preferences(self):
+        # load the preferences and set value
+        pref = self.mngr.get_preference("review asset download", "update", "update old assets")
+        if isinstance(pref, dict):
+            self.replace_old_assets_cbox.setChecked(pref.get("update old assets"))
+
+        pref = self.mngr.get_preference("review asset download", "download", "location")
+        if isinstance(pref, dict):
+            self.set_download_location_input.setText(pref.get("location"))
+
+        exists = self.task_scheduler.is_task_scheduled()
+        # check if we got an error getting task existence
+        if isinstance(exists, bool):
+            # check if it exists
+            if exists:
+                # set initial state of auto download
+                state = self.task_scheduler.is_task_enabled()
+                # check if error getting task state
+                if isinstance(state, bool):
+                    if state:
+                        state_label = "Enabled"
+                    else:
+                        state_label = "Disabled"
+                else:
+                    state_label = "Could not get task state."
+            else:
+                state_label = "Task doesn't exist. You must first enable the task."
+        else:
+            state_label = "Could not query task."
+
+        if state_label == "Enabled":
+            self.enable_auto_download_label.setText(
+                "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+                "Turn on Automatic Downloads for Review Assets "
+                "<font color='{2}'><i>(Currently: {3})</font></i></span>".format(
+                    self.font_size, self.font_family, pyani.core.ui.GREEN, state_label
+                )
+            )
+        else:
+            self.enable_auto_download_label.setText(
+                "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+                "Turn on Automatic Downloads for Review Assets "
+                "<font color='{2}'><i>(Currently: {3})</font></i></span>".format(
+                    self.font_size, self.font_family, pyani.core.ui.GRAY_MED, state_label
+                )
+            )
+
+        # get the run time and format as hour:seconds am or pm, ex: 02:00 PM
+        run_time = self.task_scheduler.get_task_time()
+
+        if isinstance(run_time, datetime.datetime):
+            run_time = run_time.strftime("%I:%M %p")
+            # set task time in ui fields
+            pyani.core.ui.set_ui_time(
+                self.task_scheduler, self.auto_dl_hour, self.auto_dl_min, self.auto_dl_am_pm
+            )
+        else:
+            run_time = "N/A"
+            # time doesn't exist, set to default
+            time_split = self.app_vars.review_download_time.split(":")
+            hour = time_split[0]
+            min = time_split[1].split(" ")[0]
+            time_of_day = time_split[1].split(" ")[1]
+            self.auto_dl_hour.setText(hour)
+            self.auto_dl_min.setText(min)
+            self.auto_dl_am_pm.setCurrentIndex(self.auto_dl_am_pm.findText(time_of_day))
+
+        self.auto_dl_label.setText(
+            "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+            "Change Download Time  "
+            "<font color='{2}'><i>(Current Download Time: {3})</font></i></span>".format(
+                self.font_size, self.font_family, pyani.core.ui.GRAY_MED, run_time
+            )
+        )
+
+    def set_auto_download_state(self):
+        """
+        Creates task if doesn't exist. If it exists, sets to enabled or disabled based off user selection
+        """
+        # check if the task exists
+        is_scheduled = self.task_scheduler.is_task_scheduled()
+        if not isinstance(is_scheduled, bool):
+            error_fmt = "Can't get Windows Task state. Error is: {0}".format(is_scheduled)
+            logging.error(error_fmt)
+            self.msg_win.show_error_msg("Task Error", error_fmt)
+            return None
+        # task doesn't exist, schedule
+        if not is_scheduled:
+            # schedule tools update to run, if it is already scheduled skips. If scheduling errors then informs user
+            # but try to install apps
+            run_time = self.app_vars.review_download_time
+            military_time = datetime.datetime.strptime(run_time, "%I:%M %p").strftime("%H:%M")
+            error = self.task_scheduler.setup_task(schedule_type="daily", start_time=military_time)
+            if error:
+                error_fmt = "Can't Setup Windows Task Scheduler. Error is: {0}".format(error)
+                logging.error(error_fmt)
+                self.msg_win.show_error_msg("Task Error", error_fmt)
+                return None
+
+        # set the task state
+        if not self.enable_auto_download_menu.currentIndex() == 0:
+            state = self.enable_auto_download_menu.currentText()
+            if state == "Enabled":
+                error = self.task_scheduler.set_task_enabled(True)
+            else:
+                error = self.task_scheduler.set_task_enabled(False)
+            if error:
+                self.msg_win.show_warning_msg(
+                    "Task Scheduling Error",
+                    "Could not set state of task {0}. Error is {1}".format(
+                        self.task_scheduler.task_name,
+                        state
+                    )
+                )
+                return None
+
+            if state == "Enabled":
+                self.enable_auto_download_label.setText(
+                    "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+                    "Turn on Automatic Downloads for Review Assets "
+                    "<font color='{2}'><i>(Currently: {3})</font></i></span>".format(
+                        self.font_size, self.font_family, pyani.core.ui.GREEN, state
+                    )
+                )
+            else:
+                self.enable_auto_download_label.setText(
+                    "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+                    "Turn on Automatic Downloads for Review Assets "
+                    "<font color='{2}'><i>(Currently: {3})</font></i></span>".format(
+                        self.font_size, self.font_family, pyani.core.ui.GRAY_MED, state
+                    )
+                )
+
+            # get the run time and format as hour:seconds am or pm, ex: 02:00 PM
+            run_time = self.task_scheduler.get_task_time()
+            if isinstance(run_time, datetime.datetime):
+                run_time = run_time.strftime("%I:%M %p")
+            else:
+                run_time = "N/A"
+
+            self.auto_dl_label.setText(
+                "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+                "Change Download Time  "
+                "<font color='{2}'><i>(Current Download Time: {3})</font></i></span>".format(
+                    self.font_size, self.font_family, pyani.core.ui.GRAY_MED, run_time
+                )
+            )
+
+    def set_download_time(self):
+        """
+        Update the run time for the auto download
+        """
+        run_time = "n/a"
+        try:
+            # get hour an minute from input
+            hour = str(self.auto_dl_hour.text())
+            min = str(self.auto_dl_min.text())
+            time_of_day = str(self.auto_dl_am_pm.currentText())
+            run_time = ("{0}:{1}".format(hour, min))
+            # validate input - if doesn't work throws ValueError
+            datetime.datetime.strptime(run_time, "%H:%M")
+            # add am or pm
+            run_time += " {0}".format(time_of_day)
+            # convert to 24 hours
+            military_time = datetime.datetime.strptime(run_time, "%I:%M %p").strftime("%H:%M")
+            # set new run time
+            error = self.task_scheduler.set_task_time(military_time)
+            if error:
+                self.msg_win.show_warning_msg(
+                    "Task Scheduling Error",
+                    "Could not set run time. Error is {0}".format(error)
+                )
+            self.auto_dl_label.setText(
+                "<span style = 'font-size:{0}pt; font-family:{1}; color:'#ffffff';' > "
+                "Change Download Time  "
+                "<font color='{2}'><i>(Current Download Time: {3})</font></i></span>".format(
+                    self.font_size, self.font_family, pyani.core.ui.GRAY_MED, run_time
+                )
+            )
+        except ValueError:
+            self.msg_win.show_warning_msg(
+                "Task Scheduling Error",
+                "Could not set run time. {0} is not a valid time".format(run_time)
+            )
+
+    def get_download_location(self):
+        """Gets the file name selected from the dialog and stores in text edit box in gui"""
+        name = pyani.core.ui.FileDialog.getExistingDirectory(
+            self,
+            'Select Location'
+        )
+        self.set_download_location_input.setText(name)
+
+    def set_download_location(self):
+        """Saves the location in the edit box to preference file"""
+        pref_value = str(self.set_download_location_input.text())
+
+        error = self.mngr.save_preference("review asset download", "download", "location", pref_value)
+        if error:
+            error_msg = "Could not set the download location preference. Error is {0}".format(error)
+            self.msg_win.show_error_msg("Save Preference Error", error_msg)
+
+    def set_update_assets_pref(self):
+        """saves preference for replacing assets on disk with the latest downloaded"""
+        pref_value = bool(self.replace_old_assets_cbox.isChecked())
+
+        error = self.mngr.save_preference("review asset download", "update", "update old assets", pref_value)
+        if error:
+            error_msg = "Could not save the replace assets preference. Error is {0}".format(error)
+            self.msg_win.show_error_msg("Save Preference Error", error_msg)
+
+    def build_tree_data(self):
+        """
+        To be implemented later on next movie
+        """
+        pass
+
+
+class AssetComponentTab(CoreTab):
+    """
+    A class that provides a tab page for show and shot assets.
+    """
+    def __init__(self, name, mngr, tab_desc=None, asset_component=None):
+        """
+        :param name: name of the tab, displayed on tab
+        :param mngr: an asset manager object pyani.core.mngr.assets
         :param tab_desc: an optional description
         :param asset_component: the asset's category or component such as rig, audio, or gpu cache
         """
-        super(AssetComponentTab, self).__init__()
+        super(AssetComponentTab, self).__init__(name, mngr, tab_desc=tab_desc, items_to_collapse=None)
 
         # variables for asset (non-ui)
-        self.app_vars = pyani.core.appvars.AppVars()
-        self.asset_mngr = asset_mngr
-        self._name = name
         self.assets_with_versions = ["rig"]
         self.assets_supporting_update_tracking = ["audio"]
         # if asset component specified set it, otherwise use the name
@@ -50,20 +711,7 @@ class AssetComponentTab(QtWidgets.QWidget):
         else:
             self.asset_component = self.name
 
-        self.ui_mngr = pyani.core.mngr.ui.core.AniAssetUpdateReport(self)
-
-        # make a msg window class for communicating with user
-        self.msg_win = pyani.core.ui.QtMsgWindow(self)
-
-        # text font to use for ui
-        self.font_family = "Century Gothic"
-        self.font_size = 10
-        self.font_size_notes_title = 14
-        self.font_size_notes_text = 10
-
         # ui variables
-        self.asset_tree = None
-        self.tab_description = tab_desc
         self.btn_tracking = pyani.core.ui.ImageButton(
             "images\\tracking_off.png",
             "images\\tracking_on.png",
@@ -82,6 +730,9 @@ class AssetComponentTab(QtWidgets.QWidget):
             "images\\auto_dl_on.png",
             size=(86, 86)
         )
+        self.add_button(self.btn_sync_cgt)
+        self.add_button(self.btn_save_config)
+
         self.show_only_auto_update_assets_label, self.show_only_auto_update_assets_cbox = pyani.core.ui.build_checkbox(
             "Show Only Assets that are Auto-Updated.",
             False,
@@ -93,82 +744,27 @@ class AssetComponentTab(QtWidgets.QWidget):
             "Tracks updates to assets. Generates an excel report of any changed assets for the show."
         )
 
-        # window to display notes
-        self.notes_window = QtWidgets.QDialog(parent=self)
-        self.notes_window.setMinimumSize(725, 500)
-        layout = QtWidgets.QVBoxLayout()
-        self.notes_display = QtWidgets.QTextEdit()
-        self.notes_display.setReadOnly(True)
-        layout.addWidget(self.notes_display)
-        self.notes_window.setLayout(layout)
-
-        # this widgets layout
-        self.layout = QtWidgets.QVBoxLayout()
-
-        self.build_layout()
-        self.set_slots()
-
-    @property
-    def name(self):
-        """
-        The tab name
-        """
-        return self._name
-
-    def get_layout(self):
-        """
-        The main layout object
-        """
-        return self.layout
-
-    def build_layout(self):
-        header = QtWidgets.QHBoxLayout()
-
-        # optional description
-        desc = QtWidgets.QLabel(self.tab_description)
-        desc.setWordWrap(True)
-        desc.setMinimumWidth(700)
-        header.addWidget(desc)
-        header.addStretch(1)
-
-        # buttons
-        header.addWidget(self.btn_sync_cgt)
-        header.addItem(QtWidgets.QSpacerItem(10, 0))
-        header.addWidget(self.btn_save_config)
-        # add asset changes tracking button if this component supports it
-        if self.name.lower() in self.assets_supporting_update_tracking:
-            header.addItem(QtWidgets.QSpacerItem(10, 0))
-            header.addWidget(self.btn_tracking)
-
-        options_layout = QtWidgets.QHBoxLayout()
-        options_layout.addWidget(self.show_only_auto_update_assets_cbox)
-        options_layout.addWidget(self.show_only_auto_update_assets_label)
+        self.add_option(self.show_only_auto_update_assets_cbox, self.show_only_auto_update_assets_label)
         # add asset changes tracking option if this component supports it
         if self.name.lower() in self.assets_supporting_update_tracking:
-            options_layout.addItem(QtWidgets.QSpacerItem(40, 0))
-            options_layout.addWidget(self.track_asset_changes_cbox)
-            options_layout.addWidget(self.track_asset_changes_label)
-            pref = self.asset_mngr.get_preference("asset mngr", "audio", "track updates")
+            self.add_button(self.btn_tracking)
+            self.add_option(self.track_asset_changes_cbox, self.track_asset_changes_label)
+            pref = self.mngr.get_preference("asset mngr", "audio", "track updates")
             if isinstance(pref, dict):
                 self.track_asset_changes_cbox.setChecked(pref.get("track updates"))
 
-        options_layout.addStretch(1)
-
-        self.build_asset_tree()
-
-        self.layout.addLayout(header)
-        self.layout.addItem(QtWidgets.QSpacerItem(1, 20))
-        self.layout.addLayout(options_layout)
-        self.layout.addWidget(self.asset_tree)
+        tree_data, col_count, existing_assets_in_config_file = self.build_tree_data()
+        self.build_layout(tree_data, col_count, existing_assets_in_config_file)
+        self.set_slots()
 
     def set_slots(self):
-        self.asset_tree.itemDoubleClicked.connect(self.get_notes)
+        self.tree.itemDoubleClicked.connect(self.get_notes)
         self.btn_save_config.clicked.connect(self.save_asset_update_config)
         self.btn_sync_cgt.clicked.connect(self.sync_assets_with_cgt)
         self.btn_tracking.clicked.connect(self.generate_tracking_report)
         self.show_only_auto_update_assets_cbox.clicked.connect(self._set_tree_display_mode)
-        self.asset_mngr.finished_sync_and_download_signal.connect(self.sync_finished)
-        self.asset_mngr.finished_tracking.connect(self.tracking_finished)
+        self.mngr.finished_sync_and_download_signal.connect(self.sync_finished)
+        self.mngr.finished_tracking.connect(self.tracking_finished)
         self.track_asset_changes_cbox.clicked.connect(self.update_tracking_preferences)
 
     def sync_finished(self, asset_component):
@@ -178,8 +774,9 @@ class AssetComponentTab(QtWidgets.QWidget):
         :param asset_component: user friendly name of the asset component
         """
         if str(asset_component).lower() == self.name.lower():
-            self.ui_mngr.generate_asset_update_report(asset_mngr=self.asset_mngr)
-            self.build_asset_tree()
+            self.asset_report.generate_asset_update_report(asset_mngr=self.mngr)
+            tree_data, col_count, existing_assets_in_config_file = self.build_tree_data()
+            self.build_tree(tree_data, col_count, existing_assets_in_config_file)
 
     def tracking_finished(self, tracking_info):
         """
@@ -200,7 +797,7 @@ class AssetComponentTab(QtWidgets.QWidget):
         """
         Creates the excel report for assets being tracked
         """
-        self.asset_mngr.check_for_new_assets(self.name.lower())
+        self.mngr.check_for_new_assets(self.name.lower())
 
     def update_tracking_preferences(self):
         """
@@ -208,7 +805,7 @@ class AssetComponentTab(QtWidgets.QWidget):
         if successfully updated.
         """
         # get the preference name and value as a dict
-        pref = self.asset_mngr.get_preference("asset mngr", self.name.lower(), "track updates")
+        pref = self.mngr.get_preference("asset mngr", self.name.lower(), "track updates")
         # check if we have a valid preference
         if not isinstance(pref, dict):
             self.msg_win.show_error_msg("Preferences Error", "Could not get preference, error is: {0}".format(pref))
@@ -220,7 +817,7 @@ class AssetComponentTab(QtWidgets.QWidget):
             pref_value = True
         else:
             pref_value = False
-        error = self.asset_mngr.save_preference("asset mngr", self.name.lower(), pref_name, pref_value)
+        error = self.mngr.save_preference("asset mngr", self.name.lower(), pref_name, pref_value)
         if error:
             self.msg_win.show_error_msg(
                 "Preferences Error", "Could not save preference, error is: {0}".format(error)
@@ -239,7 +836,7 @@ class AssetComponentTab(QtWidgets.QWidget):
         Syncs the selected assets in the ui with the data on CGT
         """
         # converts the tree selection to the format {asset type: [list of asset names]}
-        assets_by_type = self._convert_tree_selection_to_assets_list_by_type(self.asset_tree.get_tree_checked())
+        assets_by_type = self._convert_tree_selection_to_assets_list_by_type(self.tree.get_tree_checked())
 
         # paths in the cgt cloud to the files
         asset_info_list = list()
@@ -249,7 +846,7 @@ class AssetComponentTab(QtWidgets.QWidget):
         for asset_type in assets_by_type:
             for asset_name in assets_by_type[asset_type]:
                 asset_info_list.append(
-                    self.asset_mngr.get_asset_info_by_asset_name(asset_type, self.asset_component, asset_name)
+                    self.mngr.get_asset_info_by_asset_name(asset_type, self.asset_component, asset_name)
                 )
         # make a dict of format {asset type: {asset component(s): {asset name(s)}}, more asset types...}
         assets_dict = dict()
@@ -262,16 +859,15 @@ class AssetComponentTab(QtWidgets.QWidget):
                 assets_dict[asset_type][asset_component] = list()
             assets_dict[asset_type][asset_component].append(asset_name)
 
-        self.asset_mngr.sync_local_cache_with_server_and_download_gui(update_data_dict=assets_dict)
+        self.mngr.sync_local_cache_with_server_and_download_gui(update_data_dict=assets_dict)
 
     def save_asset_update_config(self):
         """
         Saves the selection to the asset update config file
-        :return:
         """
         updated_config_data = dict()
         # converts the tree selection to the format {asset type: [list of asset names]}
-        assets_by_type = self._convert_tree_selection_to_assets_list_by_type(self.asset_tree.get_tree_checked())
+        assets_by_type = self._convert_tree_selection_to_assets_list_by_type(self.tree.get_tree_checked())
 
         for asset_type in assets_by_type:
             if asset_type not in updated_config_data:
@@ -283,7 +879,7 @@ class AssetComponentTab(QtWidgets.QWidget):
             for asset_name in assets_by_type[asset_type]:
                 updated_config_data[asset_type][self.asset_component].append(asset_name)
 
-        error = self.asset_mngr.update_config_file_by_component_name(self.asset_component, updated_config_data)
+        error = self.mngr.update_config_file_by_component_name(self.asset_component, updated_config_data)
         if error:
             self.msg_win.show_error_msg(
                 "Save Error",
@@ -292,48 +888,22 @@ class AssetComponentTab(QtWidgets.QWidget):
         else:
             self.msg_win.show_info_msg("Saved", "The asset update config file was saved.")
         # finished saving, refresh ui
-        self.build_asset_tree()
-
-    def build_asset_tree(self):
-        """
-        Calls _build_tools_tree_data to get the tree data (i.e. rows of text). Calling this method with no exisitng
-        tree creates a pyani.core.ui.CheckboxTreeWidget tree object. Calling this method on an existing tree
-        rebuilds the tree data
-        """
-        # get data to build tree
-        tree_data, col_count, existing_assets_in_config_file = self._build_asset_tree_data()
-
-        # if the tree has already been built, clear it and call build method
-        if self.asset_tree:
-            self.asset_tree.clear_all_items()
-            self.asset_tree.build_checkbox_tree(
-                tree_data,
-                expand=False,
-                columns=col_count
-            )
-        # tree hasn't been built yet
-        else:
-            self.asset_tree = pyani.core.ui.CheckboxTreeWidget(
-                tree_data,
-                expand=False,
-                columns=col_count
-            )
-        # check on the assets already listed in the config file
-        self.asset_tree.set_checked(existing_assets_in_config_file)
+        tree_data, col_count, existing_assets_in_config_file = self.build_tree_data()
+        self.build_tree(tree_data, col_count, existing_assets_in_config_file)
 
     def get_notes(self, item):
         """
         Gets the notes from CGT for the selected asset - double click calls this
         """
         # only process if asset component supports notes
-        if not self.asset_mngr.asset_component_supports_release_notes(self.asset_component):
+        if not self.mngr.asset_component_supports_release_notes(self.asset_component):
             self.msg_win.show_info_msg("Notes Support", "{0} does not have notes.".format(self.name))
             pyani.core.ui.center(self.msg_win.msg_box)
             return
 
         # get the selection from the ui, always send column 0 because want the asset name
-        selected_item = self.asset_tree.get_item_at_position(item, 0)
-        item_parent = self.asset_tree.get_parent(item)
+        selected_item = self.tree.get_item_at_position(item, 0)
+        item_parent = self.tree.get_parent(item)
         selection = [item_parent, selected_item]
         # if an asset type was clicked on ignore
         if selected_item in self.app_vars.asset_types:
@@ -354,7 +924,7 @@ class AssetComponentTab(QtWidgets.QWidget):
         QtWidgets.QApplication.processEvents()
 
         # get the notes
-        notes_text, error = self.asset_mngr.get_release_notes(self.asset_component, asset_name)
+        notes_text, error = self.mngr.get_release_notes(self.asset_component, asset_name)
 
         self.msg_win.close()
 
@@ -390,15 +960,20 @@ class AssetComponentTab(QtWidgets.QWidget):
         self.notes_window.show()
         pyani.core.ui.center(self.notes_window)
 
-    def _build_asset_tree_data(self):
+    def build_tree_data(self):
         """
         Builds data for a pyani.core.ui.CheckboxTreeWidget
-        :return: a list of dicts, where dict is:
-        { root = CheckboxTreeWidgetItem, children = [list of CheckboxTreeWidgetItems] }
+        :return: a tuple where the tuple is:
+        (
+            a list of dicts, where dict is:
+            { root = CheckboxTreeWidgetItem, children = [list of CheckboxTreeWidgetItems] },
+            the max number of columns,
+            the existing assets in the config file
+        )
         """
         # assets in a tree widget
         # get the assets types that have this component
-        asset_types = self.asset_mngr.get_asset_type_by_asset_component_name(self.asset_component)
+        asset_types = self.mngr.get_asset_type_by_asset_component_name(self.asset_component)
         tree_items = []
         col_count = 1
         # existing assets being updated, stores a list of dicts, where dict is
@@ -412,7 +987,7 @@ class AssetComponentTab(QtWidgets.QWidget):
         # shot assets will only ever return shot as the asset type, so first list element always exists
         if asset_types[0] == "shot":
             asset_type = asset_types[0]
-            asset_names = self.asset_mngr.get_assets_by_asset_component(asset_type, self.asset_component)
+            asset_names = self.mngr.get_assets_by_asset_component(asset_type, self.asset_component)
 
             asset_info_modified = dict()
             # loop through all seq/shot assets, asset info is currently a list of "seq###/shot###":asset info
@@ -429,7 +1004,7 @@ class AssetComponentTab(QtWidgets.QWidget):
                 assets_list = list()
                 for shot in sorted(asset_info_modified[seq]):
                     # check if this asset is in the asset update config, meaning it gets updated automatically
-                    if self.asset_mngr.is_asset_in_update_config(
+                    if self.mngr.is_asset_in_update_config(
                             asset_type, self.asset_component, "{0}/{1}".format(seq, shot)
                     ):
                         row_color = [pyani.core.ui.GREEN]
@@ -451,12 +1026,12 @@ class AssetComponentTab(QtWidgets.QWidget):
         # show assets
         else:
             for asset_type in asset_types:
-                asset_names = self.asset_mngr.get_assets_by_asset_component(asset_type, self.asset_component)
+                asset_names = self.mngr.get_assets_by_asset_component(asset_type, self.asset_component)
                 assets_list = []
                 # for all asset names, make a list of tree item objects that have asset name and optionally version
                 for asset_name in sorted(asset_names):
-                    if self.asset_mngr.is_asset_versioned(asset_type, self.asset_component):
-                        asset_version = self.asset_mngr.get_asset_version_from_cache(
+                    if self.mngr.is_asset_versioned(asset_type, self.asset_component):
+                        asset_version = self.mngr.get_asset_version_from_cache(
                             asset_type,
                             self.asset_component,
                             asset_name
@@ -467,12 +1042,12 @@ class AssetComponentTab(QtWidgets.QWidget):
                         col_count = 3
 
                         # check if this asset is in the asset update config, meaning it gets updated automatically
-                        if self.asset_mngr.is_asset_in_update_config(
+                        if self.mngr.is_asset_in_update_config(
                                 asset_type, self.asset_component, asset_name
                         ):
                             # check if file doesn't exist on server - this let's user know so they don't wonder why
                             # update isn't getting any files
-                            if not self.asset_mngr.get_asset_files(asset_type, self.asset_component, asset_name):
+                            if not self.mngr.get_asset_files(asset_type, self.asset_component, asset_name):
                                 # found missing file on server, set to strikeout - see pyani.core.ui.CheckboxTreeWidget
                                 # for available formatting options
                                 row_text[0] = "strikethrough:{0}".format(row_text[0])
@@ -490,7 +1065,7 @@ class AssetComponentTab(QtWidgets.QWidget):
                             row_color = [pyani.core.ui.WHITE, pyani.core.ui.WHITE]
                             # check if file doesn't exist on server - this let's user know so they don't wonder why
                             # update isn't getting any files
-                            if not self.asset_mngr.get_asset_files(asset_type, self.asset_component, asset_name):
+                            if not self.mngr.get_asset_files(asset_type, self.asset_component, asset_name):
                                 # found missing file on server, set to strikeout - see pyani.core.ui.CheckboxTreeWidget
                                 # for available formatting options
                                 row_text[0] = "strikethrough:{0}".format(row_text[0])
@@ -501,24 +1076,10 @@ class AssetComponentTab(QtWidgets.QWidget):
                             row_text[1] = "n/a"
 
                         # check if the version on disk is older than the cloud version
-                        '''
-                        old code which required asset be in update config
-                        if self.asset_mngr.is_asset_in_update_config(
-                                asset_type, self.asset_component, asset_name
-                        ):
-                            json_data = pyani.core.util.load_json(
-                                os.path.join(
-                                    self.asset_mngr.get_asset_local_dir_from_cache(asset_type, self.asset_component, asset_name),
-                                    self.app_vars.cgt_metadata_filename
-                                )
-                            )
-                        else:
-                            json_data = None
-                        '''
                         json_data = pyani.core.util.load_json(
                             os.path.join(
-                                self.asset_mngr.get_asset_local_dir_from_cache(asset_type, self.asset_component,
-                                                                               asset_name),
+                                self.mngr.get_asset_local_dir_from_cache(asset_type, self.asset_component,
+                                                                         asset_name),
                                 self.app_vars.cgt_metadata_filename
                             )
                         )
@@ -530,7 +1091,7 @@ class AssetComponentTab(QtWidgets.QWidget):
                                 row_color = [row_color[0], pyani.core.ui.RED.name()]
 
                         # check if asset is publishable
-                        if not self.asset_mngr.is_asset_approved(asset_type, self.asset_component, asset_name):
+                        if not self.mngr.is_asset_approved(asset_type, self.asset_component, asset_name):
                             row_text.append("images\\not_approved.png")
                             row_color.append("")
 
@@ -538,7 +1099,7 @@ class AssetComponentTab(QtWidgets.QWidget):
                     else:
                         row_text = [asset_name]
                         # check if this asset is in the asset update config, meaning it gets updated automatically
-                        if self.asset_mngr.is_asset_in_update_config(
+                        if self.mngr.is_asset_in_update_config(
                                 asset_type, self.asset_component, asset_name
                         ):
                             row_color = [pyani.core.ui.GREEN]
@@ -603,53 +1164,39 @@ class AssetComponentTab(QtWidgets.QWidget):
         """
         if self.show_only_auto_update_assets_cbox.checkState():
             # get all checked assets - we want the ones selected in this session as well
-            unchecked_assets = self.asset_tree.get_tree_unchecked()
-            self.asset_tree.hide_items(unchecked_assets)
-            self.asset_tree.expand_all()
+            unchecked_assets = self.tree.get_tree_unchecked()
+            self.tree.hide_items(unchecked_assets)
+            self.tree.expand_all()
         else:
             # show all items
-            self.asset_tree.show_items(None, show_all=True)
-            self.asset_tree.collapse_all()
+            self.tree.show_items(None, show_all=True)
+            self.tree.collapse_all()
 
 
-class ToolsTab(QtWidgets.QWidget):
+class ToolsTab(CoreTab):
     """
-    A class that provides a tab page for tools. the general format / display is:
-
-    tab description (if provided)           buttons
-
-    tree list of tools
+    A class that provides a tab page for tools.
     """
-    def __init__(self, name, tools_mngr, tab_desc=None, tool_type=None):
+    def __init__(self, name, mngr, tab_desc=None, tool_type=None):
         """
         :param name: the tab name, displayed on tab
-        :param tools_mngr: a tools manager object - pyani.core.mngr.tools
+        :param mngr: a tools manager object - pyani.core.mngr.tools
         :param tab_desc: a description displayed on the tab page to the left of the buttons
         :param tool_type: the tool type is the asset type, such as maya or pyanitools
         """
-        super(ToolsTab, self).__init__()
+        super(ToolsTab, self).__init__(
+            name,
+            mngr,
+            tab_desc=tab_desc,
+            items_to_collapse=['lib', 'shortcuts', 'core']
+        )
 
         # variables for asset (non-ui)
         self.app_vars = pyani.core.appvars.AppVars()
         self._name = name
         self.tool_type = tool_type
-        self.tools_mngr = tools_mngr
-
-        self.ui_mngr = pyani.core.mngr.ui.core.AniAssetUpdateReport(self)
-
-        # make a msg window class for communicating with user
-        self.msg_win = pyani.core.ui.QtMsgWindow(self)
-
-        # text font to use for ui
-        self.font_family = pyani.core.ui.FONT_FAMILY
-        self.font_size = pyani.core.ui.FONT_SIZE_DEFAULT
-        self.font_size_notes_title = 14
-        self.font_size_notes_text = 10
 
         # ui variables
-        self._tool_categories_to_collapse = ['lib', 'shortcuts', 'core']
-        self.asset_tree = None
-        self.tab_description = tab_desc
         self.btn_sync_cgt = pyani.core.ui.ImageButton(
             "images\sync_cache_off.png",
             "images\sync_cache_on.png",
@@ -668,76 +1215,25 @@ class ToolsTab(QtWidgets.QWidget):
             "images\\auto_dl_on.png",
             size=(86, 86)
         )
+        self.add_button(self.btn_sync_cgt)
+        self.add_button(self.btn_wiki)
+        self.add_button(self.btn_save_config)
         self.show_only_auto_update_assets_label, self.show_only_auto_update_assets_cbox = pyani.core.ui.build_checkbox(
             "Show Only Assets that are Auto-Updated.",
             False,
             "Shows assets that are in the auto update config file. These are the green colored assets below."
         )
 
-        # window to display notes
-        self.notes_window = QtWidgets.QDialog(parent=self)
-        self.notes_window.setMinimumSize(725, 500)
-        layout = QtWidgets.QVBoxLayout()
-        self.notes_display = QtWidgets.QTextEdit()
-        self.notes_display.setReadOnly(True)
-        layout.addWidget(self.notes_display)
-        self.notes_window.setLayout(layout)
-
-        self.tools_tree = None
-
-        # this widgets layout
-        self.layout = QtWidgets.QVBoxLayout()
-
-        self.build_layout()
+        self.add_option(self.show_only_auto_update_assets_cbox, self.show_only_auto_update_assets_label)
+        tree_data, col_count, existing_assets_in_config_file = self.build_tree_data()
+        self.build_layout(tree_data, col_count, existing_assets_in_config_file)
         self.set_slots()
 
-    @property
-    def name(self):
-        """
-        The tab name
-        """
-        return self._name
-
-    def get_layout(self):
-        """
-        The main layout object
-        """
-        return self.layout
-
-    def build_layout(self):
-        header = QtWidgets.QHBoxLayout()
-
-        # optional description
-        desc = QtWidgets.QLabel(self.tab_description)
-        desc.setWordWrap(True)
-        desc.setMinimumWidth(700)
-        header.addWidget(desc)
-        header.addStretch(1)
-
-        # buttons
-        header.addWidget(self.btn_sync_cgt)
-        header.addItem(QtWidgets.QSpacerItem(10, 0))
-        header.addWidget(self.btn_wiki)
-        header.addItem(QtWidgets.QSpacerItem(10, 0))
-        header.addWidget(self.btn_save_config)
-
-        options_layout = QtWidgets.QHBoxLayout()
-        options_layout.addWidget(self.show_only_auto_update_assets_cbox)
-        options_layout.addWidget(self.show_only_auto_update_assets_label)
-        options_layout.addStretch(1)
-
-        self.build_tools_tree()
-
-        self.layout.addLayout(header)
-        self.layout.addItem(QtWidgets.QSpacerItem(1, 20))
-        self.layout.addLayout(options_layout)
-        self.layout.addWidget(self.tools_tree)
-
     def set_slots(self):
-        self.tools_tree.itemDoubleClicked.connect(self.get_notes)
+        self.tree.itemDoubleClicked.connect(self.get_notes)
         self.btn_wiki.clicked.connect(self.open_confluence_page)
         self.btn_sync_cgt.clicked.connect(self.sync_tools_with_cgt)
-        self.tools_mngr.finished_sync_and_download_signal.connect(self.sync_finished)
+        self.mngr.finished_sync_and_download_signal.connect(self.sync_finished)
         self.btn_save_config.clicked.connect(self.save_update_config)
         self.show_only_auto_update_assets_cbox.clicked.connect(self._set_tree_display_mode)
 
@@ -748,7 +1244,7 @@ class ToolsTab(QtWidgets.QWidget):
         :param tool_category: name of the tool active_type such as Maya, user friendly name
         """
         if str(tool_category) == self.name:
-            error = self.tools_mngr.remove_files_not_on_server()
+            error = self.mngr.remove_files_not_on_server()
             if error:
                 # if error list is very long cap errors
                 num_errors = len(error)
@@ -761,20 +1257,21 @@ class ToolsTab(QtWidgets.QWidget):
                 self.msg_win.show_warning_msg("File Sync Warning", error_msg)
 
             # update config file
-            error = self.tools_mngr.update_config_file_after_sync()
+            error = self.mngr.update_config_file_after_sync()
             if error:
                 error_msg = "Could not sync update configuration file. Error is: {0}".format(error)
                 self.msg_win.show_error_msg("File Sync Warning", error_msg)
 
-            self.ui_mngr.generate_asset_update_report(tools_mngr=self.tools_mngr)
-            self.build_tools_tree()
+            self.asset_report.generate_asset_update_report(tools_mngr=self.mngr)
+            tree_data, col_count, existing_assets_in_config_file = self.build_tree_data()
+            self.build_tree(tree_data, col_count, existing_assets_in_config_file)
 
     def sync_tools_with_cgt(self):
         """
         Syncs the selected tools in the ui with CGT. Updates metadata like version and downloads the latest tools.
         """
         # converts the tree selection to the format {tool type: [list of tool names]}
-        tools_by_cat = self._convert_tree_selection_to_tools_list_by_category(self.tools_tree.get_tree_checked())
+        tools_by_cat = self._convert_tree_selection_to_tools_list_by_category(self.tree.get_tree_checked())
 
         # paths in the cgt cloud to the files
         tools_info_list = list()
@@ -784,7 +1281,7 @@ class ToolsTab(QtWidgets.QWidget):
         for tool_type in tools_by_cat:
             for tool_name in tools_by_cat[tool_type]:
                 tools_info_list.append(
-                    self.tools_mngr.get_tool_info_by_tool_name(self.tool_type, tool_type, tool_name)
+                    self.mngr.get_tool_info_by_tool_name(self.tool_type, tool_type, tool_name)
                 )
         # make a dict of format {tool active_type: {tool type(s): {tool name(s)}}, more tool categories...}
         tools_dict = dict()
@@ -797,7 +1294,7 @@ class ToolsTab(QtWidgets.QWidget):
                 tools_dict[self.tool_type][tool_cat] = list()
             tools_dict[self.tool_type][tool_cat].append(tool_name)
 
-        self.tools_mngr.sync_local_cache_with_server_and_download_gui(tools_dict)
+        self.mngr.sync_local_cache_with_server_and_download_gui(tools_dict)
 
     def open_confluence_page(self):
         """
@@ -806,7 +1303,7 @@ class ToolsTab(QtWidgets.QWidget):
         """
 
         try:
-            selection = str(self.tools_tree.currentItem().text(0))
+            selection = str(self.tree.currentItem().text(0))
         except AttributeError:
             # no selection is made
             self.msg_win.show_warning_msg("Selection Error", "No tool selected. Please select a tool to view the"
@@ -814,8 +1311,8 @@ class ToolsTab(QtWidgets.QWidget):
             return
 
         # if selection isn't a tool type, then it is a tool name
-        if selection not in self.tools_mngr.get_tool_types(self.tool_type):
-            error = self.tools_mngr.open_help_doc(selection)
+        if selection not in self.mngr.get_tool_types(self.tool_type):
+            error = self.mngr.open_help_doc(selection)
             if error:
                 self.msg_win.show_error_msg("Confluence Error", error)
 
@@ -830,7 +1327,7 @@ class ToolsTab(QtWidgets.QWidget):
             return
 
         # only process if notes exist
-        notes = self.tools_mngr.get_tool_release_notes(self.tool_type, tool_cat, tool_name)
+        notes = self.mngr.get_tool_release_notes(self.tool_type, tool_cat, tool_name)
         if not notes:
             self.msg_win.show_info_msg("Notes Support", "{0} does not have release notes.".format(tool_name))
             pyani.core.ui.center(self.msg_win.msg_box)
@@ -864,7 +1361,7 @@ class ToolsTab(QtWidgets.QWidget):
         :return:
         """
         # only show warning if deselected something
-        if self.tools_tree.get_tree_unchecked():
+        if self.tree.get_tree_unchecked():
             response = self.msg_win.show_question_msg(
                 "Caution!",
                 "Some tools are de-selected and will not auto update. Disabling a tool from auto updating is not "
@@ -875,7 +1372,7 @@ class ToolsTab(QtWidgets.QWidget):
 
         if response:
             # converts the tree selection to the format {tool sub category: [list of tool names]}
-            tools_by_cat = self._convert_tree_selection_to_tools_list_by_category(self.tools_tree.get_tree_checked())
+            tools_by_cat = self._convert_tree_selection_to_tools_list_by_category(self.tree.get_tree_checked())
 
             updated_config_data = {self.tool_type: dict()}
 
@@ -887,7 +1384,7 @@ class ToolsTab(QtWidgets.QWidget):
                 for tool_name in tools_by_cat[tool_cat]:
                     updated_config_data[self.tool_type][tool_cat].append(tool_name)
 
-            error = self.tools_mngr.update_config_file_by_tool_type(updated_config_data)
+            error = self.mngr.update_config_file_by_tool_type(updated_config_data)
             if error:
                 self.msg_win.show_error_msg(
                     "Save Error",
@@ -896,45 +1393,19 @@ class ToolsTab(QtWidgets.QWidget):
             else:
                 self.msg_win.show_info_msg("Saved", "The update config file was saved.")
             # finished saving, refresh ui
-            self.build_tools_tree()
+            tree_data, col_count, existing_assets_in_config_file = self.build_tree_data()
+            self.build_tree(tree_data, col_count, existing_assets_in_config_file)
 
-    def build_tools_tree(self):
-        """
-        Calls _build_tools_tree_data to get the tree data (i.e. rows of text). Calling this method with no existing
-        tree creates a pyani.core.ui.CheckboxTreeWidget tree object. Calling this method on an existing tree
-        rebuilds the tree data
-        """
-        # get data to build tree
-        tree_data, col_count, existing_tools_in_config_file = self._build_tools_tree_data()
-
-        # if the tree has already been built, clear it and call build method
-        if self.tools_tree:
-            self.tools_tree.clear_all_items()
-            self.tools_tree.build_checkbox_tree(
-                tree_data,
-                expand=True,
-                columns=col_count
-            )
-        # tree hasn't been built yet
-        else:
-            self.tools_tree = pyani.core.ui.CheckboxTreeWidget(
-                tree_data,
-                expand=True,
-                columns=col_count
-            )
-
-        # collapse certain tool categories
-        for tool_cat_to_collapse in self._tool_categories_to_collapse:
-            self.tools_tree.collapse_item(tool_cat_to_collapse)
-
-        # check on the assets already listed in the config file
-        self.tools_tree.set_checked(existing_tools_in_config_file)
-
-    def _build_tools_tree_data(self):
+    def build_tree_data(self):
         """
         Builds data for a pyani.core.ui.CheckboxTreeWidget
-        :return: a list of dicts, where dict is:
-        { root = CheckboxTreeWidgetItem, children = [list of CheckboxTreeWidgetItems] }
+        :return: a tuple where the tuple is:
+        (
+            a list of dicts, where dict is:
+            { root = CheckboxTreeWidgetItem, children = [list of CheckboxTreeWidgetItems] },
+            the max number of columns,
+            the existing assets in the config file
+        )
         """
         # tools in a tree widget
         tree_items = list()
@@ -942,7 +1413,7 @@ class ToolsTab(QtWidgets.QWidget):
 
         existing_tools_in_config_file = []
 
-        for tool_category in sorted(self.tools_mngr.get_tool_types(self.tool_type)):
+        for tool_category in sorted(self.mngr.get_tool_types(self.tool_type)):
             # try to load cgt meta data for tool type which has version info for the local files, this is the
             # version on disk locally, could be different than cloud version
             local_cgt_metadata = pyani.core.util.load_json(
@@ -956,10 +1427,10 @@ class ToolsTab(QtWidgets.QWidget):
                 local_cgt_metadata = None
 
             tools_list = list()
-            for tool_name in self.tools_mngr.get_tool_names(self.tool_type, tool_category):
+            for tool_name in self.mngr.get_tool_names(self.tool_type, tool_category):
                 row_text = [tool_name]
-                cgt_version = self.tools_mngr.get_tool_newest_version(self.tool_type, tool_category, tool_name)
-                desc = self.tools_mngr.get_tool_description(self.tool_type, tool_category, tool_name)
+                cgt_version = self.mngr.get_tool_newest_version(self.tool_type, tool_category, tool_name)
+                desc = self.mngr.get_tool_description(self.tool_type, tool_category, tool_name)
                 if cgt_version:
                     row_text.append(cgt_version)
                 else:
@@ -970,7 +1441,7 @@ class ToolsTab(QtWidgets.QWidget):
                     row_text.append("")
 
                 # check if this asset is in the asset update config, meaning it gets updated automatically
-                if self.tools_mngr.is_asset_in_update_config(
+                if self.mngr.is_asset_in_update_config(
                         "tools", self.tool_type, tool_name, tool_category
                 ):
                     row_color = [pyani.core.ui.GREEN, pyani.core.ui.WHITE, pyani.core.ui.GRAY_MED]
@@ -1003,9 +1474,9 @@ class ToolsTab(QtWidgets.QWidget):
 
     def _get_tree_selection_clicked(self, tree_item_clicked):
         # get the selection from the ui, always send column 0 because want the tool name
-        selected_item = self.tools_tree.get_item_at_position(tree_item_clicked, 0)
+        selected_item = self.tree.get_item_at_position(tree_item_clicked, 0)
         # should be the tool type as long as a tool name was clicked
-        item_parent = self.tools_tree.get_parent(tree_item_clicked)
+        item_parent = self.tree.get_parent(tree_item_clicked)
         # if a tool type was clicked on ignore
         if selected_item in self.app_vars.tool_types[self.tool_type]:
             return None, None
@@ -1029,7 +1500,7 @@ class ToolsTab(QtWidgets.QWidget):
 
         for selected in selection:
             # if this is a tool type and not tool name, create a key
-            if selected.lower() in self.tools_mngr.get_tool_types(self.tool_type):
+            if selected.lower() in self.mngr.get_tool_types(self.tool_type):
                 # create key if doesn't exist
                 if selected.lower() not in tools_by_type:
                     tools_by_type[selected.lower()] = []
@@ -1047,13 +1518,13 @@ class ToolsTab(QtWidgets.QWidget):
         """
         if self.show_only_auto_update_assets_cbox.checkState():
             # get all checked assets - we want the ones selected in this session as well
-            unchecked_assets = self.tools_tree.get_tree_unchecked()
-            self.tools_tree.hide_items(unchecked_assets)
-            self.tools_tree.expand_all()
+            unchecked_assets = self.tree.get_tree_unchecked()
+            self.tree.hide_items(unchecked_assets)
+            self.tree.expand_all()
         else:
             # show all items
-            self.tools_tree.show_items(None, show_all=True)
-            self.tools_tree.collapse_all()
+            self.tree.show_items(None, show_all=True)
+            self.tree.collapse_all()
 
 
 class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
@@ -1068,6 +1539,7 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         # managers for handling assets and tools
         self.asset_mngr = pyani.core.mngr.assets.AniAssetMngr()
         self.tools_mngr = pyani.core.mngr.tools.AniToolsMngr()
+        self.core_mngr_for_reviews = pyani.core.mngr.assets.AniCoreMngr()
 
         app_name = "pyAssetMngr"
         app_vars = pyani.core.appvars.AppVars()
@@ -1120,6 +1592,7 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
             self.gpu_cache_tab = None
             self.maya_tools_tab = None
             self.pyanitools_tools_tab = None
+            self.review_tab = None
         else:
             asset_desc = (
                 "<p><span style='font-size:9pt; font-family:{0}; color: #ffffff;'>"
@@ -1149,11 +1622,17 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
                 "close this app and don't click the 'save selection...' button."
                 "</span></p>".format(self.font_family, pyani.core.ui.GREEN, pyani.core.ui.YELLOW.name())
             )
+            review_desc = (
+                "<p><span style='font-size:9pt; font-family:{0}; color: #ffffff;'>"
+                "Options for downloading review assets from CGT. Currently only movies for animation, layout, previz "
+                "nHair, nCloth, and Shot Finaling are supported.".format(self.font_family)
+            )
             self.rig_tab = AssetComponentTab("Rigs", self.asset_mngr, asset_component="rig", tab_desc=asset_desc)
             self.audio_tab = AssetComponentTab("Audio", self.asset_mngr, asset_component="audio", tab_desc=asset_desc)
             self.gpu_cache_tab = AssetComponentTab("GPU Cache", self.asset_mngr, asset_component="model/cache", tab_desc=asset_desc)
             self.maya_tools_tab = ToolsTab("Maya Tools", self.tools_mngr, tool_type="maya", tab_desc=tool_desc)
             self.pyanitools_tools_tab = ToolsTab("PyAni Tools", self.tools_mngr, tool_type="pyanitools", tab_desc=tool_desc)
+            self.review_tab = ReviewTab("Reviews", self.core_mngr_for_reviews, tab_desc=review_desc)
 
         # INIT FOR MAINTENANCE AND OPTIONS
         # ---------------------------------------------------------------------
@@ -1192,9 +1671,16 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         self.auto_dl_hour.setMaximumWidth(40)
         self.auto_dl_min = QtWidgets.QLineEdit("")
         self.auto_dl_min.setMaximumWidth(40)
-        self.btn_auto_dl_update_time = QtWidgets.QPushButton("Update Run Time")
+        self.btn_auto_dl_update_time = pyani.core.ui.ImageButton(
+            "images\\save_pref_off.png",
+            "images\\save_pref_on.png",
+            "images\\save_pref_on.png",
+            size=(34, 30)
+        )
         # get the current time and set it
-        self._set_ui_update_time()
+        pyani.core.ui.set_ui_time(
+            self.task_scheduler, self.auto_dl_hour, self.auto_dl_min, self.auto_dl_am_pm
+        )
 
         # if task is missing, this button shows
         self.btn_create_task = QtWidgets.QPushButton("Create Daily Update Task")
@@ -1220,6 +1706,8 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
             self.tabs.add_tab(self.maya_tools_tab.name, layout=self.maya_tools_tab.get_layout())
         if self.pyanitools_tools_tab:
             self.tabs.add_tab(self.pyanitools_tools_tab.name, layout=self.pyanitools_tools_tab.get_layout())
+        if self.review_tab:
+            self.tabs.add_tab(self.review_tab.name, layout=self.review_tab.get_layout())
 
         self.add_layout_to_win()
 
@@ -1335,6 +1823,7 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         options_change_time_layout.addWidget(self.auto_dl_hour)
         options_change_time_layout.addWidget(self.auto_dl_min)
         options_change_time_layout.addWidget(self.auto_dl_am_pm)
+        options_change_time_layout.addItem(QtWidgets.QSpacerItem(10, 0))
         options_change_time_layout.addWidget(self.btn_auto_dl_update_time)
         options_change_time_layout.addStretch(1)
         options_layout.addLayout(options_change_time_layout)
@@ -1414,7 +1903,9 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
                 error = self.task_scheduler.set_task_enabled(True)
                 # now that the task is re-enabled, get its time (note that task time is only available from windows
                 # when its enabled, otherwise it returns n/a even though it saves the time.
-                self._set_ui_update_time()
+                pyani.core.ui.set_ui_time(
+                    self.task_scheduler, self.auto_dl_hour, self.auto_dl_min, self.auto_dl_am_pm
+                )
             else:
                 error = self.task_scheduler.set_task_enabled(False)
             if error:
@@ -1535,33 +2026,3 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
                 logger.error(error)
                 return
             sys.exit()
-
-    @staticmethod
-    def _get_update_time_components(update_time):
-        """
-        Gets the hour, min ,a dn time of day (AM/PM) from a date time object
-        :param update_time: the date time object
-        :return: hour, min, and time of day (AM/PM)
-        """
-        if isinstance(update_time, datetime.datetime):
-            hour = "{:d}".format(update_time.hour)
-            min = "{:02d}".format(update_time.minute)
-            time_of_day = update_time.strftime('%p')
-        else:
-            hour = "12"
-            min = "00"
-            time_of_day = "PM"
-
-        return hour, min, time_of_day
-
-    def _set_ui_update_time(self):
-        """
-        Sets the auto update time in the ui
-        """
-        # get the current time and set it
-        current_update_time = self.task_scheduler.get_task_time()
-        hour, min, time_of_day = self._get_update_time_components(current_update_time)
-
-        self.auto_dl_am_pm.setCurrentIndex(self.auto_dl_am_pm.findText(time_of_day))
-        self.auto_dl_hour.setText(hour)
-        self.auto_dl_min.setText(min)

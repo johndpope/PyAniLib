@@ -9,6 +9,7 @@ from subprocess import Popen, PIPE, STDOUT
 import pyani.core.util
 import pyani.core.error_logging
 import pyani.core.appvars
+import datetime
 
 
 logger = logging.getLogger()
@@ -843,7 +844,13 @@ class AniQMainWindow(QtWidgets.QMainWindow):
         self.title_vert_spacer = QSpacerItem 15 px high
     :param win_title : the window's title as a string
     :param win_icon : absolute path to a png or icon (.ico) file
-    :param tool_metadata : information for tool
+    :param tool_metadata : information for tool, format is:
+            tool_metadata = {
+                "name": app name,
+                "dir": location/directory,
+                "type": tool type, see pyani.core.appvars,
+                "category": tool category, see see pyani.core.appvars
+            }
     :param tool_mngr : a pyani.core.mngr.tool object for opening help doc
     :param width : optional width of the window
     :param height: optional height of the window
@@ -1112,6 +1119,18 @@ class FileDialog(QFileDialog):
         self.selectedFiles = []
 
         self.setOption(QFileDialog.DontUseNativeDialog, True)
+
+        '''
+        can implement if needed
+        app_vars = pyani.core.appvars.AppVars()
+        sidebarUrls = [
+            QtWidgets.QDesktopServices.storageLocation(QtWidgets.QDesktopServices.DesktopLocation),
+            QtWidgets.QDesktopServices.storageLocation(QtWidgets.QDesktopServices.DocumentsLocation),
+            QtWidgets.QDesktopServices.storageLocation(QtWidgets.QDesktopServices.HomeLocation),
+            QtCore.QUrl.fromLocalFile("{0}\\Downloads".format(app_vars.homepath))
+        ]
+        self.setSidebarUrls(sidebarUrls)
+        '''
         self.setFileMode(QFileDialog.ExistingFiles)
 
         # get all buttons and find one labeled open, connect custom event
@@ -2157,3 +2176,38 @@ def clear_layout(layout):
             child = layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
+
+
+def get_update_time_components(update_time):
+    """
+    Gets the hour, min ,a dn time of day (AM/PM) from a date time object
+    :param update_time: the date time object
+    :return: hour, min, and time of day (AM/PM)
+    """
+    if isinstance(update_time, datetime.datetime):
+        hour = "{:d}".format(update_time.hour)
+        min = "{:02d}".format(update_time.minute)
+        time_of_day = update_time.strftime('%p')
+    else:
+        hour = "12"
+        min = "00"
+        time_of_day = "PM"
+
+    return hour, min, time_of_day
+
+
+def set_ui_time(task_scheduler, hour_input, minute_input, time_of_day_input):
+    """
+    Sets the time in the ui
+    :param task_scheduler: a pyani.core.util WinTaskScheduler object
+    :param hour_input: a pyqt text Qlabel input
+    :param minute_input: a pyqt text Qlablel input
+    :param time_of_day_input: a pyqt QComboBox
+    """
+    # get the current time and set it
+    current_update_time = task_scheduler.get_task_time()
+    hour, min, time_of_day = get_update_time_components(current_update_time)
+
+    time_of_day_input.setCurrentIndex(time_of_day_input.findText(time_of_day))
+    hour_input.setText(hour)
+    minute_input.setText(min)

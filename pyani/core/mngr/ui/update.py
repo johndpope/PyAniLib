@@ -4,11 +4,15 @@ import pyani.core.mngr.core
 import pyani.core.mngr.assets
 import pyani.core.mngr.tools
 import pyani.core.mngr.ui.core
+import pyani.core.ui
 
 logger = logging.getLogger()
 
 
 class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
+    """
+    Updates cgt cache, tools and assets
+    """
 
     def __init__(self, error_logging, progress_list):
 
@@ -20,6 +24,17 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
         self.show_and_shot_assets = None
 
         error = self.load_tracked_assets()
+
+        description = (
+            "<span style='font-size: 9pt; font-family:{0}; color: #ffffff;'>"
+            "About the pyAniTools asset management system: Setup creates configuration files, builds caches that help "
+            "speed up CGT connectivity, downloads tools, and sets up a user's system to work with the pyAniTools "
+            "update system. The update system allows assets such as tools, rigs, and more to be auto updated daily. "
+            "A gui interface, called Asset Manager, provides a user interface to the asset management system."
+            "</span>".format(
+                pyani.core.ui.FONT_FAMILY
+            )
+        )
 
         # list of tasks to run, see pyani.core.mngr.ui.core.AniTaskListWindow for format
         # build tool cache first, since tools download will access
@@ -167,16 +182,42 @@ class AniUpdateGui(pyani.core.mngr.ui.core.AniTaskListWindow):
         )
         progress_list.append("Removing any out-of-date tools.")
 
+        # information about the app
+        app_metadata = {
+            "name": "update",
+            "dir": self.core_mngr.app_vars.local_pyanitools_core_dir,
+            "type": "pyanitools",
+            "category": "core"
+        }
+
         # create a ui (non-interactive) to run setup
         super(AniUpdateGui, self).__init__(
             error_logging,
             progress_list,
             "Update",
-            "update",
+            app_metadata,
             self.task_list,
+            app_description=description,
             asset_mngr=self.asset_mngr,
             tools_mngr=self.tools_mngr
         )
+
+        # NOTE: do this here because the super needs to be called first to create the window
+        # used to create an html report to show in a QtDialogWindow
+        self.asset_report = pyani.core.mngr.ui.core.AniAssetUpdateReport(self)
+        # move update window so it doesn't cover the main update window
+        this_win_rect = self.frameGeometry()
+        post_tasks = [
+            {
+                'func': self.asset_report.generate_asset_update_report,
+                'params': [self.asset_mngr, self.tools_mngr]
+            },
+            {
+                'func': self.asset_report.move,
+                'params': [this_win_rect.x() + 150, this_win_rect.y() - 75]
+            },
+        ]
+        self.set_post_tasks(post_tasks)
 
         if self.tool_assets is None:
             self.msg_win.show_warning_msg("Update Warning",

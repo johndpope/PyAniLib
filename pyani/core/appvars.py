@@ -16,22 +16,24 @@ class AppVars:
 
         # BASIC / GENERAL
 
-        # type of excel extension to sue when generating excel workbooks
+        self.show_name = "LongGong"
+        self.local_server_drive_letter = "Z"
+        # type of excel extension to use when generating excel workbooks
         self.excel_ext = ".xlsx"
         # max errors to be displayed
         self.max_errors_to_display = 20
         # notes formats supported
         self.notes_format_supported = ["txt", "json"]
         # users path i.e. C:\Users\{username}\
-        homepath = os.path.join("C:", os.environ["HOMEPATH"])
+        self.homepath = os.path.join("C:", os.environ["HOMEPATH"])
         # user desktop
-        self.user_desktop = os.path.join(homepath, "Desktop")
+        self.user_desktop = os.path.join(self.homepath, "Desktop")
         # the code to add to init.py
         self.custom_plugin_path = "nuke.pluginAddPath(\"C:\\PyAniTools\\lib\")"
         # path to .nuke/init.py
         self.nuke_init_file_path = os.path.join(self.ani_vars.nuke_user_dir, "init.py")
         # permanent directory path
-        self.persistent_data_path = "{0}\\.PyAniTools".format(homepath)
+        self.persistent_data_path = "{0}\\.PyAniTools".format(self.homepath)
         # base temp dir
         self.local_temp_dir = os.path.normpath(tempfile.gettempdir())
         
@@ -56,13 +58,13 @@ class AppVars:
 
         # CGT
         self.cgt_metadata_filename = "cgt_metadata.json"
-        self.cgt_tools_online_path = "/LongGong/tools/"
-        self.cgt_pyanitools_app_dir = "/LongGong/tools/pyanitools/apps"
-        self.cgt_pyanitools_lib_dir = "/LongGong/tools/pyanitools/lib"
-        self.cgt_pyanitools_core_dir = "/LongGong/tools/pyanitools/core"
-        self.cgt_pyanitools_shortcuts_dir = "/LongGong/tools/pyanitools/shortcuts"
-        self.cgt_maya_script_dir = "/LongGong/tools/maya/scripts"
-        self.cgt_maya_plugins_dir = "/LongGong/tools/maya/plugins"
+        self.cgt_tools_online_path = "/{0}/tools/".format(self.show_name)
+        self.cgt_pyanitools_app_dir = "{0}pyanitools/apps".format(self.cgt_tools_online_path)
+        self.cgt_pyanitools_lib_dir = "{0}pyanitools/lib".format(self.cgt_tools_online_path)
+        self.cgt_pyanitools_core_dir = "{0}pyanitools/core".format(self.cgt_tools_online_path)
+        self.cgt_pyanitools_shortcuts_dir = "{0}pyanitools/shortcuts".format(self.cgt_tools_online_path)
+        self.cgt_maya_script_dir = "{0}maya/scripts".format(self.cgt_tools_online_path)
+        self.cgt_maya_plugins_dir = "{0}maya/plugins".format(self.cgt_tools_online_path)
         self.cgt_download_path = os.path.join(self.local_temp_dir, "CGT")
         self.cgt_bridge_api_dir = "app_bridge"
         # to test:
@@ -87,6 +89,11 @@ class AppVars:
                 "audio": {
                     "track updates": False
                 }
+            },
+            "review asset download": {
+                "update": {
+                    "update old assets": False
+                }
             }
         }
         self.audio_metadata_json_name = self.cgt_metadata_filename
@@ -110,9 +117,30 @@ class AppVars:
         self.pyanitools_desktop_shortcut_name = "PyAniTools.lnk"
         self.pyanitools_desktop_shortcut_path = os.path.join(self.user_desktop, self.pyanitools_desktop_shortcut_name)
 
+        # review tools
+        self.review_download_tool_path = "{0}\\pyReview\\review_download.exe"
+        self.review_download_time = "5:00 AM"
+        self.review_movie_server_directory = "/{0}/LA_review".format(self.show_name)
+        self.review_movie_local_directory = "{0}:\\{1}\\movies\\reviews".format(
+            self.local_server_drive_letter, self.show_name
+        )
+        # key is long hand notation often used in folder names, value is short hand notation often used in file names
+        self.review_depts = {
+            "animation": "Ani",
+            "shotFinaling": "SF",
+            "nCloth": "nCloth",
+            "nHair": "nHair",
+            "layout": "Layout",
+            "previs": "previs",
+            "BG": "BG"
+        }
+        # used when a shot has multiple departmental assets in a given review to determine which asset gets moved
+        # when updating assets
+        self.review_dept_precedence = ['animation', 'shotFinaling', 'nCloth', 'layout', 'previs']
+
         # maya tools
-        self.maya_scripts_local_dir = "Z:\\LongGong\\tools\\maya\\scripts"
-        self.maya_plugins_local_dir = "Z:\\LongGong\\tools\\maya\\plugins"
+        self.maya_scripts_local_dir = "{0}:\\{1}\\tools\\maya\\scripts".format(self.local_server_drive_letter, self.show_name)
+        self.maya_plugins_local_dir = "{0}:\\{1}\\tools\\maya\\plugins".format(self.local_server_drive_letter, self.show_name)
 
         # tool types, add additional types and tools mngr will find
         self.tool_types = {

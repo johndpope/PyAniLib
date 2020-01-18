@@ -83,36 +83,54 @@ class AniCoreMngr(QtCore.QObject):
         else:
             self.thread_pool.setMaxThreadCount(thread_num)
 
+    def reset_thread_counters(self):
+        """
+        resets the thread counters
+        :return:
+        """
+        # reset threads counters
+        self.thread_total = 0.0
+        self.threads_done = 0.0
+
     def get_preference(self, app, category, pref_name):
         """
-        Get's preference value if exists, otherwise creates preference file and gets default preference value
+        Get's preference value if exists, otherwise creates preference file with default preference values
+        defined in app_vars, then gets the pref value
         :param app: the application the preference applies to, see pyani.core.appvars.AppVars for apps with pref
         :param category: the application category, see pyani.core.appvars.AppVars for app pref catgeories
         :param pref_name: name of the preference
-        :return: dict if pref exists as {pref_name: pref_value} or error as string
+        :return: dict if pref exists as {pref_name: pref_value}, None if pref doesn't exist - may not be defined in
+        default preference template, or error as string
         """
-        pref = self._load_preferences()
+        pref_data = self._load_preferences()
 
         # if preferences didn't load, try to create
-        if not pref:
-            # check for creation errors
+        if not pref_data:
+            # check for creation errors - note if the preferences exist, nothing will happen and load preference
+            # below will catch error
             error = self._create_preferences()
             if error:
                 error_fmt = "Could not create preferences, error is: {0}".format(error)
                 return error_fmt
 
             # if no errors creating then load preferences
-            pref = self._load_preferences()
+            pref_data = self._load_preferences()
             # check for error loading
-            if not pref:
-                error_fmt = "Could not load preferences, error is: {0}".format(pref)
+            if not pref_data:
+                error_fmt = "Could not load preferences, error is: {0}".format(pref_data)
                 return error_fmt
 
-        return {pref_name: pyani.core.util.find_val_in_nested_dict(pref, [app, category, pref_name])}
+        # check for the preference value, might not be in the default template, or not yet in the user's preference file
+        if pyani.core.util.find_val_in_nested_dict(pref_data, [app, category, pref_name]) is None:
+            return None
+
+        return {pref_name: pyani.core.util.find_val_in_nested_dict(pref_data, [app, category, pref_name])}
 
     def save_preference(self, app, category, pref_name, pref_value):
         """
-        Saves the preference value to the preferences file
+        Saves the preference value to the preferences file, creates file if it doesn't exist with default preferences
+        defined in app_vars, then saves the pref value passed in. If file exists, but preference doesn't, then it adds
+        the preference
         :param app: the application the preference applies to, see pyani.core.appvars.AppVars for apps with pref
         :param category: the application category, see pyani.core.appvars.AppVars for app pref catgeories
         :param pref_name: name of the preference
@@ -121,20 +139,34 @@ class AniCoreMngr(QtCore.QObject):
         """
         # load so we can get current preferences data
         pref_data = self._load_preferences()
-        # check for error loading
-        if not pref_data:
-            error_fmt = "Could not load preferences, error is: {0}".format(pref_data)
-            return error_fmt
 
-        # store new preference value, but first check preference exists
+        # check for error loading, try to create pref file if it doesn't exist
+        if not pref_data:
+            # check for creation errors - note if the preferences exist, nothing will happen and load preference
+            # below will catch error
+            error = self._create_preferences()
+            if error:
+                error_fmt = "Could not create preferences, error is: {0}".format(error)
+                return error_fmt
+
+            # if no errors creating then load preferences
+            pref_data = self._load_preferences()
+            # check for error loading
+            if not pref_data:
+                error_fmt = "Could not load preferences, error is: {0}".format(pref_data)
+                return error_fmt
+
+        # store new preference value, but make sure it exists first - if doesn't add
         if pyani.core.util.find_val_in_nested_dict(pref_data, [app, category, pref_name]) is None:
-            error_fmt = "Preference, {0}, does not exist.".format(pref_name)
-            return error_fmt
+            if app not in pref_data:
+                pref_data[app] = dict()
+            if category not in pref_data[app]:
+                pref_data[app][category] = dict()
+
         pref_data[app][category][pref_name] = pref_value
 
         # save preference
         error = pyani.core.util.write_json(self.app_vars.preferences_filename, pref_data)
-
         if error:
             error_fmt = "Could not save preferences, error is: {0}".format(error)
             return error_fmt
@@ -150,6 +182,7 @@ class AniCoreMngr(QtCore.QObject):
             error = pyani.core.util.write_json(self.app_vars.preferences_filename, self.app_vars.preferences_template)
             if error:
                 return error
+
         return None
 
     def _load_preferences(self):
@@ -680,7 +713,7 @@ class AniCoreMngr(QtCore.QObject):
                             absolute_paths=False
                             ):
         """
-        Called to get a list of files and/or directories for a given path where data resides
+        Called to get a list of files and/or directories for a given path
         :param server_path: the path to the data
         :param dirs_only: only return directories
         :param files_only: only return files
@@ -867,6 +900,41 @@ class AniCoreMngr(QtCore.QObject):
             self.send_thread_error(error_fmt)
             return error_fmt
 
+    def server_file_download_mt(self, file_paths, thread_count=1):
+        """
+        downloads files from the server with mult-thread support.
+        :param file_paths: a list of tuples where the tuple is (server path, local path)
+        :param thread_count: set the number of concurrent downloads, defaults to 1 or single threaded
+        """
+
+        if file_paths:
+            # set number of threads
+            self.set_number_of_concurrent_threads(thread_count)
+            # reset thread counters
+            self.reset_thread_counters()
+            # reset error list
+            self.init_thread_error()
+
+            # if not visible, show progress window
+            if not self.progress_win.isVisible():
+                # reset progress
+                self.init_progress_window("Download Progress", "Downloading Files..")
+
+            for server_file_path, local_file_path in file_paths:
+                # server_file_download expects a list of files, so pass list even though just one file
+                worker = pyani.core.ui.Worker(
+                    self.server_file_download,
+                    False,
+                    [server_file_path],
+                    local_file_paths=[local_file_path],
+                    update_local_version=False
+                )
+                self.thread_total += 1.0
+                self.thread_pool.start(worker)
+
+                worker.signals.finished.connect(self._thread_server_download_complete)
+                worker.signals.error.connect(self.send_thread_error)
+
     def server_file_download(self, server_file_paths, local_file_paths=None, update_local_version=False):
         """
         Downloads files from server
@@ -926,10 +994,7 @@ class AniCoreMngr(QtCore.QObject):
             # look for doesn't exist, so we can give a better error to user
             if not error_str.find("doesn't exist") == -1:
                 error_fmt = (
-                    "The file(s) {0} are missing. Please try running the update application to sync your local "
-                    "CGT cache. If the problem persists, check CGT to see if the file was removed.".format(
-                        server_file_paths
-                    )
+                    "The file(s) {0} are missing on the server.".format(server_file_paths)
                 )
             else:
                 error_fmt = (

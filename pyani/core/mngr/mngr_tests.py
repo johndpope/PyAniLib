@@ -22,6 +22,21 @@ os.environ['QT_API'] = 'pyqt'
 from qtpy import QtWidgets
 
 
+class TestTaskListWin:
+    def __init__(self):
+        pass
+
+    def run(self, post_tasks):
+        """
+        Starts the update process
+        """
+        # run the post task(s)
+        for task in post_tasks:
+            func = task['func']
+            params = task['params']
+            func(*params)
+
+
 class TestWindow(QtWidgets.QDialog):
     def __init__(self):
         super(TestWindow, self).__init__()
@@ -32,6 +47,13 @@ class TestWindow(QtWidgets.QDialog):
         self.ui_mngr = pyani.core.mngr.ui.core.AniAssetUpdateReport(self)
 
         self.setWindowTitle("Unit Tests For Updating Tools and Assets")
+
+        self.btn_test_post_task_unit_test = QtWidgets.QPushButton("start test post task unit test")
+        self.btn_test_post_task_unit_test.pressed.connect(self.start_post_task_unit_test)
+
+        '''
+        -----------------------------------------------------------------------------------------------------------
+        '''
 
         self.btn_create_setup_dependencies_unit_test = QtWidgets.QPushButton("start create setup dependencies unit test")
         self.btn_create_setup_dependencies_unit_test.pressed.connect(self.start_create_setup_dependencies_unit_test)
@@ -121,6 +143,8 @@ class TestWindow(QtWidgets.QDialog):
         self.version_input = QtWidgets.QLineEdit()
 
         layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(QtWidgets.QLabel("<b>Misc Unit Tests</b>"))
+        layout.addWidget(self.btn_test_post_task_unit_test)
         layout.addWidget(QtWidgets.QLabel("<b>Setup/Update Unit Tests</b>"))
         layout.addWidget(self.btn_create_setup_dependencies_unit_test)
         layout.addWidget(self.btn_create_update_config_unit_test)
@@ -182,6 +206,24 @@ class TestWindow(QtWidgets.QDialog):
                 print self.asset_mngr.shots_with_changed_audio
                 print self.asset_mngr.shots_failed_checking_timestamp
                 pyani.core.util.open_excel(msg[1])
+
+    def start_post_task_unit_test(self):
+        # used to create an html report to show in a QtDialogWindow
+        self.asset_report = pyani.core.mngr.ui.core.AniAssetUpdateReport(self)
+        # move update window so it doesn't cover the main update window
+        this_win_rect = self.frameGeometry()
+        post_tasks = [
+            {
+                'func': self.asset_report.generate_asset_update_report,
+                'params': [self.asset_mngr]
+            },
+            {
+                'func': self.asset_report.move,
+                'params': [this_win_rect.x() + 150, this_win_rect.y() - 75]
+            },
+        ]
+        test_win = TestTaskListWin()
+        test_win.run(post_tasks)
 
     def start_create_setup_dependencies_unit_test(self):
         self.core_mngr.create_setup_dependencies(setup_dir="C:\\Users\\Patrick\\Downloads\\install\\")

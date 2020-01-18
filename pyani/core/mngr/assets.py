@@ -827,13 +827,13 @@ class AniAssetMngr(AniCoreMngr):
             return error_fmt
 
         # process and add cgt file info for assets to asset info cache
-        self._create_asset_info(
+        self._create_asset_info_cache(
             root_path, json_temp_file_info_path, asset_type, asset_component, asset_names=asset_names
         )
 
         return None
 
-    def _create_asset_info(self, root_path, json_temp_file_info_path, asset_type, asset_component, asset_names=None):
+    def _create_asset_info_cache(self, root_path, json_temp_file_info_path, asset_type, asset_component, asset_names=None):
         """
         creates the asset info cache stored in permanent data dir
         :param root_path: the path to the asset names, for example /LongGong/asset/set/
@@ -843,7 +843,7 @@ class AniAssetMngr(AniCoreMngr):
         :param asset_names: list of asset names
         """
 
-        asset_info_sorted = self._presort_cgt_asset_info(
+        asset_info_sorted = self._convert_cgt_file_info_to_asset_info(
             root_path, json_temp_file_info_path, asset_type, asset_component, asset_names=asset_names
         )
 
@@ -917,173 +917,6 @@ class AniAssetMngr(AniCoreMngr):
 
         return None
 
-    def server_get_asset_info_depr(self, root_path, asset_type, asset_name, asset_component):
-        """
-        Gets a single asset's version, server path, local path, notes path, and files from server.
-        Handles both shot and show assets. Also handles multiple files for an asset.
-        :param root_path: the path up to the asset name
-        :param asset_type: the type of asset, see pyani.core.appvars for asset types
-        :param asset_name: the name of the asset as a string. In the case of shot assets, this is always Seq###_Shot###
-        :param asset_component: the asset component, see pyani.core.appvars for asset components
-        """
-        server_asset_path = "{0}/{1}".format(root_path, asset_name)
-        server_asset_component_path = "{0}/{1}".format(server_asset_path, asset_component)
-
-        if self.server_asset_has_component(server_asset_path, asset_component):
-            self._asset_info[asset_type][asset_component][asset_name] = dict()
-
-            # check if asset is published and goes through approval. Some asset components like rigs get approved
-            # and have approved and work folders. Others like gpu caches don't.
-            if self.is_asset_publishable(asset_type, asset_component):
-
-                # check if this asset has an approved folder
-                if self.server_is_asset_component_approved(server_asset_component_path):
-                    self._asset_info[asset_type][asset_component][asset_name]["approved"] = True
-                    self._asset_info[asset_type][asset_component][asset_name]["cgt path"] = \
-                        "{0}/approved".format(server_asset_component_path)
-                    self._asset_info[asset_type][asset_component][asset_name]["local path"] = \
-                        self.convert_server_path_to_local_server_representation(
-                            self._asset_info[asset_type][asset_component][asset_name]["cgt path"]
-                        )
-
-                    file_names = self.server_get_file_names("{0}/approved".format(server_asset_component_path))
-
-                    # check if the asset is versioned. A publishable asset may not be versioned, like audio
-                    if self.is_asset_versioned(asset_type, asset_component):
-                        _, version = self.core_get_latest_version(
-                            "{0}/approved/history".format(server_asset_component_path)
-                        )
-                    # asset not versioned but is approved - ex: audio files
-                    else:
-                        version = ""
-
-                # no approved folder, only a work folder. work folders are always versioned
-                else:
-                    self._asset_info[asset_type][asset_component][asset_name]["approved"] = False
-                    self._asset_info[asset_type][asset_component][asset_name]["cgt path"] = \
-                        "{0}/work/".format(server_asset_component_path)
-                    self._asset_info[asset_type][asset_component][asset_name]["local path"] = \
-                        self.convert_server_path_to_local_server_representation(
-                            self._asset_info[asset_type][asset_component][asset_name]["cgt path"]
-                        )
-                    _, version = self.core_get_latest_version(
-                        "{0}/work".format(server_asset_component_path)
-                    )
-                    # get all file names that have this version
-                    all_file_names = self.server_get_file_names("{0}/work".format(server_asset_component_path))
-                    # filter for the files that have the version we want
-                    if all_file_names:
-                        file_names = [file_name for file_name in all_file_names if version in file_name]
-                    else:
-                        file_names = list()
-
-                # save the version and file name
-                self._asset_info[asset_type][asset_component][asset_name]["version"] = version
-                self._asset_info[asset_type][asset_component][asset_name]["file name"] = file_names
-
-                # check if notes file exists for current version of asset component. if it does save the path
-                # check if asset supports notes
-                if self.asset_component_supports_release_notes(asset_component):
-                    # notes only exist if there is a version
-                    if version:
-                        # remove .mb or .ma from file name - this is the name for the notes
-                        file_name_no_ext = file_names[0].split(".")[0]
-                        # all approved file names are {asset}_{asset component}_high.ext
-                        index = file_name_no_ext.find("_high")
-                        # format the path to notes based off if asset is approved
-                        if self._asset_info[asset_type][asset_component][asset_name]["approved"]:
-                            # make notes name, its the file name with the version in it, insert version between
-                            # asset_component and _high, ex: charAnglerFish_rig_high becomes charAnglerFish_
-                            # rig_v026_high
-                            notes_file_name = "{0}_{1}{2}.txt".format(
-                                file_name_no_ext[:index],
-                                version,
-                                file_name_no_ext[index:]
-                            )
-                            notes_path = "{0}/approved/history/{1}".format(server_asset_component_path, notes_file_name)
-                        else:
-                            # make notes name, since work folder already has version name in it, just replace extension
-                            notes_file_name = "{0}.txt".format(file_name_no_ext)
-                            notes_path = "{0}/work/{1}".format(server_asset_component_path, notes_file_name)
-                        # check if the notes exist on cgt, if so save path
-                        if self.server_asset_component_has_notes(notes_path):
-                            self._asset_info[asset_type][asset_component][asset_name]["notes path"] = notes_path
-
-            # asset isn't publishable meaning it doesn't have approved or work folders. Note that we don't check for
-            # notes for un-publishable assets
-            else:
-                self._asset_info[asset_type][asset_component][asset_name]["cgt path"] = server_asset_component_path
-                self._asset_info[asset_type][asset_component][asset_name]["local path"] = \
-                    self.convert_server_path_to_local_server_representation(
-                        self._asset_info[asset_type][asset_component][asset_name]["cgt path"]
-                    )
-                self._asset_info[asset_type][asset_component][asset_name]["version"] = ""
-                self._asset_info[asset_type][asset_component][asset_name]["file name"] = \
-                    self.server_get_file_names(server_asset_component_path)
-
-    def server_asset_component_has_notes_depr(self, notes_path):
-        """
-        Checks if an asset component has notes, for example does the rig have notes
-        :param notes_path: a string containing the server path to the notes,
-        ex: /LongGong/assets/set/setGarageInside/rig/approved/history/setGarageInside_rig_v004_high.txt or
-        /LongGong/assets/set/setGarageInside/rig/work/setGarageInside_rig_v004_high.txt
-        :return: True if notes exist or False if not
-        """
-        if notes_path:
-            # split off notes file name to get the directory
-            notes_dir = "/".join(notes_path.split("/")[:-1])
-            # compare file name of notes to the directory listing. if notes in the listing then exists
-            if notes_path.split("/")[-1] in self.server_get_dir_list(notes_dir, files_only=True):
-                return True
-            else:
-                return False
-
-    def server_get_file_names_depr(self, server_path_to_files):
-        """
-        gets a list of files from the server given a server path
-        :param server_path_to_files: the absolute path for the directory listing
-        :return: the file list. if no files, returns None
-        """
-        return self.server_get_dir_list(server_path_to_files, dirs_only=False, files_only=True)
-
-    def server_asset_has_component_depr(self, server_asset_path, asset_component):
-        """
-        Check if an asset has the component. A component is a directory under the asset name on server. For example:
-        if "rig" is a component and we have a character asset 'Hei', then we are looking for
-        /Longong/asset/char/Hei/rig. If "model/cache" is the component and we have a
-        :param server_asset_path: path on server to the asset
-        :param asset_component: the asset component to check for
-        :return: True if found, False if doesn't exist or an asset has no components
-        """
-        # need to check if the asset component is a path, i.e. the component isn't directly under the asset name. This
-        # happens for example with gpu cache, which is under asset name/model/cache
-        for component in asset_component.split("/"):
-            # get directory listing
-            asset_components = self.server_get_dir_list(server_asset_path)
-            # check if a listing was returned, if not then the asset is missing all components
-            if not asset_components:
-                return False
-            # check if the component, which is a directory, is in the listing. If it is continue, if not exit
-            if component in asset_components:
-                # add directory to the path and continue search
-                server_asset_path = "{0}/{1}".format(server_asset_path, component)
-            # didn't find the component/directory, so exit, no need to continue search
-            else:
-                return False
-        # component / directories exist
-        return True
-
-    def server_is_asset_component_approved_depr(self, server_asset_component_path):
-        """
-        Checks if an asset has an approved folder, meaning it was published.
-        :param server_asset_component_path: the server path to the asset's component
-        :return: True if asset's component has an approved folder, False if not
-        """
-        if self.server_get_dir_list("{0}/{1}".format(server_asset_component_path, "approved"), files_and_dirs=True):
-            return True
-        else:
-            return False
-
     def server_save_local_cache(self):
         """
         Saves the server asset info to a json file
@@ -1127,10 +960,19 @@ class AniAssetMngr(AniCoreMngr):
             self._assets_timestamp_before_dl, self._existing_assets_before_sync, self._asset_info
         )
 
-    def _presort_cgt_asset_info(self, root_path, json_temp_file_info_path, asset_type, asset_component, asset_names=None):
+    def _convert_cgt_file_info_to_asset_info(
+            self,
+            root_path,
+            json_temp_file_info_path,
+            asset_type,
+            asset_component,
+            asset_names=None
+    ):
         """
-        sorts the assets from being a list of dicts, where each dict contains a path to an asset's file to a list of
-        dicts, one per asset, with all the file paths for that asset. For example, we go from:
+        takes a list of files, where each list item is a dict that contains file information such as path
+        and modified date and converts them to a list of assets, where each asset is a dict that contains the
+        asset's files and other information.
+        For example, we go from:
         [
             {/LongGong/asset/set/setAltar/model/cache/cache1.gpu, some other file stats},
             {/LongGong/asset/set/setAltar/model/cache/cache2.gpu, some other file stats},
@@ -1157,6 +999,7 @@ class AniAssetMngr(AniCoreMngr):
                 '.' :  [file names as a list of strings]
                 'component path' : string of the server path to the component, like
                 /LongGong/asset/set/setAltar/model/cache
+                'modified date': last date modified as string in format yyyy-mm-dd hh:mm:ss
             },
             more assets....
         }
@@ -1223,6 +1066,9 @@ class AniAssetMngr(AniCoreMngr):
                             # add root_path for component
                             asset_info_sorted[asset_name]['component path'] = cgt_path.split(asset_folder)[0]
 
+                            # add modified time
+                            asset_info_sorted[asset_name]['modified time'] = file_path['modify_time']
+
                             # make sure we don't grab nested folders beneath the folders we want, first split
                             # at the folder
                             cgt_path_folder_parts = cgt_path.split(asset_folder)
@@ -1248,6 +1094,10 @@ class AniAssetMngr(AniCoreMngr):
                             # check for asset name
                             if asset_name not in asset_info_sorted and (asset_names is None or asset_name in asset_names):
                                 asset_info_sorted[asset_name] = {'.': [cgt_path]}
+                                # add root_path for component
+                                asset_info_sorted[asset_name]['component path'] = '/'.join(cgt_path.split("/")[:-1])
+                                # add modified time
+                                asset_info_sorted[asset_name]['modified time'] = file_path['modify_time']
                             # asset exists
                             else:
                                 # check if any files have been added under the asset name
@@ -1316,9 +1166,29 @@ class AniAssetMngr(AniCoreMngr):
         if not seqs:
             seqs = self.ani_vars.get_sequence_list()
 
+        json_temp_file_info_path = os.path.join(
+            self.app_vars.cgt_temp_file_cache_dir,
+            "shot_audio_" + self.app_vars.cgt_tmp_file_cache_filename
+        )
+
+        # get file info for assets from CGT
+        error = self.server_get_file_listing_using_folder_filter(
+            "/LongGong/sequences", "audio", json_temp_file_info_path
+        )
+        if error:
+            error_fmt = "Error getting file information from cgt server. Error is {0}".format(error)
+            self.send_thread_error(error_fmt)
+            return error_fmt
+        # convert to asset list, ie sequence shot list
+        audio_server_file_info = self._convert_cgt_file_info_to_asset_info(
+            "/LongGong/sequences",
+            json_temp_file_info_path,
+            "shot",
+            "audio"
+        )
+
         # set number of threads to max - can do this since running per asset
         self.set_number_of_concurrent_threads()
-
         self._reset_thread_counters()
 
         # if not visible then no other function called this, so we can show progress window
@@ -1340,6 +1210,7 @@ class AniAssetMngr(AniCoreMngr):
                     False,
                     seq,
                     shot,
+                    audio_server_file_info,
                     self.ani_vars.shot_audio_dir
                 )
                 self.thread_total += 1.0
@@ -1349,7 +1220,7 @@ class AniAssetMngr(AniCoreMngr):
                 # slot that is called when a thread finishes
                 worker.signals.finished.connect(self._thread_audio_timestamp_check_complete)
 
-    def _check_shot_audio_timestamp(self, seq, shot, audio_dir):
+    def _check_shot_audio_timestamp(self, seq, shot, audio_server_file_info, audio_dir):
         """
         This is a separate method so checking for audio changes can be threaded.
         Checks a shot to see if its audio changed. The first time a shot is checked, a file is stored locally with the
@@ -1358,6 +1229,7 @@ class AniAssetMngr(AniCoreMngr):
         the local file and the shot is added to the list of shots with changed audio
         :param seq: the sequence name, as Seq###
         :param shot: the shot name, as Shot###
+        :param audio_server_file_info: a list of dicts, where each dict is a shot containing the audio's file info
         :param audio_dir: the local directory where audio is stored
         :return: Does not return a value, instead stores shots with changed audio in member variable
         shots_with_changed_audio. Errors are stored in member variable shots_failed_checking_timestamp as
@@ -1391,15 +1263,19 @@ class AniAssetMngr(AniCoreMngr):
                     self.shots_failed_checking_timestamp[seq][shot] = error
                     return
 
-        # connect to cgt and get last modified date of audio file
-        audio_server_path = "/LongGong/sequences/{0}/{1}/audio/approved/{0}_{1}.wav".format(seq, shot)
-        server_modified_date = self.server_file_modified_date(audio_server_path)
-        if not isinstance(server_modified_date, datetime):
-            # check if shot didn't have audio
-            if not server_modified_date:
-                error = "Shot does not have an audio file."
-            else:
-                error = "Could not convert date from CGT to a datetime object"
+        try:
+            # get the server modified time for audio file
+            asset_name = "{0}/{1}".format(seq, shot)
+            modified_time = audio_server_file_info[asset_name]['modified time']
+            server_modified_date = datetime.strptime(modified_time, "%Y-%m-%d %H:%M:%S")
+        except KeyError:
+            # key error so shot didn't have audio since no modify time
+            error = "Shot does not have an audio file."
+            self.shots_failed_checking_timestamp[seq][shot] = error
+            return
+        except ValueError:
+            # couldn't convert date string to datetime object
+            error = "Could not convert date from CGT server to a datetime object"
             self.shots_failed_checking_timestamp[seq][shot] = error
             return
 

@@ -112,12 +112,20 @@ class AniSetupGui(pyani.core.mngr.ui.core.AniTaskListWindow):
             }
         ]
 
+        # information about the app
+        app_metadata = {
+            "name": "setup",
+            "dir": self.core_mngr.app_vars.local_pyanitools_core_dir,
+            "type": "pyanitools",
+            "category": "core"
+        }
+
         # create a ui (non-interactive) to run setup
         super(AniSetupGui, self).__init__(
             error_logging,
             progress_list,
             "Setup",
-            "Setup",
+            app_metadata,
             self.task_list
         )
 
