@@ -812,7 +812,7 @@ class AniShootUi(object):
 
     def validate_submission(self, seq_list, combined, frame_range, movie_name, frame_steps):
         """
-        Validates the submission options frame range and movie name
+        Validates the submission main_options_widgets frame range and movie name
         :param seq_list: the list of image sequences
         :param combined : flag indicating if the sequence is a combined image sequence
         :param frame_range: the frame range

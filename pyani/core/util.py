@@ -63,7 +63,7 @@ class WinTaskScheduler:
         ex:
         schtasks /Create /sc hourly /tn pyanitools_update /tr "C:\\PyAniTools\\installed\\PyAppMngr\\PyAppMngr.exe"
 
-        :param schedule_type: when to run, options are:
+        :param schedule_type: when to run, main_options_widgets are:
             MINUTE, HOURLY, DAILY, WEEKLY, MONTHLY, ONCE, ONSTART, ONLOGON, ONIDLE
         :param start_time: optional start time
         :return: any errors, otherwise None

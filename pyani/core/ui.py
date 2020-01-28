@@ -324,7 +324,7 @@ class BarGraph(pg.GraphicsView):
     clicked. To use create an instance of this class, and connect your slot / function to its signal.
 
         Ex:
-        bar_graph = BarGraph(options here)
+        bar_graph = BarGraph(main_options_widgets here)
         bar_graph.graph_update_signal.connect(your function)
 
         The function declaration should be: your_func(x_axis_value) where x_axis_value is the QString passed from
@@ -374,7 +374,7 @@ class BarGraph(pg.GraphicsView):
         """
         super(BarGraph, self).__init__()
 
-        # --------- options -----------
+        # --------- main_options_widgets -----------
         # WIDTH OF BARS
         self.bar_width = width
         # COLORS
@@ -383,7 +383,7 @@ class BarGraph(pg.GraphicsView):
         self.x_axis_label = x_axis_label
         self.y_axis_label = y_axis_label
 
-        # store options
+        # store main_options_widgets
         # x axis - allows un-even intervals - stores in private variable __x_axis_mapping as a dict
         # maps as {0: 'label1', 2: 'label2', ...}
         if x_data is not None:
@@ -553,7 +553,7 @@ class BarGraph(pg.GraphicsView):
         :param width: the width of the bars
         :param color: the color of the bars
         """
-        # store options - only ones that user gives, otherwise keep current values
+        # store main_options_widgets - only ones that user gives, otherwise keep current values
         if width is not None:
             self.bar_width = width
         if color is not None:
@@ -1307,12 +1307,12 @@ class QtMsgWindow(QtWidgets.QMessageBox):
 
 class QtInputDialogMenu(QtWidgets.QDialog):
     """
-    Class that provides a popup window with a menu of options, optional preference checkbox and an ok and cancel
+    Class that provides a popup window with a menu of main_options_widgets, optional preference checkbox and an ok and cancel
     button
     :param parent_win: the window calling this popup
     :param title: the window title as a string
     :param option_label: the text label next to the menu as a string
-    :param option_list: the menu text options as a list
+    :param option_list: the menu text main_options_widgets as a list
     :param width: optional - the width of the window
     :param height: optional - the height of the window
     :param modal: optional - whether the window is modal (can't select the main window) or non modal
@@ -1342,11 +1342,11 @@ class QtInputDialogMenu(QtWidgets.QDialog):
             self.setMinimumHeight(height)
         # the selection from the menu option
         self.__selection = None
-        # menu options
+        # menu main_options_widgets
         self.menu_cbox = QtWidgets.QComboBox()
         self.options_label = option_label
         self.options = option_list
-        # preference options if provided
+        # preference main_options_widgets if provided
         self.has_pref = pref
         if self.has_pref and pref_label is None:
             self.pref_label = "No label provided."
@@ -2031,6 +2031,14 @@ class TabsWidget(QtWidgets.QTabWidget):
             self.tab.tabMoved.connect(self.tab.move_plus_button)
         self.tabCloseRequested.connect(self.removeTab)
 
+    def get_current_tab_name(self):
+        """Returns the name of the current tab"""
+        if self._has_scrollbars():
+            content_widget = self.currentWidget().widget()
+        else:
+            content_widget = self.currentWidget()
+        return content_widget.name
+
     def drag_and_drop(self, dropped_data, custom_widget):
         """
         Adds drag and drop support for tabs containing custom widgets. This just checks the layout for the class type
@@ -2073,11 +2081,12 @@ class TabsWidget(QtWidgets.QTabWidget):
         else:
             return False
 
-    def add_tab(self, tab_name="", layout=None):
+    def add_tab(self, tab_name="", layout=None, use_scroll_bars=False):
         """
         Adds a tab page.
         :param tab_name: the name to show at the top of the tab page
         :param layout: the layout for the tab page containing the content
+        :param use_scroll_bars: optional parameter to enable scrollbars
         """
         if self.count() > 0 and self.tabs_can_close:
             self.setTabsClosable(True)
@@ -2086,7 +2095,14 @@ class TabsWidget(QtWidgets.QTabWidget):
 
         # this is the tab content page. Holds whatever content/widgets that are part of the layout passed in.
         widget = TabContentWidget(name=tab_name, layout=layout)
-        self.addTab(widget, widget.name)
+
+        if use_scroll_bars:
+            scroll = QtWidgets.QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(widget)
+            self.addTab(scroll, widget.name)
+        else:
+            self.addTab(widget, widget.name)
         # lets main window know a tab was created and passes the tab index, always the last one
         self.tab_created_signal.emit(self.count() - 1)
 
@@ -2113,7 +2129,11 @@ class TabsWidget(QtWidgets.QTabWidget):
         Updates the tab content for the active tab
         :param layout: the new layout containing the new content/widgets
         """
-        self.currentWidget().update_content(layout)
+        if self._has_scrollbars():
+            content_widget = self.currentWidget().widget()
+        else:
+            content_widget = self.currentWidget()
+        content_widget.update_content(layout)
 
     def _find_widget(self, widget):
         """
@@ -2121,11 +2141,17 @@ class TabsWidget(QtWidgets.QTabWidget):
         :param widget: a widget class
         :return: the widget if found, otherwise None
         """
+        # get the widget, depends on if the tab has a scroll area or not
+        if self._has_scrollbars():
+            content_widget = self.currentWidget().widget()
+        else:
+            content_widget = self.currentWidget()
+
         # number of widgets in the layout
-        index = self.currentWidget().layout().count()
+        index = content_widget.layout().count()
         while index >= 0:
             # get the current widget, use itemAt, which can then call widget() to get the widget
-            current_layout_item = self.currentWidget().layout().itemAt(index)
+            current_layout_item = content_widget.layout().itemAt(index)
             if current_layout_item:
                 current_widget = current_layout_item.widget()
                 if isinstance(current_widget, widget):
@@ -2133,6 +2159,15 @@ class TabsWidget(QtWidgets.QTabWidget):
             index -= 1
         return None
 
+    def _has_scrollbars(self):
+        """
+        Checks if the tab widget is a scroll area or the content itself
+        :return: True if scroll area, False if not
+        """
+        if isinstance(self.currentWidget(), QtWidgets.QScrollArea):
+            return True
+        else:
+            return False
 
 def build_checkbox(label, state, directions):
     """

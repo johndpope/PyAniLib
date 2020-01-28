@@ -96,7 +96,7 @@ class AniReviewAssetDownloadGui(pyani.core.mngr.ui.core.AniTaskListWindow):
 
         # information about the app
         app_metadata = {
-            "name": "pyReviewDownload",
+            "name": "pyReview",
             "dir": self.review_mngr.app_vars.local_pyanitools_apps_dir,
             "type": "pyanitools",
             "category": "apps"

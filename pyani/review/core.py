@@ -1,5 +1,6 @@
 import datetime
 import os
+import re
 import logging
 import pyani.core.appvars
 import pyani.core.mngr.core
@@ -13,16 +14,13 @@ logger = logging.getLogger()
 class AniReviewMngr:
     """
     A class object to handle reviews. Currently supports downloading daily review assets - sequence or shot level and
-    updating assets on disk. Uses this folder structure:
+    updating assets on disk.
 
-    Sequence/
-        nCloth/
-            only nCloth shot movies
-        BG/
-            only BG shot movies
-        list of shot movies. Only keeps one of animation, layout, previs, nHair and Shot Finaling, whichever movie
-        for that shot is the latest version. If a review has multiple movies, uses this order of precedence:
-        'animation' > 'shotFinaling' > 'nCloth' > 'layout' > 'previs']
+    Seq assets are replaced by dept name and seq name, so a movie for seq120 of all animation, gets updated if a new
+    movie is in the review for animation and the sequence
+
+    Shot assets are updated by seq, shot, dept, so a layout movie for seq110 shot020, gets updated when a new one is
+    in the review for seq110, shot020 and layout.
     """
     def __init__(self, mngr):
         self.app_vars = pyani.core.appvars.AppVars()
@@ -48,6 +46,8 @@ class AniReviewMngr:
         self.report_col_widths = ["5", "5", "7", "18", "25", "40"]
         # report data
         self.report_data = list()
+        # a list of downloaded files
+        self.download_list = list()
 
     @staticmethod
     def get_display_date():
@@ -119,7 +119,7 @@ class AniReviewMngr:
                 seq = pyani.core.util.get_sequence_name_from_string(file_name, pattern="[a-zA-Z]{2}\d{2,}")
                 # check if found a sequence, if not put not available
                 if not seq:
-                    seq = "N/A"
+                    seq = "non_seq_asset"
 
             if seq not in self.review_assets:
                 self.review_assets[seq] = dict()
@@ -128,13 +128,28 @@ class AniReviewMngr:
             if not shot:
                 if dept not in self.review_assets[seq]:
                     self.review_assets[seq][dept] = list()
+
+                # check if this dept has a specific download directory for the asset
+                pref = self.mngr.get_preference("review asset download", dept, "download movie location")
+                if isinstance(pref, dict):
+                    local_download_path = pref["download movie location"]
+                    # check if using custom general path, if so set download path to it
+                elif not self.local_download_dir == self.app_vars.review_movie_local_directory:
+                    local_download_path = self.local_download_dir
+                    # using default path, so add review date and dept
+                else:
+                    local_download_path = os.path.normpath(
+                        os.path.join(self.local_download_dir, self.review_date, dept)
+                    )
+
+                # replace placeholders for seq, review date and/or dept
+                local_download_path = self._replace_placeholders(local_download_path, seq, dept)
+
                 self.review_assets[seq][dept].append(
                     {
                         'server path': file_path,
                         'file name': file_name,
-                        'local download path': os.path.normpath(
-                            os.path.join(self.local_download_dir, self.review_date, dept)
-                        )
+                        'local download path': local_download_path
                     }
                 )
                 # done processing this file, go to next one
@@ -149,9 +164,22 @@ class AniReviewMngr:
                 if 'BG' not in self.review_assets[seq][shot]:
                     self.review_assets[seq][shot]['BG'] = list()
 
-                local_download_path = os.path.normpath(
-                    os.path.join(self.local_download_dir, self.review_date, 'BG')
-                )
+                # check if this dept has a specific download directory for the asset
+                pref = self.mngr.get_preference("review asset download", "BG", "download movie location")
+                if isinstance(pref, dict):
+                    local_download_path = pref["download movie location"]
+                    # check if using custom general path, if so set download path to it
+                elif not self.local_download_dir == self.app_vars.review_movie_local_directory:
+                    local_download_path = self.local_download_dir
+                    # using default path, so add review date and dept
+                else:
+                    local_download_path = os.path.normpath(
+                        os.path.join(self.local_download_dir, self.review_date, "BG")
+                    )
+
+                # replace placeholders for seq, review date and/or dept
+                local_download_path = self._replace_placeholders(local_download_path, seq, "BG")
+
                 self.review_assets[seq][shot]['BG'].append(
                     {
                         'server path': file_path,
@@ -173,9 +201,22 @@ class AniReviewMngr:
                         if dept_longhand not in self.review_assets[seq][shot]:
                             self.review_assets[seq][shot][dept_longhand] = list()
 
-                        local_download_path = os.path.normpath(
-                            os.path.join(self.local_download_dir, self.review_date, dept_longhand)
-                        )
+                        # check if this dept has a specific download directory for the asset
+                        pref = self.mngr.get_preference("review asset download", dept_longhand, "download movie location")
+                        if isinstance(pref, dict):
+                            local_download_path = pref["download movie location"]
+                        # check if using custom general path, if so set download path to it
+                        elif not self.local_download_dir == self.app_vars.review_movie_local_directory:
+                            local_download_path = self.local_download_dir
+                        # using default path, so add review date and dept
+                        else:
+                            local_download_path = os.path.normpath(
+                                os.path.join(self.local_download_dir, self.review_date, dept_longhand)
+                            )
+
+                        # replace placeholders for seq, review date and/or dept
+                        local_download_path = self._replace_placeholders(local_download_path, seq, dept_longhand)
+
                         # add file to the dept list of review assets
                         self.review_assets[seq][shot][dept_longhand].append(
                             {
@@ -192,9 +233,21 @@ class AniReviewMngr:
             if dept not in self.review_assets[seq][shot]:
                 self.review_assets[seq][shot][dept] = list()
 
-            local_download_path = os.path.normpath(
-                os.path.join(self.local_download_dir, self.review_date, dept)
-            )
+            # check if this dept has a specific download directory for the asset
+            pref = self.mngr.get_preference("review asset download", dept, "download movie location")
+            if isinstance(pref, dict):
+                local_download_path = pref["download movie location"]
+            # check if using custom general path, if so set download path to it
+            elif not self.local_download_dir == self.app_vars.review_movie_local_directory:
+                local_download_path = self.local_download_dir
+            # using default path, so add review date and dept
+            else:
+                local_download_path = os.path.normpath(
+                        os.path.join(self.local_download_dir, self.review_date, dept)
+                )
+
+            # replace placeholders for seq, review date and/or dept
+            local_download_path = self._replace_placeholders(local_download_path, seq, dept)
 
             # add file to the dept list of review assets
             self.review_assets[seq][shot][dept].append(
@@ -221,6 +274,11 @@ class AniReviewMngr:
                 # asset is a department name
                 if isinstance(self.review_assets[seq][asset], list):
                     for review_asset in self.review_assets[seq][asset]:
+                        pref = self.mngr.get_preference("review asset download", asset, "download movies")
+                        if isinstance(pref, dict):
+                            # check if the preference is False, don't download, if so continue to next review asset
+                            if not pref["download movies"]:
+                                continue
                         file_list.append(
                             (review_asset['server path'], review_asset['local download path'])
                         )
@@ -228,120 +286,151 @@ class AniReviewMngr:
                 else:
                     for dept in self.review_assets[seq][asset]:
                         for review_asset in self.review_assets[seq][asset][dept]:
+                            pref = self.mngr.get_preference("review asset download", dept, "download movies")
+                            if isinstance(pref, dict):
+                                # check if the preference is False, don't download, if so continue to next review asset
+                                if not pref["download movies"]:
+                                    continue
                             file_list.append(
                                 (review_asset['server path'], review_asset['local download path'])
                             )
+        # use this when replacing files in update_review_assets_to_latest() to know what was downloaded since
+        # these file sgo in with the existing review assets on disk
+        for server_path, local_path in file_list:
+            file_name = server_path.split("/")[-1]
+            file_path = os.path.join(local_path, file_name)
+            self.download_list.append(file_path)
         self.mngr.server_file_download_mt(file_list, thread_count=3)
 
-    def update_review_assets_to_latest(self, debug=False):
+    def update_review_assets_to_latest(self):
         """
         Updates review assets on disk with the downloaded review assets according to rules in class doc
-        :param debug: If true doesn't perform disk operations, just prints the actions performed
         """
-        if debug:
-            self.review_assets = pyani.core.util.load_json('C:\\Users\\Patrick\\Downloads\\20200114\\test_review_data.json')
+        # get general preference to see if assets should be replaced locally
+        pref = self.mngr.get_preference("review asset download", "update", "update old assets")
+        if isinstance(pref, dict):
+            gen_replace_pref = pref["update old assets"]
+        else:
+            gen_replace_pref = False
 
+        # loop through sequence and shot assets
         for seq in self.review_assets:
-            # couldn't find a sequence so skip
-            if seq == "N/A":
-                continue
-
-            # path to sequence folder
-            seq_folder = os.path.normpath(
-                os.path.join(self.local_download_dir, seq)
-            )
-            # check if sequence is in local review asset location and if not make it
-            if not os.path.exists(seq_folder):
-                if debug:
-                    print "Making Folder: {0}".format(seq_folder)
+            seq_dept_assets = dict()
+            shot_assets = dict()
+            # seq_asset is either a dept if its a sequence asset, or shot name if its a shot asset
+            # separate seq assets into dept or shot
+            for seq_asset in self.review_assets[seq]:
+                # check if dept, ie not a shot
+                if not pyani.core.util.is_valid_shot_name(seq_asset):
+                    seq_dept_assets[seq_asset] = self.review_assets[seq][seq_asset]
+                # its a shot
                 else:
-                    error = pyani.core.util.make_dir(seq_folder)
-                    if error:
-                        self.mngr.send_thread_error(error)
-                        return error
+                    shot_assets[seq_asset] = self.review_assets[seq][seq_asset]
 
-            # now process sequence and shot assets
-            for asset in self.review_assets[seq]:
-                # check if this is a sequence asset, if so skip, we don't update these right now
-                if not pyani.core.util.is_valid_shot_name(asset):
-                    if debug:
-                        print "Skipping {0}, {1}".format(seq, asset)
-                        print "---------------"
-                    continue
+            # process sequence department assets
+            for seq_dept_asset in seq_dept_assets:
+                # get asset specific preference - not use precedence requires replace, so we ignore this preference
+                # when use preference is enabled.
+                pref = self.mngr.get_preference("review asset download", seq_dept_asset, "replace existing movies")
+                # if it exists use that, otherwise use the general preference for replacing assets
+                if isinstance(pref, dict):
+                    replace_pref = pref["replace existing movies"]
+                else:
+                    replace_pref = gen_replace_pref
 
-                # make a copy, so that we can remove nCloth and BG - need review assets to remain unchanged
-                department_list_for_shot = self.review_assets[seq][asset].keys()
+                # now check if this seq_asset should get replaced
+                if replace_pref:
+                    # all dept assets in same location
+                    dept_dl_location = seq_dept_assets[seq_dept_asset][0]["local download path"]
 
-                # check if shot has nCloth and/or BG, if so move those, then handle the rest of the departments
-                if "nCloth" in department_list_for_shot:
-                    # get a list of all files in the seq directory.
-                    sub_folder = os.path.join(seq_folder, "nCloth")
+                    # check if folder exists, if not make it
+                    if not os.path.exists(dept_dl_location):
+                        error = pyani.core.util.make_all_dir_in_path(dept_dl_location)
+                        if error:
+                            self.mngr.send_thread_error(error)
+                            return error
+
+                    # see if dept has a file(s) already in the download folder - probably is dept name, but maybe
+                    # not, depends how user configures, could put all sequence depts in one folder
+                    # also ignore any of the downloaded files, since we don't want to count those
                     existing_files_in_dir = [
-                        os.path.join(sub_folder, file_name) for file_name in pyani.core.util.get_all_files(sub_folder)
+                        os.path.join(dept_dl_location, file_name) for file_name in
+                        pyani.core.util.get_all_files(dept_dl_location, walk=False)
+                        if os.path.join(dept_dl_location, file_name) not in self.download_list
                     ]
-                    dest_path = os.path.join(seq_folder, "nCloth")
-                    # check if the folder exists
-                    if not os.path.exists(dest_path):
-                        if debug:
-                            print "Making Sub-Folder: {0}".format(dest_path)
-                        else:
-                            error = pyani.core.util.make_dir(dest_path)
+
+                    # check for existing asset and remove - remove if dept and seq match
+                    for existing_file in existing_files_in_dir:
+                        # compare existing file against files in review - have to do because of part names
+                        for review_asset in seq_dept_assets[seq_dept_asset]:
+                            new_asset_file_name = review_asset["file name"]
+                            # check if the dept matches
+                            if self.app_vars.review_depts[seq_dept_asset].lower() in existing_file.lower():
+                                # check if has part# in file name
+                                pattern = "part\d{1,}"
+                                if re.search(pattern, existing_file) and re.search(pattern, new_asset_file_name):
+                                    part_name_existing_file = re.search(pattern, existing_file).group()
+                                    part_name_new_file = re.search(pattern, new_asset_file_name).group()
+                                    # check if part names match, if so delete
+                                    if part_name_existing_file == part_name_new_file:
+                                        error = pyani.core.util.delete_file(existing_file)
+                                        if error:
+                                            self.mngr.send_thread_error(error)
+                                            return error
+                                        # record what file was replaced
+                                        self.review_assets[seq][seq_dept_asset][0]['replaced file'] = existing_file
+                                # no part name
+                                else:
+                                    error = pyani.core.util.delete_file(existing_file)
+                                    if error:
+                                        self.mngr.send_thread_error(error)
+                                        return error
+                                    # record what file was replaced
+                                    self.review_assets[seq][seq_dept_asset][0]['replaced file'] = existing_file
+
+            # shot assets
+            for shot_name in shot_assets:
+                for dept in shot_assets[shot_name]:
+                    # get asset specific preference
+                    pref = self.mngr.get_preference("review asset download", dept, "replace existing movies")
+                    # if it exists use that, otherwise use the general preference for replacing assets
+                    if isinstance(pref, dict):
+                        replace_pref = pref["replace existing movies"]
+                    else:
+                        replace_pref = gen_replace_pref
+
+                    if replace_pref:
+                        # all dept assets in same location
+                        dept_dl_location = shot_assets[shot_name][dept][0]["local download path"]
+
+                        # check if folder exists, if not make it
+                        if not os.path.exists(dept_dl_location):
+                            error = pyani.core.util.make_all_dir_in_path(dept_dl_location)
                             if error:
                                 self.mngr.send_thread_error(error)
                                 return error
 
-                    self._replace_file(seq, asset, "nCloth", existing_files_in_dir, dest_path, debug=debug)
+                        # see if dept has a file(s) already in the download folder - probably is dept name, but maybe
+                        # not, depends how user configures, could put all sequence depts in one folder
+                        # also ignore any of the downloaded files, since we don't want to count those
+                        existing_files_in_dir = [
+                            os.path.join(dept_dl_location, file_name) for file_name in
+                            pyani.core.util.get_all_files(dept_dl_location, walk=False)
+                            if os.path.join(dept_dl_location, file_name) not in self.download_list
+                        ]
 
-                    # done with this so can remove
-                    department_list_for_shot.remove("nCloth")
-
-                if "BG" in department_list_for_shot:
-                    # get a list of all files in the seq directory.
-                    sub_folder = os.path.join(seq_folder, "BG")
-                    existing_files_in_dir = [
-                        os.path.join(sub_folder, file_name) for file_name in
-                        pyani.core.util.get_all_files(sub_folder)
-                    ]
-                    dest_path = os.path.join(seq_folder, "BG")
-                    # check if the folder exists
-                    if not os.path.exists(dest_path):
-                        if debug:
-                            print "Making Sub-Folder: {0}".format(dest_path)
-                        else:
-                            error = pyani.core.util.make_dir(dest_path)
-                            if error:
-                                self.mngr.send_thread_error(error)
-                                return error
-                    self._replace_file(seq, asset, "BG", existing_files_in_dir, dest_path, debug=debug)
-
-                    # done with this so can remove
-                    department_list_for_shot.remove("BG")
-
-                # check if any remaining depts, can skip if we already processed everything
-                if not department_list_for_shot:
-                    continue
-
-                # check if multiple movies for this shot, if so get the dept that will update any existing asset
-                if len(department_list_for_shot) > 1:
-
-                    # multiple movies, move in order of precedence
-                    new_order = [
-                        dept for dept in self.app_vars.review_dept_precedence if dept in department_list_for_shot
-                    ]
-                    dept = new_order[0]
-                    if debug:
-                        print "Precedence - Found depts {0}, using dept: {1}".format(','.join(department_list_for_shot), dept)
-                # only one movie for this shot, so only one dept as well
-                else:
-                    dept = department_list_for_shot[0]
-
-                # see if shot has a file already in the seq folder, if so delete it
-                existing_files_in_dir = [
-                    os.path.join(seq_folder, file_name) for file_name in
-                    pyani.core.util.get_all_files(seq_folder, walk=False)
-                ]
-
-                self._replace_file(seq, asset, dept, existing_files_in_dir, seq_folder, debug=debug)
+                        for existing_file in existing_files_in_dir:
+                            # check if the seq, shot and dept match and we aren't on the downloaded file
+                            if (
+                                    seq.lower() in existing_file.lower() and
+                                    shot_name.lower() in existing_file.lower() and
+                                    self.app_vars.review_depts[dept].lower() in existing_file.lower()
+                            ):
+                                error = pyani.core.util.delete_file(existing_file)
+                                if error:
+                                    self.mngr.send_thread_error(error)
+                                    return error
+                                self.review_assets[seq][shot_name][dept][0]['replaced file'] = existing_file
 
         # done, let any listeners know if running in a multi-threaded environment
         self.mngr.finished_signal.emit(None)
@@ -361,36 +450,46 @@ class AniReviewMngr:
                 if not pyani.core.util.is_valid_shot_name(asset):
                     # process the review assets
                     for review_asset in self.review_assets[seq][asset]:
-                        replaced_file = ""
-                        if 'replaced file' in review_asset:
-                            replaced_file = review_asset['replaced file']
-                        self.report_data.append(
-                            (
-                                seq,
-                                "",
-                                asset,
-                                review_asset['file name'],
-                                review_asset['local download path'],
-                                replaced_file
-                            )
+                        file_path = os.path.join(
+                            review_asset['local download path'],
+                            review_asset['file name']
                         )
-                else:
-                    for dept in sorted(self.review_assets[seq][asset]):
-                        # process the review assets
-                        for review_asset in self.review_assets[seq][asset][dept]:
+                        if file_path in self.download_list:
                             replaced_file = ""
                             if 'replaced file' in review_asset:
                                 replaced_file = review_asset['replaced file']
                             self.report_data.append(
                                 (
                                     seq,
+                                    "",
                                     asset,
-                                    dept,
                                     review_asset['file name'],
                                     review_asset['local download path'],
                                     replaced_file
                                 )
                             )
+                else:
+                    for dept in sorted(self.review_assets[seq][asset]):
+                        # process the review assets
+                        for review_asset in self.review_assets[seq][asset][dept]:
+                            file_path = os.path.join(
+                                review_asset['local download path'],
+                                review_asset['file name']
+                            )
+                            if file_path in self.download_list:
+                                replaced_file = ""
+                                if 'replaced file' in review_asset:
+                                    replaced_file = review_asset['replaced file']
+                                self.report_data.append(
+                                    (
+                                        seq,
+                                        asset,
+                                        dept,
+                                        review_asset['file name'],
+                                        review_asset['local download path'],
+                                        replaced_file
+                                    )
+                                )
             # add empty row of data to create a separator between sequences
             self.report_data.append(
                 (
@@ -404,53 +503,36 @@ class AniReviewMngr:
             )
         # send the row data to report
         self.report.data = self.report_data
+
         # done, let any listeners know if running in a multi-threaded environment
         self.mngr.finished_signal.emit(None)
 
-    def _replace_file(self, seq, asset, dept, existing_files_in_dir, dest_path, debug=False):
+    def _replace_placeholders(self, local_download_path, seq, dept):
         """
-        Helper function to find existing files, remove them, store files replaced and move new files to the right
-        location
-        :param seq: the seq
-        :param asset: typically the shot, but can be a department if we handle sequence assets
-        :param dept: a pipeline department
-        :param existing_files_in_dir: a list of existing files as absolute paths
-        :param dest_path: the folder to copy to
-        :param debug: if True prints actions, but doesn't perform any actual disk operations
+        Replaces dynamic placeholders for things like seq name, dept name and review date
+        :param local_download_path: the absolute path on disk where the movies are to be stored - doesn't include
+        movie file name, just up to the parent directory
+        :param seq: the seq name as Seq### where ### is the sequence number
+        :param dept: the name of the department - see pyani.core.appvars.review_depts
+        :return: the download path with placeholders replaced by actual values
         """
 
-        # see if shot has a file already in the folder, if so delete it
-        existing_asset = ""
-        if existing_files_in_dir:
-            for file_name in existing_files_in_dir:
-                # here asset is shot, so check if shot in filename.
-                if asset in file_name:
-                    existing_asset = file_name
-                    if debug:
-                        print "Deleting File: {0}".format(file_name)
-                    else:
-                        error = pyani.core.util.delete_file(file_name)
-                        if error:
-                            self.mngr.send_thread_error(error)
-                            return error
-                        break
+        # check if sequence is to be included in path
+        if "seq" in local_download_path.lower() and "###" in local_download_path:
+            # remove the placeholder seq### (we convert to lower case so case doesn't matter) and add the
+            # actual sequence
+            start = local_download_path.lower().find("seq###")
+            local_download_path = local_download_path[:start] + seq
+            local_download_path = os.path.normpath(local_download_path)
 
-        # right now only one review asset per dept
-        review_asset = self.review_assets[seq][asset][dept][0]
+        # check if review date should be used in path
+        if "yyyymmdd" in local_download_path:
+            # remove the placeholder and add the actual review date
+            local_download_path = local_download_path.replace("yyyymmdd", self.review_date)
 
-        # record what file was replaced
-        self.review_assets[seq][asset][dept][0]['replaced file'] = existing_asset
-        if debug:
-            print "Replaced File : {0}".format(existing_asset)
+        # check if dept name should be used
+        if 'dept' in local_download_path:
+            # remove the placeholder and add the actual dept
+            local_download_path = local_download_path.replace("dept", dept)
 
-        src_path = os.path.join(review_asset['local download path'], review_asset['file name'])
-        if debug:
-            print "Moving File From: {0} to {1}".format(src_path, dest_path)
-            print "---------------"
-        else:
-            error = pyani.core.util.move_file(src_path, dest_path)
-            if error:
-                self.mngr.send_thread_error(error)
-                return error
-            # update the download location to reflect where the movie now resides
-            self.review_assets[seq][asset][dept][0]['local download path'] = dest_path
+        return local_download_path

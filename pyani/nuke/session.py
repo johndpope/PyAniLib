@@ -163,7 +163,7 @@ class AniNukeCmds:
         """
         group = nuke.thisGroup()
 
-        # get options
+        # get main_options_widgets
         image_name = group.knob("file").evaluate()
         movie_name = group.knob("movieName").evaluate()
         create_movie = group.knob("writeMovie").getValue()
@@ -204,8 +204,8 @@ class AniNukeCmds:
             if hq_movie:
                 options.append("--high_quality")
 
-            print "Movie options are: {0}".format(options)
-            logging.info("Movie options are: {0}".format(", ".join(options)))
+            print "Movie main_options_widgets are: {0}".format(options)
+            logging.info("Movie main_options_widgets are: {0}".format(", ".join(options)))
             # ex using PyShoot: C:\PyAniTools\installed\PyShoot\PyShoot.exe \
             # -ng -i Z:/LongGong/images/Seq180/Shot190/comp/ \
             # -o Z:/LongGong/movies/Seq180/Seq180_Shot190.mp4 -fs 1 --overwrite --frame_hold --frame_range 1001-1041
@@ -409,7 +409,7 @@ class AniNukeGui:
                 self.custom_menu.addCommand("Plugins/{0}".format(plugin_base_name),
                                             "nuke.createNode(\"{0}\")".format(plugin))
 
-        # only show templates and shot options in shot environment
+        # only show templates and shot main_options_widgets in shot environment
         if self.ani_vars.is_valid_shot(shot):
             for template in templates.keys():
                 template_base_name = template.split(".")[0]

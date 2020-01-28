@@ -160,11 +160,11 @@ class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
         g_layout_seq_setup.addWidget(self.btn_seq_setup, 0, 2)
         self.main_layout.addLayout(g_layout_seq_setup)
         self.main_layout.addWidget(pyani.core.ui.QHLine(pyani.core.ui.CYAN))
-        # layout for options
+        # layout for main_options_widgets
         g_layout_seq_setup_opt = QtWidgets.QGridLayout()
         g_layout_seq_setup_opt.setHorizontalSpacing(20)
         g_layout_seq_setup_opt.setVerticalSpacing(self.g_layout_vert_item_spacing)
-        # options
+        # main_options_widgets
         self.copy_gizmos_cbox_label, self.copy_gizmos_cbox = pyani.core.ui.build_checkbox(
             "Copy Gizmos",
             True,
@@ -236,11 +236,11 @@ class AniNukeMngrGui(pyani.core.ui.AniQMainWindow):
         h_layout_localize_instructions.addStretch(1)
 
         self.main_layout.addLayout(h_layout_localize_instructions)
-        # layout for options
+        # layout for main_options_widgets
         g_layout_shot_update_opt = QtWidgets.QGridLayout()
         g_layout_shot_update_opt.setHorizontalSpacing(20)
         g_layout_shot_update_opt.setVerticalSpacing(self.g_layout_vert_item_spacing)
-        # options
+        # main_options_widgets
         show_local_cbox_label, self.show_local_cbox = pyani.core.ui.build_checkbox(
             "Show Only Shots With Copies of Sequence Plugins",
             True,

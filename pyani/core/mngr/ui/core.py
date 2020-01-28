@@ -112,6 +112,9 @@ class AniTaskList:
         """
         self._post_tasks = post_tasks
 
+    def add_task(self, task):
+        self._task_list.append(task)
+
     def stop_tasks(self):
         """Stops tasks from running"""
         self._stop_tasks = True
@@ -136,7 +139,7 @@ class AniTaskList:
         if self._task_list and not self._stop_tasks:
             # add to activity log as success
             self._get_next_task_to_run()
-        # no more steps, display activity log
+        # no more steps
         else:
             # run the post task(s)
             if self._post_tasks:
@@ -549,8 +552,9 @@ class AniReportCore(QtWidgets.QDialog):
         :param html_content: a string of html
         """
         self.content.setHtml(html_content)
-        self.finished_signal.emit()
+        # do show before finished signal, otherwise might move on before executing display of window
         self.show()
+        self.finished_signal.emit()
 
 
 class AniAssetTableReport(AniReportCore):
@@ -588,6 +592,11 @@ class AniAssetTableReport(AniReportCore):
                             pyani.core.ui.CYAN
                         )
 
+        if not self.headings:
+            self.headings = ["Could not build headings"]
+            self.col_widths = ["100"]
+            self.data = ["Heading build error, could not construct data portion of table."]
+
         for index, heading in enumerate(self.headings):
             html_content += "<td width='{0}%'>".format(self.col_widths[index])
             html_content += heading
@@ -600,19 +609,19 @@ class AniAssetTableReport(AniReportCore):
             html_content += "</td>&nbsp;</td>"
         html_content += "</tr>"
 
-        for data in self.data:
-            html_content += "<tr style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>".format(
-                self.font_size_body,
-                self.font_family
-            )
-            for item in data:
-                html_content += "<td>"
-                html_content += item
-                html_content += "</td>"
-            html_content += "</tr>"
+        if self.data:
+            for data in self.data:
+                html_content += "<tr style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>".format(
+                    self.font_size_body,
+                    self.font_family
+                )
+                for item in data:
+                    html_content += "<td>"
+                    html_content += item
+                    html_content += "</td>"
+                html_content += "</tr>"
 
         html_content += "</table>"
-
         self.show_content(html_content)
 
 

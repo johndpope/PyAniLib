@@ -141,12 +141,12 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         self.main_layout.addItem(QtWidgets.QSpacerItem(0, 75))
 
         # ----------------------
-        #  image options
+        #  image main_options_widgets
         # ----------------------
         # title
         self.main_layout.addWidget(self.images_options_img)
 
-        # image options spaced horizontally
+        # image main_options_widgets spaced horizontally
         h_layout_files = QtWidgets.QHBoxLayout()
         h_layout_files.addWidget(self.files_display)
         h_layout_files.addItem(QtWidgets.QSpacerItem(30, 0))
@@ -155,7 +155,7 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         self.main_layout.addLayout(h_layout_files)
 
         # ----------------------
-        # frame options
+        # frame main_options_widgets
         # ----------------------
         # hold frames
         frame_range_label = QtWidgets.QLabel("Frame Range")
@@ -174,7 +174,7 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         self.main_layout.addWidget(self.frame_options_img)
         # add spacer
         self.main_layout.addItem(QtWidgets.QSpacerItem(0, 25))
-        # use a grid for the options so they align correctly
+        # use a grid for the main_options_widgets so they align correctly
         g_layout_frame_options = QtWidgets.QGridLayout()
         g_layout_frame_options.setHorizontalSpacing(50)
         g_layout_frame_options.setVerticalSpacing(15)
@@ -192,7 +192,7 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         self.main_layout.addLayout(g_layout_frame_options)
 
         # ----------------------
-        # movie options
+        # movie main_options_widgets
         # ----------------------
         self.movie_output_button.setMinimumSize(150, 30)
         movie_quality_label, self.movie_quality_cbox = pyani.core.ui.build_checkbox(
@@ -228,12 +228,12 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         h_layout_mov_name.addItem(QtWidgets.QSpacerItem(40, 0))
         self.main_layout.addLayout(h_layout_mov_name)
 
-        # use a grid for the options so they align correctly
+        # use a grid for the main_options_widgets so they align correctly
         g_layout_movie_options = QtWidgets.QGridLayout()
         g_layout_movie_options.setHorizontalSpacing(20)
         g_layout_movie_options.setVerticalSpacing(5)
 
-        # options
+        # main_options_widgets
         g_layout_movie_options.addWidget(self.movie_quality_cbox, 0, 0)
         g_layout_movie_options.addWidget(movie_quality_label, 0, 1)
         g_layout_movie_options.addItem(self.horizontal_spacer, 0, 2)
@@ -268,7 +268,7 @@ class AniShootGui(pyani.core.ui.AniQMainWindow):
         self.movie_combine_cbox.stateChanged.connect(self.movie_combine_update)
         # if state changes, update selection
         self.frame_hold_cbox.stateChanged.connect(self.update_hold_frame)
-        # process options and create movie
+        # process main_options_widgets and create movie
         self.btn_create_movie.clicked.connect(self.create_movie)
 
     def dropEvent(self, e):

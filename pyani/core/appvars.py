@@ -132,7 +132,8 @@ class AppVars:
             "nHair": "nHair",
             "layout": "Layout",
             "previs": "previs",
-            "BG": "BG"
+            "BG": "BG",
+            "editorial": "editorial"
         }
         # used when a shot has multiple departmental assets in a given review to determine which asset gets moved
         # when updating assets

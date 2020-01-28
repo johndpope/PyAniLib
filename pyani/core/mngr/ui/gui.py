@@ -3,6 +3,7 @@ import sys
 import datetime
 import pyani.core.util
 import logging
+import functools
 import pyani.core.ui
 import pyani.core.anivars
 import pyani.core.appvars
@@ -17,7 +18,8 @@ import pyani.review.core
 os.environ['QT_API'] = 'pyqt'
 # import from QtPy instead of doing it directly
 # note that QtPy always uses PyQt5 API
-from qtpy import QtWidgets
+from qtpy import QtWidgets, QtCore
+
 
 logger = logging.getLogger()
 
@@ -28,11 +30,18 @@ class CoreTab(QtWidgets.QWidget):
 
     the general format / display is:
 
-    tab description (if provided)           buttons
+    ---------------------------------------------------------
+    tab description (if provided)      |     buttons
+                                       |
+    ---------------------------------------------------------
+    main_options_widgets (if provided) - can be horizontal or vertical in layout
 
-    options (if provided)
+    ---------------------------------------------------------
+    additional options widgets if provided
 
-    tree list of items
+    ----------------------------------------------------------
+    tree list - can be disabled with the show_tree option when creating an instance of this class
+
     """
 
     def __init__(
@@ -51,7 +60,7 @@ class CoreTab(QtWidgets.QWidget):
         :param items_to_collapse: optional list of tree items to collapse by default (only supports collapsing parent
         items, not specific children of a parent
         :param show_tree: whether to show the tree area, default is true
-        :param options_layout_orientation: whether to put the options horizontally or vertically. Defaults to Horizontal
+        :param options_layout_orientation: whether to put the main_options_widgets horizontally or vertically. Defaults to Horizontal
         Values are 'Horizontal' or 'Vertical'
         """
         super(CoreTab, self).__init__()
@@ -88,12 +97,18 @@ class CoreTab(QtWidgets.QWidget):
         # buttons are a list of pyani.core.ui.ImageButton objects
         self.buttons = list()
 
-        # options are a list of dicts, where each dict is
+        # options widgets are a list of dicts, where each dict is
         '''
             "widget": pyqt widget
             "label": pyqt qlabel widget
         '''
-        self.options = list()
+        # the main main_options_widgets
+        self.main_options_widgets = list()
+        # additional specific main_options_widgets
+        self.additional_options = list()
+        self.additional_options_title = "Asset Specific Options"
+        self.additional_options_widgets = list()
+        self.additional_options_menu = QtWidgets.QComboBox()
 
         self.tree = None
 
@@ -131,18 +146,49 @@ class CoreTab(QtWidgets.QWidget):
         """
         self.buttons.append(image_button)
 
-    def add_option(self, option_widget, option_label):
+    def add_general_option(self, option_widget, option_label):
         """
-        adds an option to the tab
+        adds an option to the tab. This option goes in the general main_options_widgets area, see class doc
         :param option_widget: a pyqt widget or a list of widgets
         :param option_label: a pyqt QLabel
         """
-        self.options.append(
+        self.main_options_widgets.append(
             {
                 "widget": option_widget,
                 "label": option_label
             }
         )
+
+    def add_additional_option(self, option_label, option_widget=None, option_layout=None):
+        """
+        adds an option or layout to the additional options section of the tab. Provide one or the other, but not both.
+        If both are provided the layout will be ignored
+        :param option_widget: a pyqt widget or a list of widgets
+        :param option_label: a pyqt QLabel
+        :param option_layout: optional pyqt layout, if this is provided any widgets provided will be ignored
+        """
+        # both widget and layout provided, ignore layout
+        if option_layout and option_widget:
+            option_layout = None
+
+        self.additional_options_widgets.append(
+            {
+                "widget": option_widget,
+                "label": option_label,
+                "layout": option_layout
+            }
+        )
+
+    def set_additional_options_title(self, title):
+        """Sets the title for the additional options"""
+        self.additional_options_title = title
+
+    def add_additional_option_to_menu(self, option_name):
+        """
+        The additional option name, added to a menu so user can switch between additional options - see class docstring
+        :param option_name: the name as a string
+        """
+        self.additional_options.append(option_name)
 
     def build_layout(self, tree_data=None, col_count=None, existing_items_in_config_file=None):
         """
@@ -164,10 +210,13 @@ class CoreTab(QtWidgets.QWidget):
             header.addWidget(button)
             header.addItem(QtWidgets.QSpacerItem(10, 0))
 
-        # options section
+        self.layout.addLayout(header)
+        self.layout.addItem(QtWidgets.QSpacerItem(1, 20))
+
+        # main options widgets section
         if self.options_orientation == "Horizontal":
             options_layout = QtWidgets.QHBoxLayout()
-            for option in self.options:
+            for option in self.main_options_widgets:
                 # get the widget, and check if its a list. If it's a list, we need to build a horizontal layout to
                 # contain all the widgets, otherwise we can just add single widgets straight to the layout
                 option_widget = option['widget']
@@ -178,14 +227,16 @@ class CoreTab(QtWidgets.QWidget):
                     options_layout.addLayout(widget_layout)
                 else:
                     options_layout.addWidget(option['widget'])
-                options_layout.addWidget(option['label'])
+                if option['label']:
+                    options_layout.addWidget(option['label'])
                 options_layout.addItem(QtWidgets.QSpacerItem(40, 0))
             options_layout.addStretch(1)
         else:
             options_layout = QtWidgets.QVBoxLayout()
-            for option in self.options:
+            for option in self.main_options_widgets:
                 option_sub_layout = QtWidgets.QHBoxLayout()
-                option_sub_layout.addWidget(option['label'])
+                if option['label']:
+                    option_sub_layout.addWidget(option['label'])
                 # get the widget, and check if its a list. If it's a list, we need to build a horizontal layout to
                 # contain all the widgets, otherwise we can just add single widgets straight to the layout
                 option_widget = option['widget']
@@ -200,9 +251,42 @@ class CoreTab(QtWidgets.QWidget):
                 option_sub_layout.addStretch(1)
                 options_layout.addLayout(option_sub_layout)
 
-        self.layout.addLayout(header)
-        self.layout.addItem(QtWidgets.QSpacerItem(1, 20))
         self.layout.addLayout(options_layout)
+
+        # additional options section
+        if self.additional_options:
+            self.layout.addItem(QtWidgets.QSpacerItem(0, 75))
+            additional_options_layout = QtWidgets.QVBoxLayout()
+            # create the title and the menu, default to generic title if not provided
+            header_layout = QtWidgets.QHBoxLayout()
+            title = QtWidgets.QLabel(
+                "<span style = 'font-size:12pt; font-family:{0}; color:{2};'><b>{1}</b></span>".format(
+                    self.font_family, self.additional_options_title, pyani.core.ui.CYAN
+                )
+            )
+            header_layout.addWidget(title)
+            for option in self.additional_options:
+                self.additional_options_menu.addItem(option)
+            header_layout.addWidget(self.additional_options_menu)
+            header_layout.addStretch(1)
+            additional_options_layout.addLayout(header_layout)
+
+            additional_options_layout.addItem(QtWidgets.QSpacerItem(0, 30))
+            # create the actual options layout
+            for option in self.additional_options_widgets:
+                additional_option_layout = QtWidgets.QHBoxLayout()
+                if option['label']:
+                    additional_option_layout.addWidget(option['label'])
+                    additional_option_layout.addItem(QtWidgets.QSpacerItem(10, 0))
+                # unpack the option, may be several widgets or a layout, and add to additional options layout
+                if option['widget']:
+                    for widget in option['widget']:
+                        additional_option_layout.addWidget(widget)
+                else:
+                    additional_option_layout.addLayout(option['layout'])
+                # now add option to layout
+                additional_options_layout.addLayout(additional_option_layout)
+            self.layout.addLayout(additional_options_layout)
 
         if self.show_tree:
             self.build_tree(
@@ -280,7 +364,9 @@ class ReviewTab(CoreTab):
         self.task_mngr = None
         self.progress_list = list()
 
-        # ui variables
+        # UI VARIABLES
+
+        # buttons
         self.btn_download = pyani.core.ui.ImageButton(
             "images\\download_off.png",
             "images\\download_on.png",
@@ -289,6 +375,7 @@ class ReviewTab(CoreTab):
         )
         self.add_button(self.btn_download)
 
+        # general main_options_widgets
         self.enable_auto_download_label = QtWidgets.QLabel("Turn on Automatic Downloads for Review Assets")
         self.enable_auto_download_menu = QtWidgets.QComboBox()
         self.enable_auto_download_menu.addItem("-------")
@@ -310,7 +397,13 @@ class ReviewTab(CoreTab):
             size=(34, 30)
         )
 
-        self.set_download_location_label = QtWidgets.QLabel("Set Download Location for Review Assets")
+        self.set_download_location_label = QtWidgets.QLabel(
+            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Set Download Location for Review "
+            "Assets</span>".format(
+                self.font_size,
+                self.font_family
+            )
+        )
         self.set_download_location_input = QtWidgets.QLineEdit("")
         self.set_download_location_input.setMinimumWidth(400)
         self.set_download_location_button = pyani.core.ui.ImageButton(
@@ -327,34 +420,266 @@ class ReviewTab(CoreTab):
         )
 
         self.replace_old_assets_label, self.replace_old_assets_cbox = pyani.core.ui.build_checkbox(
-            "Replace Old Review Assets With Latest",
+            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Replace Existing Review Assets With "
+            "Latest</span>".format(
+                self.font_size,
+                self.font_family
+            ),
             False,
-            "Replaces old movies with new movies."
+            "Replaces assets on the local drive with today's review assets on the server."
         )
 
-        self.add_option(self.enable_auto_download_menu, self.enable_auto_download_label)
-        self.add_option(
+        self.add_general_option(self.enable_auto_download_menu, self.enable_auto_download_label)
+        self.add_general_option(
             (self.auto_dl_hour, self.auto_dl_min, self.auto_dl_am_pm,  self.save_auto_dl_time_button),
             self.auto_dl_label
         )
-        self.add_option(
+        self.add_general_option(
             (self.set_download_location_input, self.set_download_location_button, self.save_download_location_button),
             self.set_download_location_label
         )
-        self.add_option(self.replace_old_assets_cbox, self.replace_old_assets_label)
+        self.add_general_option(self.replace_old_assets_cbox, self.replace_old_assets_label)
 
-        self.load_and_set_preferences()
+        # loads and sets the general preferences that apply to all assets
+        self.load_and_set_general_preferences()
+
+        # add additional main_options_widgets
+        self.set_additional_options_title("Review Specific Options")
+        self.add_additional_option_to_menu("Movies")
+        # list of widgets we need to be able to reference, store in a dict with key the department name and value
+        # another dict where the ket is the widget name, and value is the widget
+        self.additional_options_widgets_list = dict()
+
+        # these options allow a user to assign multiple departments to one folder, but only keep one dept based off
+        # a precedence list and have the rest go into the general download location when multiple movies are present
+        # in a review. example, anim, layout and previs go into one folder. anim and layout are in a review. the order
+        # of precedence is anim, layout, previs. Then anim is kept in the folder and layout moved to general folder.
+        pref = self.mngr.get_preference("review asset download", "movie", "use precedence")
+        if isinstance(pref, dict):
+            pref_value = pref["use precedence"]
+        else:
+            pref_value = False
+        self.use_dept_precedence_label, self.use_dept_precedence_cbox = pyani.core.ui.build_checkbox(
+            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Keep only one dept in folder "
+            "based off precedence list</span>".format(
+                self.font_size,
+                self.font_family
+            ),
+            pref_value,
+            "Allows multiple departments to be assigned to a folder, but only one is ever kept and rest are put" \
+            " into the general download location based off the precedence list."
+        )
+
+        self.dept_movie_precedence_list_widget = QtWidgets.QListWidget()
+        pref = self.mngr.get_preference("review asset download", "movie", "precedence order")
+        if isinstance(pref, dict):
+            dept_order = pref["precedence order"]
+        else:
+            dept_order = sorted(self.app_vars.review_depts)
+        for dept in dept_order:
+            self.dept_movie_precedence_list_widget.addItem(dept)
+        self.dept_movie_precedence_list_widget.setMinimumHeight(150)
+        self.dept_movie_precedence_list_widget.setMaximumHeight(155)
+        self.dept_movie_precedence_list_widget.setMaximumWidth(600)
+        # Enable drag & drop ordering of items.
+        self.dept_movie_precedence_list_widget.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
+        # button to save the list to the preference file
+        self.btn_save_dept_precedence = pyani.core.ui.ImageButton(
+            "images\\save_pref_off.png",
+            "images\\save_pref_on.png",
+            "images\\save_pref_on.png",
+            size=(34, 30)
+        )
+
+        self.create_movie_options()
 
         self.build_layout()
         self.set_slots()
 
     def set_slots(self):
-        self.replace_old_assets_cbox.clicked.connect(self.set_update_assets_pref)
-        self.set_download_location_button.clicked.connect(self.get_download_location)
-        self.save_download_location_button.clicked.connect(self.set_download_location)
+        self.replace_old_assets_cbox.clicked.connect(self.set_general_pref_replace_assets)
+        self.set_download_location_button.clicked.connect(self.get_general_pref_download_location_from_filedialog)
+        self.save_download_location_button.clicked.connect(self.set_general_pref_download_location)
         self.save_auto_dl_time_button.clicked.connect(self.set_download_time)
         self.enable_auto_download_menu.currentIndexChanged.connect(self.set_auto_download_state)
         self.btn_download.clicked.connect(self.download_review_assets)
+        self.btn_save_dept_precedence.clicked.connect(self.set_movie_pref_dept_precedence)
+        self.use_dept_precedence_cbox.clicked.connect(self.set_movie_pref_use_precedence)
+
+    def create_movie_options(self):
+        """
+        Creates options for review movies
+        """
+
+        '''
+        list_label = QtWidgets.QLabel(
+            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Drag and Drop the departments to create "
+            "your precedence order (<i>highest to lowest</i>)</span>".format(
+                self.font_size,
+                self.font_family
+            )
+        )
+        list_label.setWordWrap(True)
+        list_label.setMaximumWidth(800)
+        precedence_desc = QtWidgets.QLabel(
+            "<span style='font-size:9pt; font-family:{0}; color: {2};'>"
+            "Use the options below to put multiple departments in a folder, but only keep the department with the "
+            "most recent movie in the folder. The precedence list defines what happens if a review has multiple "
+            "departments in the review. The department with highest precedence gets put in the folder, while the "
+            "other departments get put in the general download location: {1}"
+            "</span>".format(
+                self.font_family,
+                str(self.set_download_location_input.text()),
+                pyani.core.ui.GRAY_MED
+            )
+        )
+        precedence_desc.setMaximumWidth(800)
+        precedence_desc.setWordWrap(True)
+
+        precedence_layout = QtWidgets.QVBoxLayout()
+
+        precedence_layout.addWidget(precedence_desc)
+        precedence_layout.addItem(QtWidgets.QSpacerItem(0, 20))
+
+        precedence_sub_layout = QtWidgets.QHBoxLayout()
+        precedence_sub_layout.addWidget(self.use_dept_precedence_cbox)
+        precedence_sub_layout.addWidget(self.use_dept_precedence_label)
+        precedence_sub_layout.addItem(QtWidgets.QSpacerItem(75, 0))
+
+        precedence_list_layout = QtWidgets.QVBoxLayout()
+        precedence_list_layout.addWidget(list_label)
+
+        precedence_list_sub_layout = QtWidgets.QHBoxLayout()
+        precedence_list_sub_layout.addWidget(self.dept_movie_precedence_list_widget)
+        precedence_list_sub_layout.addItem(QtWidgets.QSpacerItem(15, 0))
+        precedence_list_sub_layout.addWidget(self.btn_save_dept_precedence)
+        precedence_list_sub_layout.addStretch(1)
+
+        precedence_list_layout.addLayout(precedence_list_sub_layout)
+
+        precedence_sub_layout.addLayout(precedence_list_layout)
+        precedence_sub_layout.addStretch(1)
+
+        precedence_layout.addLayout(precedence_sub_layout)
+        precedence_layout.addItem(QtWidgets.QSpacerItem(0, 25))
+
+        precedence_sub_layout.setAlignment(self.use_dept_precedence_cbox, QtCore.Qt.AlignTop)
+        precedence_sub_layout.setAlignment(self.use_dept_precedence_label, QtCore.Qt.AlignTop)
+        precedence_list_sub_layout.setAlignment(self.btn_save_dept_precedence, QtCore.Qt.AlignTop)
+
+        self.add_additional_option("", option_layout=precedence_layout)
+        '''
+        movie_dl_layout = QtWidgets.QVBoxLayout()
+        movie_dl_desc = QtWidgets.QLabel(
+            "<span style='font-size:9pt; font-family:{0}; color: {1};'>"
+            "Use the options below to choose which department movies are downloaded and where they download to. "
+            "You can also choose per department whether movies on disk get replaced."
+            "</span>".format(
+                self.font_family,
+                pyani.core.ui.GRAY_MED
+            )
+        )
+
+        movie_dl_desc.setMaximumWidth(800)
+        movie_dl_desc.setWordWrap(True)
+
+        movie_dl_layout.addWidget(movie_dl_desc)
+        movie_dl_layout.addItem(QtWidgets.QSpacerItem(0, 20))
+
+        grid_layout = QtWidgets.QGridLayout()
+
+        # loop through departments and create widget main_options_widgets
+        for index, dept in enumerate(sorted(self.app_vars.review_depts)):
+            # dept label and checkbox for choosing to download the department's movies, checked by default
+            pref = self.mngr.get_preference("review asset download", dept, "download movies")
+            pref_val = True
+            if isinstance(pref, dict):
+                pref_val = pref["download movies"]
+            dept_label, dept_cbox = pyani.core.ui.build_checkbox(
+                "<span style='font-size:{0}pt; font-family:{2}; color: #ffffff;'>{1}</span>".format(
+                    self.font_size, dept, self.font_family
+                ),
+                pref_val,
+                "Whether to download this department's movies"
+            )
+
+            # whether to replace local movies - first get the general preference, so that we can use that if there
+            # isn't a preference saved for the dept
+            pref_general = self.review_mngr.mngr.get_preference("review asset download", "update", "update old assets")
+            pref = self.review_mngr.mngr.get_preference("review asset download", dept, "replace existing movies")
+            pref_val = pref_general['update old assets']
+            if isinstance(pref, dict):
+                pref_val = pref["replace existing movies"]
+            replace_label, replace_cbox = pyani.core.ui.build_checkbox(
+                "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Replace existing movies</span>".format(
+                    self.font_size,
+                    self.font_family
+                ),
+                pref_val,
+                "Replaces movies on the local drive with today's review movies on the server."
+            )
+
+            # download location for this department's movies, uses main download location by default
+            pref = self.review_mngr.mngr.get_preference("review asset download", dept, "download movie location")
+            pref_val = str(self.set_download_location_input.text())
+            if isinstance(pref, dict):
+                pref_val = pref["download movie location"]
+            download_location_input = QtWidgets.QLineEdit(pref_val)
+            download_location_input.setMinimumWidth(400)
+            set_download_location_button = pyani.core.ui.ImageButton(
+                "images\\file_open_off.png",
+                "images\\file_open_on.png",
+                "images\\file_open_on.png",
+                size=(37, 30)
+            )
+            save_download_location_button = pyani.core.ui.ImageButton(
+                "images\\save_pref_off.png",
+                "images\\save_pref_on.png",
+                "images\\save_pref_on.png",
+                size=(34, 30)
+            )
+
+            grid_layout.addWidget(dept_cbox, index, 0)
+            grid_layout.addWidget(dept_label, index, 1)
+            grid_layout.addItem(QtWidgets.QSpacerItem(40, 0), index, 2)
+            grid_layout.addWidget(replace_cbox, index, 3)
+            grid_layout.addWidget(replace_label, index, 4)
+            grid_layout.addItem(QtWidgets.QSpacerItem(40, 0), index, 5)
+            grid_layout.addWidget(download_location_input, index, 6)
+            grid_layout.addItem(QtWidgets.QSpacerItem(10, 0), index, 7)
+            grid_layout.addWidget(set_download_location_button, index, 8)
+            grid_layout.addItem(QtWidgets.QSpacerItem(10, 0), index, 9)
+            grid_layout.addWidget(save_download_location_button, index, 10)
+            grid_layout.setColumnStretch(11, 1)
+
+            # connect slots/signals
+            dept_cbox.stateChanged.connect(
+                functools.partial(self.set_movie_pref_download, dept_cbox, dept)
+            )
+            replace_cbox.stateChanged.connect(
+                functools.partial(self.set_movie_pref_replace_existing, replace_cbox, dept)
+            )
+            save_download_location_button.clicked.connect(
+                functools.partial(
+                    self.set_movie_pref_download_location,
+                    download_location_input,
+                    dept
+                )
+            )
+
+            # save widgets for later reference
+            self.additional_options_widgets_list[dept] = {
+                "replace cbox": replace_cbox,
+                "download location": download_location_input
+            }
+
+        movie_dl_layout.addLayout(grid_layout)
+        # add layout with all options
+        self.add_additional_option("", option_layout=movie_dl_layout)
+
+    def update_ui(self):
+        """Updates the ui"""
+        self._update_movie_ui()
 
     def update_progress(self):
         """
@@ -421,7 +746,7 @@ class ReviewTab(CoreTab):
                             'params': [],
                             'finish signal': self.review_mngr.mngr.finished_signal,
                             'error signal': self.review_mngr.mngr.error_thread_signal,
-                            'thread task': False,
+                            'thread task': True,
                             'desc': "Updated existing review assets."
                         }
                     )
@@ -441,21 +766,25 @@ class ReviewTab(CoreTab):
 
             self.task_mngr = pyani.core.mngr.ui.core.AniTaskList(task_list, ui_callback=self.update_progress)
 
-            if self.review_mngr.review_exists():
-                # NOTE: do this here because the super needs to be called first to create the window
-                # used to create an html report to show in a QtDialogWindow
-                self.download_report = pyani.core.mngr.ui.core.AniAssetTableReport(self)
+            # NOTE: do this here because the super needs to be called first to create the window
+            # used to create an html report to show in a QtDialogWindow
+            self.download_report = pyani.core.mngr.ui.core.AniAssetTableReport(self)
 
-                # provide report to review mngr so it can set data
-                self.review_mngr.set_report(self.download_report)
-                # move update window so it doesn't cover the main update window
-                post_tasks = [
-                    {
-                        'func': self.download_report.generate_table_report,
-                        'params': []
-                    }
-                ]
-                self.task_mngr.set_post_tasks(post_tasks)
+            # provide report to review mngr so it can set data
+            self.review_mngr.set_report(self.download_report)
+            # move update window so it doesn't cover the main update window
+            this_win_rect = self.frameGeometry()
+            post_tasks = [
+                {
+                    'func': self.download_report.generate_table_report,
+                    'params': []
+                },
+                {
+                    'func': self.download_report.move,
+                    'params': [this_win_rect.x() + 10, this_win_rect.y() - 10]
+                }
+            ]
+            self.task_mngr.set_post_tasks(post_tasks)
 
             self.task_mngr.start_tasks()
         # no review files, let user know
@@ -471,7 +800,7 @@ class ReviewTab(CoreTab):
             msg_win = pyani.core.ui.QtMsgWindow(self)
             msg_win.show_error_msg("No Review Assets", msg)
 
-    def load_and_set_preferences(self):
+    def load_and_set_general_preferences(self):
         # load the preferences and set value
         pref = self.mngr.get_preference("review asset download", "update", "update old assets")
         if isinstance(pref, dict):
@@ -480,6 +809,8 @@ class ReviewTab(CoreTab):
         pref = self.mngr.get_preference("review asset download", "download", "location")
         if isinstance(pref, dict):
             self.set_download_location_input.setText(pref.get("location"))
+        else:
+            self.set_download_location_input.setText(self.app_vars.review_movie_local_directory)
 
         exists = self.task_scheduler.is_task_scheduled()
         # check if we got an error getting task existence
@@ -656,7 +987,7 @@ class ReviewTab(CoreTab):
                 "Could not set run time. {0} is not a valid time".format(run_time)
             )
 
-    def get_download_location(self):
+    def get_general_pref_download_location_from_filedialog(self):
         """Gets the file name selected from the dialog and stores in text edit box in gui"""
         name = pyani.core.ui.FileDialog.getExistingDirectory(
             self,
@@ -664,7 +995,7 @@ class ReviewTab(CoreTab):
         )
         self.set_download_location_input.setText(name)
 
-    def set_download_location(self):
+    def set_general_pref_download_location(self):
         """Saves the location in the edit box to preference file"""
         pref_value = str(self.set_download_location_input.text())
 
@@ -672,8 +1003,9 @@ class ReviewTab(CoreTab):
         if error:
             error_msg = "Could not set the download location preference. Error is {0}".format(error)
             self.msg_win.show_error_msg("Save Preference Error", error_msg)
+        self.update_ui()
 
-    def set_update_assets_pref(self):
+    def set_general_pref_replace_assets(self):
         """saves preference for replacing assets on disk with the latest downloaded"""
         pref_value = bool(self.replace_old_assets_cbox.isChecked())
 
@@ -682,11 +1014,101 @@ class ReviewTab(CoreTab):
             error_msg = "Could not save the replace assets preference. Error is {0}".format(error)
             self.msg_win.show_error_msg("Save Preference Error", error_msg)
 
-    def build_tree_data(self):
+        self.update_ui()
+
+    def set_movie_pref_download(self, dept_cbox, dept_name):
         """
-        To be implemented later on next movie
+        Saves the preference for whether to download a department's movies
+        :param dept_cbox: the pyqt checkbox
+        :param dept_name: the name of the department as a string - same as the checkbox label,
+        taken from pyani.core.app_vars.review_depts
         """
-        pass
+        error = self.mngr.save_preference(
+            "review asset download", dept_name, "download movies", bool(dept_cbox.isChecked())
+        )
+        if error:
+            error_msg = "Could not set the download dept movie preference. Error is {0}".format(error)
+            self.msg_win.show_error_msg("Save Preference Error", error_msg)
+
+    def set_movie_pref_download_location(self, download_location_input, dept_name):
+        """
+        Saves the preference for where to download a department's movies
+        :param download_location_input: a pyqt line edit widget containing the download path
+        :param dept_name: the name of the department as a string - same as the checkbox label,
+        taken from pyani.core.app_vars.review_depts
+        """
+        # make sure a path is entered
+        if not download_location_input:
+            self.msg_win.show_error_msg("Save Preference Error", "Please enter a valid path.")
+        error = self.mngr.save_preference(
+            "review asset download", dept_name, "download movie location", str(download_location_input.text())
+        )
+        if error:
+            error_msg = "Could not set the movie download location preference. Error is {0}".format(error)
+            self.msg_win.show_error_msg("Save Preference Error", error_msg)
+
+    def set_movie_pref_replace_existing(self, cbox, dept_name):
+        """
+        Saves the preference for whether to replace existing movies with the movies from today's review
+        :param cbox: the pyqt checkbox
+        :param dept_name: the name of the department as a string - same as the checkbox label,
+        taken from pyani.core.app_vars.review_depts
+        """
+        error = self.mngr.save_preference(
+            "review asset download", dept_name, "replace existing movies", bool(cbox.isChecked())
+        )
+        if error:
+            error_msg = "Could not set the replace existing movies preference. Error is {0}".format(error)
+            self.msg_win.show_error_msg("Save Preference Error", error_msg)
+
+    def set_movie_pref_dept_precedence(self):
+        """saves the dept order precedence list"""
+        dept_order = [
+            str(self.dept_movie_precedence_list_widget.item(i).text())
+            for i in range(self.dept_movie_precedence_list_widget.count())
+        ]
+        error = self.mngr.save_preference("review asset download", "movie", "precedence order", dept_order)
+        if error:
+            error_msg = "Could not save the precedence order preference. Error is {0}".format(error)
+            self.msg_win.show_error_msg("Save Preference Error", error_msg)
+
+    def set_movie_pref_use_precedence(self):
+        """Saves the preference to use precedence"""
+        pref_value = bool(self.use_dept_precedence_cbox.isChecked())
+        error = self.mngr.save_preference("review asset download", "movie", "use precedence", pref_value)
+        if error:
+            error_msg = "Could not save the use precedence preference. Error is {0}".format(error)
+            self.msg_win.show_error_msg("Save Preference Error", error_msg)
+        # turn on replace since using precedence
+        self.replace_old_assets_cbox.setChecked(True)
+        for dept in sorted(self.app_vars.review_depts):
+            self.additional_options_widgets_list[dept]["replace cbox"].blockSignals(True)
+            self.additional_options_widgets_list[dept]["replace cbox"].setChecked(True)
+            self.additional_options_widgets_list[dept]["replace cbox"].blockSignals(False)
+
+    def _update_movie_ui(self):
+        """Updates the movie specific options widgets"""
+        # loop through and update dept widgets
+        for dept in sorted(self.app_vars.review_depts):
+            # whether to replace local movies - first get the general preference, so that we can use that if there
+            # isn't a preference saved for the dept
+            pref_general = self.review_mngr.mngr.get_preference("review asset download", "update", "update old assets")
+            pref = self.review_mngr.mngr.get_preference("review asset download", dept, "replace existing movies")
+            pref_val = pref_general['update old assets']
+            if isinstance(pref, dict):
+                pref_val = pref["replace existing movies"]
+            # disable slots/signals don't want it to save the value which will happen because stateChanged will get
+            # fired
+            self.additional_options_widgets_list[dept]["replace cbox"].blockSignals(True)
+            self.additional_options_widgets_list[dept]["replace cbox"].setChecked(pref_val)
+            self.additional_options_widgets_list[dept]["replace cbox"].blockSignals(False)
+
+            # download location for this department's movies, uses main download location by default
+            pref = self.review_mngr.mngr.get_preference("review asset download", dept, "download movie location")
+            pref_val = str(self.set_download_location_input.text())
+            if isinstance(pref, dict):
+                pref_val = pref["download movie location"]
+            self.additional_options_widgets_list[dept]["download location"].setText(pref_val)
 
 
 class AssetComponentTab(CoreTab):
@@ -734,21 +1156,29 @@ class AssetComponentTab(CoreTab):
         self.add_button(self.btn_save_config)
 
         self.show_only_auto_update_assets_label, self.show_only_auto_update_assets_cbox = pyani.core.ui.build_checkbox(
-            "Show Only Assets that are Auto-Updated.",
+            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Show Only Assets that are Auto-Updated."
+            "</span>".format(
+                self.font_size,
+                self.font_family
+            ),
             False,
             "Shows assets that are in the auto update config file. These are the green colored assets below."
         )
         self.track_asset_changes_label, self.track_asset_changes_cbox = pyani.core.ui.build_checkbox(
-            "Generate daily report for asset updates.",
+            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Generate daily report for asset "
+            "updates.</span>".format(
+                self.font_size,
+                self.font_family
+            ),
             False,
             "Tracks updates to assets. Generates an excel report of any changed assets for the show."
         )
 
-        self.add_option(self.show_only_auto_update_assets_cbox, self.show_only_auto_update_assets_label)
+        self.add_general_option(self.show_only_auto_update_assets_cbox, self.show_only_auto_update_assets_label)
         # add asset changes tracking option if this component supports it
         if self.name.lower() in self.assets_supporting_update_tracking:
             self.add_button(self.btn_tracking)
-            self.add_option(self.track_asset_changes_cbox, self.track_asset_changes_label)
+            self.add_general_option(self.track_asset_changes_cbox, self.track_asset_changes_label)
             pref = self.mngr.get_preference("asset mngr", "audio", "track updates")
             if isinstance(pref, dict):
                 self.track_asset_changes_cbox.setChecked(pref.get("track updates"))
@@ -1049,7 +1479,7 @@ class AssetComponentTab(CoreTab):
                             # update isn't getting any files
                             if not self.mngr.get_asset_files(asset_type, self.asset_component, asset_name):
                                 # found missing file on server, set to strikeout - see pyani.core.ui.CheckboxTreeWidget
-                                # for available formatting options
+                                # for available formatting main_options_widgets
                                 row_text[0] = "strikethrough:{0}".format(row_text[0])
                                 row_color = [pyani.core.ui.DARK_GREEN, pyani.core.ui.WHITE]
                             else:
@@ -1067,7 +1497,7 @@ class AssetComponentTab(CoreTab):
                             # update isn't getting any files
                             if not self.mngr.get_asset_files(asset_type, self.asset_component, asset_name):
                                 # found missing file on server, set to strikeout - see pyani.core.ui.CheckboxTreeWidget
-                                # for available formatting options
+                                # for available formatting main_options_widgets
                                 row_text[0] = "strikethrough:{0}".format(row_text[0])
                                 row_color[0] = pyani.core.ui.GRAY_MED
 
@@ -1219,12 +1649,16 @@ class ToolsTab(CoreTab):
         self.add_button(self.btn_wiki)
         self.add_button(self.btn_save_config)
         self.show_only_auto_update_assets_label, self.show_only_auto_update_assets_cbox = pyani.core.ui.build_checkbox(
-            "Show Only Assets that are Auto-Updated.",
+            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Show Only Assets that are Auto-Updated."
+            "</span>".format(
+                self.font_size,
+                self.font_family
+            ),
             False,
             "Shows assets that are in the auto update config file. These are the green colored assets below."
         )
 
-        self.add_option(self.show_only_auto_update_assets_cbox, self.show_only_auto_update_assets_label)
+        self.add_general_option(self.show_only_auto_update_assets_cbox, self.show_only_auto_update_assets_label)
         tree_data, col_count, existing_assets_in_config_file = self.build_tree_data()
         self.build_layout(tree_data, col_count, existing_assets_in_config_file)
         self.set_slots()
@@ -1557,7 +1991,7 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
             tool_metadata,
             self.tools_mngr,
             1100,
-            900,
+            1000,
             error_logging
         )
 
@@ -1707,21 +2141,21 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
         if self.pyanitools_tools_tab:
             self.tabs.add_tab(self.pyanitools_tools_tab.name, layout=self.pyanitools_tools_tab.get_layout())
         if self.review_tab:
-            self.tabs.add_tab(self.review_tab.name, layout=self.review_tab.get_layout())
+            self.tabs.add_tab(self.review_tab.name, layout=self.review_tab.get_layout(), use_scroll_bars=True)
 
         self.add_layout_to_win()
 
     def create_layout_maint_and_options(self):
         """
-        Create the layout for the hub which has the update, install, and options
+        Create the layout for the hub which has the update, install, and main_options_widgets
         :return: a pyqt layout object
         """
         maint_and_options_main_layout = QtWidgets.QVBoxLayout()
 
         maint_and_options_main_layout.addItem(QtWidgets.QSpacerItem(1, 100))
 
-        # this section creates the update and re-install options with descriptions beneath and a vertical line
-        # separating the two actions
+        # this section creates the update and re-install main_options_widgets with descriptions beneath
+        # and a vertical line separating the two actions
         maint_main_layout = QtWidgets.QHBoxLayout()
         maint_update_layout = QtWidgets.QVBoxLayout()
         maint_install_layout = QtWidgets.QVBoxLayout()
@@ -1851,12 +2285,12 @@ class AniAssetMngrGui(pyani.core.ui.AniQMainWindow):
     def tab_changed(self):
         # get a list of asset components and if tab is an asset component page set the active component in
         # the asset manager
-        if self.tabs.currentWidget().name in self.asset_mngr.get_asset_component_names():
-            self.asset_mngr.active_asset_component = self.tabs.currentWidget().name
+        if self.tabs.get_current_tab_name() in self.asset_mngr.get_asset_component_names():
+            self.asset_mngr.active_asset_component = self.tabs.get_current_tab_name()
         # get a list of tool categories and if tab is a tool active_type page set the active active_type in
         # the tool manager - note that unlike assets, we don't have a user friendly name, so we use lower
-        if self.tabs.currentWidget().name in self.tools_mngr.get_tool_categories(display_name=True):
-            self.tools_mngr.active_type = self.tabs.currentWidget().name
+        if self.tabs.get_current_tab_name() in self.tools_mngr.get_tool_categories(display_name=True):
+            self.tools_mngr.active_type = self.tabs.get_current_tab_name()
 
     def create_missing_task(self):
         """
