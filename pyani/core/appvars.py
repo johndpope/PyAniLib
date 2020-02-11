@@ -121,7 +121,7 @@ class AppVars:
         self.review_download_tool_path = "{0}\\pyReview\\review_download.exe"
         self.review_download_time = "5:00 AM"
         self.review_movie_server_directory = "/{0}/LA_review".format(self.show_name)
-        self.review_movie_local_directory = "{0}:\\{1}\\movies\\reviews".format(
+        self.review_movie_local_directory = "{0}:\\{1}\\movies\\reviews\\yyyymmdd".format(
             self.local_server_drive_letter, self.show_name
         )
         # key is long hand notation often used in folder names, value is short hand notation often used in file names
@@ -135,9 +135,14 @@ class AppVars:
             "BG": "BG",
             "editorial": "editorial"
         }
+        # list of assets only in a sequence, never a shot
+        self.review_sequence_assets = [
+            "editorial"
+        ]
+
         # used when a shot has multiple departmental assets in a given review to determine which asset gets moved
         # when updating assets
-        self.review_dept_precedence = ['animation', 'shotFinaling', 'nCloth', 'layout', 'previs']
+        #self.review_dept_precedence = ['animation', 'shotFinaling', 'nCloth', 'layout', 'previs']
 
         # maya tools
         self.maya_scripts_local_dir = "{0}:\\{1}\\tools\\maya\\scripts".format(self.local_server_drive_letter, self.show_name)

@@ -162,19 +162,23 @@ class AniAppRoamingLauncher(QtWidgets.QDialog):
             try:
                 # check name
                 if proc.name() == self.app_file_name:
+                    print proc.name(),  proc.exe().lower(), self.app_path_in_temp_dir.lower()
                     # check path, possible another application has the same name
                     if proc.exe().lower() == self.app_path_in_temp_dir.lower():
                         proc.kill()
                         logger.info(
                             "Killed pid: {0}, name: {1}, path: {2}".format(str(proc.pid), proc.name(), proc.exe())
                         )
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess) as e:
+            except psutil.AccessDenied:
+                # ignore, these are processes can't access, issue with psutil and system idle processes
+                pass
+            except (psutil.NoSuchProcess, psutil.ZombieProcess) as e:
                 self.msg_win.show_error_msg(
                     "Launch Error",
                     "An existing instance of the updater is running and can not close. Error is {0}".format(e)
                 )
                 logger.error(e)
                 return False
-        # pause for 1/4 a second, to ensure resources freed
-        time.sleep(0.25)
+        # pause for 1/2 a second, to ensure resources freed
+        time.sleep(0.5)
         return True

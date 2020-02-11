@@ -460,8 +460,8 @@ class ReviewTab(CoreTab):
         else:
             pref_value = False
         self.use_dept_precedence_label, self.use_dept_precedence_cbox = pyani.core.ui.build_checkbox(
-            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Keep only one dept in folder "
-            "based off precedence list</span>".format(
+            "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Keep one movie per shot when depts "
+            "share download location</span>".format(
                 self.font_size,
                 self.font_family
             ),
@@ -477,9 +477,11 @@ class ReviewTab(CoreTab):
         else:
             dept_order = sorted(self.app_vars.review_depts)
         for dept in dept_order:
-            self.dept_movie_precedence_list_widget.addItem(dept)
-        self.dept_movie_precedence_list_widget.setMinimumHeight(150)
-        self.dept_movie_precedence_list_widget.setMaximumHeight(155)
+            # don't put sequence assets in the list, just shot
+            if dept not in self.app_vars.review_sequence_assets:
+                self.dept_movie_precedence_list_widget.addItem(dept)
+        self.dept_movie_precedence_list_widget.setMinimumHeight(140)
+        self.dept_movie_precedence_list_widget.setMaximumHeight(145)
         self.dept_movie_precedence_list_widget.setMaximumWidth(600)
         # Enable drag & drop ordering of items.
         self.dept_movie_precedence_list_widget.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
@@ -504,14 +506,13 @@ class ReviewTab(CoreTab):
         self.enable_auto_download_menu.currentIndexChanged.connect(self.set_auto_download_state)
         self.btn_download.clicked.connect(self.download_review_assets)
         self.btn_save_dept_precedence.clicked.connect(self.set_movie_pref_dept_precedence)
-        self.use_dept_precedence_cbox.clicked.connect(self.set_movie_pref_use_precedence)
+        self.use_dept_precedence_cbox.clicked.connect(self.set_movie_pref_one_movie_per_shot)
 
     def create_movie_options(self):
         """
         Creates options for review movies
         """
 
-        '''
         list_label = QtWidgets.QLabel(
             "<span style='font-size:{0}pt; font-family:{1}; color: #ffffff;'>Drag and Drop the departments to create "
             "your precedence order (<i>highest to lowest</i>)</span>".format(
@@ -522,15 +523,23 @@ class ReviewTab(CoreTab):
         list_label.setWordWrap(True)
         list_label.setMaximumWidth(800)
         precedence_desc = QtWidgets.QLabel(
-            "<span style='font-size:9pt; font-family:{0}; color: {2};'>"
-            "Use the options below to put multiple departments in a folder, but only keep the department with the "
-            "most recent movie in the folder. The precedence list defines what happens if a review has multiple "
-            "departments in the review. The department with highest precedence gets put in the folder, while the "
-            "other departments get put in the general download location: {1}"
-            "</span>".format(
+            "<p style='font-size:9pt; font-family:{0}; color: {2};'>"
+            "Use the options below to keep one movie per shot when multiple departments download to the same folder. "
+            "The precedence list defines what happens in a review if a shot has multiple movies in the review. "
+            "<br><br>"
+            "For example Seq###_Shot### has both an animation and layout movie. The department with highest precedence "
+            "gets put in the folder, while the other departments get put in the default download location: {1}. "
+            "In the list, the department at the top has highest precedence, and the department at the bottom has "
+            "lowest precedence."
+            "<br><br>"
+            "<b><font style='color: {3};'>NOTE:</font></b> precedence order and one movie per shot "
+            "only applies to departments that share the same download location. Precedence and one movie per shot "
+            "also automatically enable replacement for departments sharing the same location."
+            "</p>".format(
                 self.font_family,
-                str(self.set_download_location_input.text()),
-                pyani.core.ui.GRAY_MED
+                self.app_vars.review_movie_local_directory,
+                pyani.core.ui.GRAY_MED,
+                pyani.core.ui.GOLD
             )
         )
         precedence_desc.setMaximumWidth(800)
@@ -568,7 +577,7 @@ class ReviewTab(CoreTab):
         precedence_list_sub_layout.setAlignment(self.btn_save_dept_precedence, QtCore.Qt.AlignTop)
 
         self.add_additional_option("", option_layout=precedence_layout)
-        '''
+
         movie_dl_layout = QtWidgets.QVBoxLayout()
         movie_dl_desc = QtWidgets.QLabel(
             "<span style='font-size:9pt; font-family:{0}; color: {1};'>"
@@ -1040,12 +1049,19 @@ class ReviewTab(CoreTab):
         # make sure a path is entered
         if not download_location_input:
             self.msg_win.show_error_msg("Save Preference Error", "Please enter a valid path.")
+            return
+
         error = self.mngr.save_preference(
             "review asset download", dept_name, "download movie location", str(download_location_input.text())
         )
         if error:
             error_msg = "Could not set the movie download location preference. Error is {0}".format(error)
             self.msg_win.show_error_msg("Save Preference Error", error_msg)
+            return
+
+        # turn on replace for any depts sharing a dl location
+        if bool(self.use_dept_precedence_cbox.isChecked()):
+            self._set_movie_pref_replace_for_precedence_shared_dl_locations()
 
     def set_movie_pref_replace_existing(self, cbox, dept_name):
         """
@@ -1072,19 +1088,39 @@ class ReviewTab(CoreTab):
             error_msg = "Could not save the precedence order preference. Error is {0}".format(error)
             self.msg_win.show_error_msg("Save Preference Error", error_msg)
 
-    def set_movie_pref_use_precedence(self):
-        """Saves the preference to use precedence"""
+    def set_movie_pref_one_movie_per_shot(self):
+        """
+        Saves the preference to keep one movie per shot for depts sharing same dl location - also turns
+        on replace for those depts sharing dl location and saves the precedence list
+        """
         pref_value = bool(self.use_dept_precedence_cbox.isChecked())
         error = self.mngr.save_preference("review asset download", "movie", "use precedence", pref_value)
         if error:
             error_msg = "Could not save the use precedence preference. Error is {0}".format(error)
             self.msg_win.show_error_msg("Save Preference Error", error_msg)
-        # turn on replace since using precedence
-        self.replace_old_assets_cbox.setChecked(True)
-        for dept in sorted(self.app_vars.review_depts):
-            self.additional_options_widgets_list[dept]["replace cbox"].blockSignals(True)
-            self.additional_options_widgets_list[dept]["replace cbox"].setChecked(True)
-            self.additional_options_widgets_list[dept]["replace cbox"].blockSignals(False)
+            return
+        # save the list of dept precedence so we have an order to use
+        self.set_movie_pref_dept_precedence()
+        # turn on replace for any depts sharing a dl location
+        self._set_movie_pref_replace_for_precedence_shared_dl_locations()
+
+    def _set_movie_pref_replace_for_precedence_shared_dl_locations(self):
+        """Turns on the replace movie for depts sharing the same download location if precedence is on"""
+        # turn on replace for any depts sharing download locations since using precedence - first find which if any
+        # depts share a download location using reverse dict
+        dl_locations = dict()
+        for dept, widget_dict in self.additional_options_widgets_list.items():
+            dept_dl_location = str(widget_dict['download location'].text())
+            if dept_dl_location not in dl_locations:
+                dl_locations[dept_dl_location] = list()
+            dl_locations[dept_dl_location].append(dept)
+
+        # now that we know have reversed the dict so that we have dl locations: depts, we know which ones share a
+        # location and can set the replace checkboxes
+        for dl_location, dept_list in dl_locations.items():
+            if len(dept_list) > 1:
+                for dept in dept_list:
+                    self.additional_options_widgets_list[dept]["replace cbox"].setChecked(True)
 
     def _update_movie_ui(self):
         """Updates the movie specific options widgets"""

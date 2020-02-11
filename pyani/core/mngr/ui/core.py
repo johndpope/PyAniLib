@@ -124,7 +124,7 @@ class AniTaskList:
         self._get_next_task_to_run()
 
     def is_task_remaining(self):
-        """Returns true if tasks remain, False if no mor etasks"""
+        """Returns true if tasks remain, False if no more tasks"""
         if self._task_list:
             return True
         else:
