@@ -139,6 +139,14 @@ class AppVars:
         self.review_sequence_assets = [
             "editorial"
         ]
+        # list of assets that ignore precedence
+        self.review_assets_no_precedence = [
+            "editorial"
+        ]
+        # list of assets that don't have dept in name
+        self.review_assets_no_dept_in_name = [
+            "editorial"
+        ]
 
         # used when a shot has multiple departmental assets in a given review to determine which asset gets moved
         # when updating assets

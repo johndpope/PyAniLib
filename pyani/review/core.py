@@ -385,29 +385,39 @@ class AniReviewMngr:
                 for dept in precedence_order:
                     if dept in seq_dept_assets:
                         seq_dept_assets_re_ordered[dept] = seq_dept_assets[dept]
+
                 # now move the assets except for the one being kept
                 seq_dept_kept, seq_asset_kept = seq_dept_assets_re_ordered.popitem(last=False)
                 for dept in seq_dept_assets_re_ordered:
-                    for review_asset in seq_dept_assets_re_ordered[dept]:
-                        # move assets to general download location
-                        src = os.path.join(review_asset['local download path'], review_asset['file name'])
-                        dest = os.path.join(gen_dl_loc, review_asset['file name'])
-                        # make sure folder exists
-                        error = pyani.core.util.make_all_dir_in_path(gen_dl_loc)
-                        if error:
-                            self.mngr.send_thread_error(error)
-                            return error
-                        error = pyani.core.util.move_file(src, dest)
-                        if error:
-                            self.mngr.send_thread_error(error)
-                            return error
-                        if sequence not in moved_files:
-                            moved_files[sequence] = list()
-                        moved_files[sequence].append(review_asset['file name'])
+                    if dept not in self.app_vars.review_assets_no_precedence:
+                        for review_asset in seq_dept_assets_re_ordered[dept]:
+                            # move assets to general download location
+                            src = os.path.join(review_asset['local download path'], review_asset['file name'])
+                            dest = os.path.join(gen_dl_loc, review_asset['file name'])
+                            # make sure folder exists
+                            error = pyani.core.util.make_all_dir_in_path(gen_dl_loc)
+                            if error:
+                                self.mngr.send_thread_error(error)
+                                return error
+                            error = pyani.core.util.move_file(src, dest)
+                            if error:
+                                self.mngr.send_thread_error(error)
+                                return error
+                            if sequence not in moved_files:
+                                moved_files[sequence] = list()
+                            moved_files[sequence].append(review_asset['file name'])
 
-                # finally set seq asset list to the asset kept
+                # get any assets in sequence assets not part of precedence
+                no_precedence_assets  = dict()
+                for dept in self.app_vars.review_assets_no_precedence:
+                    if dept in seq_dept_assets:
+                        no_precedence_assets[dept] = copy.deepcopy(seq_dept_assets[dept])
+
+                # finally set seq asset list to the asset kept as well as assets ignoring precedence
                 seq_dept_assets.clear()
                 seq_dept_assets[seq_dept_kept] = seq_asset_kept
+                for key, value in no_precedence_assets.items():
+                    seq_dept_assets[key] = value
 
             '''
             Replace section for sequence assets
@@ -443,19 +453,28 @@ class AniReviewMngr:
                         pyani.core.util.get_all_files(dept_dl_location, walk=False)
                         if os.path.join(dept_dl_location, file_name) not in self.download_list
                     ]
-
                     # check for existing asset and remove - remove if dept and seq match
                     for existing_file in existing_files_in_dir:
                         # compare existing file against files in review - have to do because of part names
                         for review_asset in seq_dept_assets[seq_dept_asset]:
+                            print seq_dept_asset
                             # if using precedence don't check dept name, since we want to replace depts with other depts
                             # otherwise check if the dept matches.
-                            if precedence_pref:
+                            if precedence_pref and seq_dept_asset not in self.app_vars.review_assets_no_precedence:
                                 error = self._replace_seq_asset(review_asset, existing_file, sequence, seq_dept_asset)
                                 if error:
                                     self.mngr.send_thread_error(error)
                                     return error
+                            # check for dept name in file name
                             elif self.app_vars.review_depts[seq_dept_asset].lower() in existing_file.lower():
+                                error = self._replace_seq_asset(review_asset, existing_file, sequence, seq_dept_asset)
+                                if error:
+                                    self.mngr.send_thread_error(error)
+                                    return error
+                            # no dept name in file name, so check if sequence matches - editorial for instance is in
+                            # format seq###_movie_v###.mov
+                            elif sequence.lower() in existing_file.lower() and \
+                                    seq_dept_asset in self.app_vars.review_assets_no_dept_in_name:
                                 error = self._replace_seq_asset(review_asset, existing_file, sequence, seq_dept_asset)
                                 if error:
                                     self.mngr.send_thread_error(error)
