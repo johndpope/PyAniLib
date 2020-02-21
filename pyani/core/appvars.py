@@ -118,7 +118,7 @@ class AppVars:
         self.pyanitools_desktop_shortcut_path = os.path.join(self.user_desktop, self.pyanitools_desktop_shortcut_name)
 
         # review tools
-        self.review_download_tool_path = "{0}\\pyReview\\review_download.exe"
+        self.review_download_tool_path = "{0}\\pyReview\\review_download.exe".format(self.local_pyanitools_apps_dir)
         self.review_download_time = "5:00 AM"
         self.review_movie_server_directory = "/{0}/LA_review".format(self.show_name)
         self.review_movie_local_directory = "{0}:\\{1}\\movies\\reviews\\yyyymmdd".format(
