@@ -311,6 +311,7 @@ class AniReviewMngr:
             file_name = server_path.split("/")[-1]
             file_path = os.path.join(local_path, file_name)
             self.download_list.append(file_path)
+
         self.mngr.server_file_download_mt(file_list, thread_count=3)
 
     def update_review_assets_to_latest(self):
@@ -457,7 +458,6 @@ class AniReviewMngr:
                     for existing_file in existing_files_in_dir:
                         # compare existing file against files in review - have to do because of part names
                         for review_asset in seq_dept_assets[seq_dept_asset]:
-                            print seq_dept_asset
                             # if using precedence don't check dept name, since we want to replace depts with other depts
                             # otherwise check if the dept matches.
                             if precedence_pref and seq_dept_asset not in self.app_vars.review_assets_no_precedence:
@@ -491,16 +491,38 @@ class AniReviewMngr:
                 Handles when a shot has multiple dept assets in a review - ie Seq310 Shot010 having
                 Editorial and Animation which download to the same location
                 '''
-                # find the dept to keep, move any other depts to general dl location, set the shot assets to just
-                # the dept being kept, and then change the download location for moved assets
-                # NOTE: if precedence is on, only need to process this if more than one dept, otherwise its just
-                # one dept so don't need to do anything special
-                if precedence_pref and len(shot_assets[shot_name]) > 1:
+                # need to find depts that share a dl path, so we know whether this shot has more than one dept asset
+                # going into the same dl folder - needed for precedence check below so that we can account for
+                # precedence on, more than one asset for a shot, but all going to unique download locations. In that
+                # case we want to not do any precedence logic. Only do precedence logic when multiple assets per shot
+                # sharing the same dl location
+                depts_sorted_by_dl_path = dict()
+                for dept, shot_asset in shot_assets[shot_name].items():
+                    dl_path = shot_asset[0]['local download path']
+                    if dl_path in depts_sorted_by_dl_path.keys():
+                        depts_sorted_by_dl_path[dl_path].append(dept)
+                    else:
+                        depts_sorted_by_dl_path[dl_path] = [dept]
+
+                # make a copy of the shot assets, so can remove any depts not sharing a dl path
+                shot_assets_sharing_dl_path = copy.deepcopy(shot_assets[shot_name])
+                # now save assets not sharing a dl path and remove from assets sharing a dl path
+                shot_assets_not_sharing_dl_path = dict()
+                for dl_path, dept_list in depts_sorted_by_dl_path.items():
+                    if len(dept_list) == 1:
+                        dept = dept_list[0]
+                        shot_assets_not_sharing_dl_path[dept] = copy.deepcopy(shot_assets[shot_name][dept])
+                        del shot_assets_sharing_dl_path[dept]
+
+                # find the dept to keep, move any other depts (sharing the same dl location) to general dl location,
+                # set the shot assets to just the dept being kept + any depts not sharing the same dl location, and
+                # then change the download location for moved assets.
+                if precedence_pref and shot_assets_sharing_dl_path:
                     # re-order the assets by order of precedence to find which asset to keep
                     shot_dept_assets_re_ordered = OrderedDict()
                     for dept in precedence_order:
-                        if dept in shot_assets[shot_name]:
-                            shot_dept_assets_re_ordered[dept] = shot_assets[shot_name][dept]
+                        if dept in shot_assets_sharing_dl_path:
+                            shot_dept_assets_re_ordered[dept] = shot_assets_sharing_dl_path[dept]
                     # now move the assets except for the one being kept
                     shot_dept_kept, shot_asset_kept = shot_dept_assets_re_ordered.popitem(last=False)
                     for dept in shot_dept_assets_re_ordered:
@@ -528,6 +550,9 @@ class AniReviewMngr:
                     # finally set shot asset list to the asset kept
                     shot_assets[shot_name].clear()
                     shot_assets[shot_name][shot_dept_kept] = shot_asset_kept
+                    # add back in depts not sharing a dl location
+                    for dept, shot_asset in shot_assets_not_sharing_dl_path.items():
+                        shot_assets[shot_name][dept] = shot_asset
 
                 for dept in shot_assets[shot_name]:
                     # get asset specific preference
